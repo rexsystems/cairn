@@ -3,7 +3,7 @@
   "productName": "Cairn",
   "version": "0.1.0",
   "description": "Cairn: a Minecraft launcher for modded instances, with Modrinth support.",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "author": {
     "name": "Cairn contributors",
     "email": "cairn@example.invalid"
