@@ -8,6 +8,7 @@ use crate::{java, loaders};
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -34,7 +35,10 @@ pub struct GameState {
 pub struct Games {
     pub states: Mutex<HashMap<String, GameState>>,
     pub logs: Mutex<HashMap<String, VecDeque<String>>>,
+    /// Signals a running Java process to exit.
     pub killers: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
+    /// Set while prepare/launch is in flight so Stop works before the process starts.
+    pub cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 const LOG_KEEP: usize = 8000;
@@ -111,28 +115,54 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
     games.set(&app, GameState { instance_id: id.clone(), state: "preparing".into(), pid: None, started: crate::util::now_ms(), exit_code: None });
     games.logs.lock().unwrap().insert(id.clone(), VecDeque::new());
 
+    let cancel = Arc::new(AtomicBool::new(false));
+    games.cancels.lock().unwrap().insert(id.clone(), cancel.clone());
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    games.killers.lock().unwrap().insert(id.clone(), cancel_tx);
+
     let task = Task::new(&app, format!("Preparing {}", inst.name));
-    let prep: Result<_> = async {
+    let prep = async {
         let (java_path, _vid, installed) = prepare(&paths, &settings, &mut inst, &task).await?;
         task.stage("Signing in", 0, 0);
         let acc = accs.accounts.iter_mut().find(|a| a.id == active_id).ok_or_else(|| anyhow!("The selected account was removed."))?;
         accounts::fresh_token(acc).await?;
         let acc = acc.clone();
         accs.save(&paths)?;
-        Ok((java_path, installed, acc))
-    }
-    .await;
-    let (mut java_path, installed, acc) = match prep {
-        Ok(v) => {
-            task.finish();
-            v
+        Ok::<_, anyhow::Error>((java_path, installed, acc))
+    };
+    let mark_cancelled = |fail_task: bool| {
+        if fail_task {
+            task.fail(&anyhow!("Launch cancelled"));
         }
-        Err(e) => {
-            task.fail(&e);
-            games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
-            return Err(e);
+        games.killers.lock().unwrap().remove(&id);
+        games.cancels.lock().unwrap().remove(&id);
+        games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
+        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+    };
+    let (mut java_path, installed, acc) = tokio::select! {
+        r = prep => match r {
+            Ok(v) => {
+                task.finish();
+                v
+            }
+            Err(e) => {
+                task.fail(&e);
+                games.killers.lock().unwrap().remove(&id);
+                games.cancels.lock().unwrap().remove(&id);
+                games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+                return Err(e);
+            }
+        },
+        _ = cancel_rx => {
+            mark_cancelled(true);
+            return Ok(());
         }
     };
+    games.killers.lock().unwrap().remove(&id);
+    if cancel.load(Ordering::SeqCst) {
+        mark_cancelled(false);
+        return Ok(());
+    }
 
     let dir = inst.dir(&paths);
     let shaders_off = profile.as_ref().map(|p| p.disable_shaders).unwrap_or(false);
@@ -196,6 +226,10 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
     if !settings.game_env.is_empty() {
         games.push_log(&app, &id, format!("[Cairn] Game env overrides: {}", settings.game_env.len()), "launcher");
     }
+    if cancel.load(Ordering::SeqCst) {
+        mark_cancelled(false);
+        return Ok(());
+    }
     let mut child = match cmd.spawn().context("starting Java") {
         Ok(c) => c,
         Err(e) => {
@@ -205,10 +239,19 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
                 let _ = std::fs::rename(&shader_stash, &sp);
             }
             crate::discord::clear();
+            games.cancels.lock().unwrap().remove(&id);
             games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
             return Err(e);
         }
     };
+    games.cancels.lock().unwrap().remove(&id);
+    if cancel.load(Ordering::SeqCst) {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
+        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+        return Ok(());
+    }
     let started = crate::util::now_ms();
     games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None });
     inst.last_played = Some(started);
@@ -279,10 +322,14 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
 }
 
 pub fn kill(games: &Games, id: &str) -> bool {
+    let mut hit = false;
+    if let Some(flag) = games.cancels.lock().unwrap().get(id) {
+        flag.store(true, Ordering::SeqCst);
+        hit = true;
+    }
     if let Some(tx) = games.killers.lock().unwrap().remove(id) {
         let _ = tx.send(());
-        true
-    } else {
-        false
+        hit = true;
     }
+    hit
 }

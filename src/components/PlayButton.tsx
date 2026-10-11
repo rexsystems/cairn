@@ -10,17 +10,18 @@ export function PlayButton({ id, compact }: { id: string; compact?: boolean }) {
   const state = g?.state ?? "exited";
   const noAccount = !accounts.some((a) => a.active);
 
-  if (state === "running") {
+  if (state === "running" || state === "preparing") {
     return (
-      <button className={compact ? "btn btn-sm btn-danger" : "btn btn-stop"} onClick={async (e) => { e.stopPropagation(); await api.kill(id); toast("Stopping the game"); }}>
-        <Icon name="stop" size={compact ? 14 : 18} /> Stop
-      </button>
-    );
-  }
-  if (state === "preparing") {
-    return (
-      <button className={compact ? "btn btn-sm" : "btn btn-play"} disabled aria-live="polite">
-        Starting...
+      <button
+        className={compact ? "btn btn-sm btn-danger" : "btn btn-stop"}
+        aria-live="polite"
+        onClick={async (e) => {
+          e.stopPropagation();
+          await api.kill(id);
+          toast(state === "preparing" ? "Cancelling launch" : "Stopping the game");
+        }}
+      >
+        <Icon name="stop" size={compact ? 14 : 18} /> {state === "preparing" ? "Cancel" : "Stop"}
       </button>
     );
   }

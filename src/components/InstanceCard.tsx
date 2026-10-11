@@ -1,7 +1,8 @@
-import { fileSrc, type InstanceView } from "../api";
+import type { InstanceView } from "../api";
 import { useStore } from "../store";
 import { InstanceIcon } from "./ui";
 import { PlayButton } from "./PlayButton";
+import { InstanceCover } from "./InstanceCover";
 import { loaderLabel, playTime, relativeTime } from "../format";
 
 export function InstanceCard({ inst: i }: { inst: InstanceView }) {
@@ -12,9 +13,9 @@ export function InstanceCard({ inst: i }: { inst: InstanceView }) {
     <div className="card inst-card" role="button" tabIndex={0} aria-label={`Open ${i.name}`}
       onClick={open}
       onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } }}>
-      <div className={`inst-cover tone-${i.loader}`} aria-hidden="true">
-        {i.cover && <img src={fileSrc(i.cover)} alt="" loading="lazy" />}
-      </div>
+      <InstanceCover inst={i}>
+        <div className="play-fab"><PlayButton id={i.id} compact /></div>
+      </InstanceCover>
       <div className="inst-card-body">
         <div className="inst-card-top">
           <InstanceIcon name={i.name} src={i.iconPath} />
@@ -29,7 +30,6 @@ export function InstanceCard({ inst: i }: { inst: InstanceView }) {
           {i.playSeconds >= 60 && <span>{playTime(i.playSeconds)}</span>}
         </div>
       </div>
-      <div className="play-fab"><PlayButton id={i.id} compact /></div>
     </div>
   );
 }

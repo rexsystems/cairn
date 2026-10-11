@@ -11,7 +11,7 @@ import { Accounts } from "./pages/Accounts";
 import { SettingsPage } from "./pages/Settings";
 import { CreateInstance } from "./pages/CreateInstance";
 import { GlobalSearch } from "./components/GlobalSearch";
-import markUrl from "./assets/cairn-mark.svg?url";
+import { CairnMark } from "./assets/CairnMark";
 
 const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
   { name: "home", label: "Home", icon: "home" },
@@ -24,7 +24,7 @@ const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
 function Wordmark() {
   return (
     <div className="wordmark">
-      <img className="wordmark-mark" src={markUrl} alt="" width={32} height={32} />
+      <CairnMark className="wordmark-mark" size={32} />
       <span className="wordmark-text">cairn</span>
     </div>
   );

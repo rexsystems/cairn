@@ -5,6 +5,7 @@ import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { EmptyState, ErrorState, InstanceIcon, Loading, Modal, PopoverMenu, Select, Switch } from "../components/ui";
 import { PlayButton } from "../components/PlayButton";
+import { InstanceCover } from "../components/InstanceCover";
 import { bytes, loaderLabel, playTime, relativeTime } from "../format";
 
 const TABS = [
@@ -54,7 +55,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
     <>
       <button className="btn btn-quiet btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => go({ name: "library" })}><Icon name="back" size={14} />Library</button>
       <header className="inst-head inst-banner">
-        <div className={`inst-cover tone-${inst.loader}`} aria-hidden="true">{inst.cover && <img src={fileSrc(inst.cover)} alt="" />}</div>
+        <InstanceCover inst={inst} className={`inst-cover tone-${inst.loader}`} />
         <div className="inst-banner-scrim" aria-hidden="true" />
         <button className="btn btn-quiet" style={{ padding: 0, height: "auto", border: 0 }} onClick={changeIcon} aria-label="Change instance icon" title="Change icon">
           <InstanceIcon name={inst.name} src={inst.iconPath} large />

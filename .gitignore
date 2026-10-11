@@ -8,3 +8,8 @@ src-tauri/target/
 
 .local-secrets/
 .private/
+
+# Local agent guidance (source of truth lives in .private/, gitignored)
+AGENTS.md
+.cursor/
+.codex/

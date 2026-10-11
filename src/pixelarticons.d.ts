@@ -1,0 +1,32 @@
+declare module "pixelarticons/react/*" {
+  import type { SVGProps, JSX } from "react";
+  type Icon = (props: SVGProps<SVGSVGElement>) => JSX.Element;
+  export const ArrowLeft: Icon;
+  export const Box: Icon;
+  export const Check: Icon;
+  export const ChevronDown: Icon;
+  export const Close: Icon;
+  export const Coffee: Icon;
+  export const Compass: Icon;
+  export const Copy: Icon;
+  export const Download: Icon;
+  export const ExternalLink: Icon;
+  export const Folder: Icon;
+  export const Globe: Icon;
+  export const Home: Icon;
+  export const Image: Icon;
+  export const Library: Icon;
+  export const MoreHorizontal: Icon;
+  export const Pause: Icon;
+  export const Play: Icon;
+  export const Plus: Icon;
+  export const Reload: Icon;
+  export const Script: Icon;
+  export const Search: Icon;
+  export const SettingsCog: Icon;
+  export const SquareAlert: Icon;
+  export const Stop: Icon;
+  export const Trash: Icon;
+  export const Upload: Icon;
+  export const User: Icon;
+}
