@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
     for pid in args.iter().skip(2) {
         let t = Task::headless(format!("install {pid}"));
-        let r = modrinth::install_project(&paths, &inst, pid, None, &t).await?;
+        let r = modrinth::install_project(&paths, &inst, pid, None, false, &t).await?;
         for i in r {
             eprintln!("installed {} -> {}", i.title, i.file_name);
         }
