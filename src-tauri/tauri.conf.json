@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Cairn",
+  "version": "0.1.0",
+  "identifier": "app.cairn.launcher",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev:web",
+    "beforeBuildCommand": "npm run build:web"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Cairn",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 380,
+        "minHeight": 560,
+        "resizable": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": [],
+          "requireLiteralLeadingDot": false
+        }
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "category": "Game",
+    "shortDescription": "Minecraft launcher for modded instances",
+    "longDescription": "Cairn manages Minecraft instances with Fabric, Quilt, Forge and NeoForge, and installs content from Modrinth.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "rpm": {
+        "depends": [],
+        "release": "1"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdBNDQ5NTc2NzY5RkRCOTEKUldTUjI1OTJkcFZFZXZENEpsdWRnU21CbVBvYWduRjBPWWhRRTV4UzVxeDdDS1h5U2pvUkF6bjMK",
+      "endpoints": [
+        "https://cairn-updates.r2.dev/latest.json"
+      ]
+    }
+  }
+}

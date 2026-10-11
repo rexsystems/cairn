@@ -1,0 +1,53 @@
+{
+  "name": "cairn-launcher",
+  "productName": "Cairn",
+  "version": "0.1.0",
+  "description": "Cairn: a Minecraft launcher for modded instances, with Modrinth support.",
+  "license": "MIT",
+  "author": {
+    "name": "Cairn contributors",
+    "email": "cairn@example.invalid"
+  },
+  "homepage": "https://example.invalid/cairn",
+  "private": true,
+  "scripts": {
+    "dev:web": "vite",
+    "dev": "tauri dev",
+    "build:web": "tsc --noEmit -p tsconfig.json && vite build",
+    "tauri": "tauri",
+    "build": "tauri build",
+    "build:linux": "tauri build --bundles appimage,deb,rpm",
+    "build:rpm": "tauri build --bundles rpm",
+    "build:deb": "tauri build --bundles deb",
+    "build:appimage": "tauri build --bundles appimage",
+    "test": "vitest run",
+    "test:rust": "cd src-tauri && cargo test"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@tauri-apps/api": "^2.12.2",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
+    "@tauri-apps/plugin-opener": "^2.7.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.13.3",
+    "dompurify": "^3.4.16",
+    "marked": "^18.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.186.1"
+  },
+  "type": "module"
+}
