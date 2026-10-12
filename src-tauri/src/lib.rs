@@ -15,6 +15,7 @@ pub mod paths;
 pub mod servers;
 pub mod settings;
 pub mod tasks;
+pub mod telemetry;
 pub mod util;
 
 use accounts::AccountsFile;
@@ -688,6 +689,9 @@ pub fn run() {
         .setup(move |app| {
             // Only Cairn's own data folder (screenshots, icons, world thumbnails) is readable by the webview.
             app.asset_protocol_scope().allow_directory(&data_root, true)?;
+            tauri::async_runtime::spawn(async {
+                telemetry::track_app_open().await;
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
