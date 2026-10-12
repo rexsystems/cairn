@@ -21,6 +21,10 @@ async function heroImageFor(inst: InstanceView, fallback: SearchHit | undefined)
     } catch { /* ignore */ }
   }
   if (fallback?.featured_gallery) return { src: fallback.featured_gallery, credit: `Image from ${fallback.title} on Modrinth` };
+  try {
+    const art = await api.mcVersionArt(inst.mcVersion);
+    if (art) return { src: art, credit: `Minecraft ${inst.mcVersion}` };
+  } catch { /* ignore */ }
   return null;
 }
 

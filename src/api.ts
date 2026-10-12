@@ -181,6 +181,8 @@ export const api = {
   installInstance: (id: string) => invoke<void>("install_instance", { id }),
 
   mcVersions: () => invoke<McVersion[]>("mc_versions"),
+  /** Minecraft Wiki artwork for a game version (cover when no screenshot / pack art). */
+  mcVersionArt: (version: string) => invoke<string | null>("mc_version_art", { version }),
   loaderVersions: (loader: Loader, mc: string) => invoke<LoaderVersion[]>("loader_versions", { loader, mc }),
 
   search: (params: { query: string; facets: string[][]; index: string; offset: number; limit: number }) => invoke<SearchResult>("modrinth_search", { params }),

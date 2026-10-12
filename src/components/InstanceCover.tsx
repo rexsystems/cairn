@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { fileSrc, type InstanceView } from "../api";
 import { resolveCover } from "../coverArt";
 
-/** Cover art: instance screenshot or Modrinth pack gallery; otherwise the CSS tone. */
+/** Cover art: screenshot → Modrinth gallery → wiki version art → CSS tone. */
 export function InstanceCover({
   inst,
   className,
@@ -21,7 +21,7 @@ export function InstanceCover({
       if (alive) setSrc(url);
     });
     return () => { alive = false; };
-  }, [inst.id, inst.cover, inst.pack?.projectId]);
+  }, [inst.id, inst.cover, inst.pack?.projectId, inst.mcVersion]);
 
   return (
     <div className={className ?? `inst-cover tone-${inst.loader}`}>

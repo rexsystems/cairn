@@ -17,6 +17,7 @@ pub mod settings;
 pub mod tasks;
 pub mod telemetry;
 pub mod util;
+pub mod version_art;
 
 use accounts::AccountsFile;
 use instance::Instance;
@@ -44,6 +45,11 @@ fn e<E: std::fmt::Display>(err: E) -> String {
 }
 fn ea(err: anyhow::Error) -> String {
     format!("{err:#}")
+}
+
+#[tauri::command]
+async fn mc_version_art(version: String) -> Option<String> {
+    version_art::image_url(&version).await
 }
 
 #[derive(Serialize)]
@@ -704,7 +710,7 @@ pub fn run() {
             list_servers, save_servers,
             backup_instance, restore_instance_backup, search_library_content,
             launch_instance, kill_instance, game_states, game_log, install_instance,
-            mc_versions, loader_versions,
+            mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, msa_login, msa_cancel,
             list_java, install_java, open_data_path

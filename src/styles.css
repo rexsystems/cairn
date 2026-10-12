@@ -223,13 +223,58 @@ html.reduce-motion .select-chevron { animation: none; transition: none; }
 .search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .search .input { padding-left: 38px; }
 
-.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; min-height: 44px; }
-.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.switch .track { width: 40px; height: 24px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line-strong); position: relative; flex: none; transition: background var(--t-fast); }
-.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform var(--t-fast) var(--ease), background var(--t-fast); }
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-height: 44px;
+  user-select: none;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.switch .track {
+  width: 40px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  position: relative;
+  flex: none;
+  pointer-events: none;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform var(--t-fast) var(--ease), background var(--t-fast);
+}
 .switch input:checked + .track { background: var(--moss-bg); border-color: var(--moss); }
 .switch input:checked + .track::after { transform: translateX(16px); background: var(--moss); }
 .switch input:focus-visible + .track { outline: 2px solid var(--focus); outline-offset: 2px; }
+.switch:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+.switch:has(input:disabled) input { cursor: not-allowed; }
+/* Compact enable/disable toggles (track only) still need a usable hit area. */
+.switch:not(:has(span:not(.track))) {
+  min-width: 44px;
+  justify-content: center;
+  padding: 0 2px;
+}
 
 .segmented { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-control); overflow: hidden; flex-wrap: wrap; }
 .segmented button { min-height: 38px; padding: 0 14px; border: 0; background: transparent; color: var(--muted); font-weight: 700; cursor: pointer; }
@@ -329,9 +374,62 @@ html.reduce-motion .select-chevron { animation: none; transition: none; }
 .filters { display: flex; flex-direction: column; gap: var(--space-4); position: sticky; top: 0; }
 .filter-group { display: flex; flex-direction: column; gap: 2px; }
 .filter-group h3 { font-size: 14px; margin-bottom: 6px; }
-.check { display: flex; align-items: center; gap: 10px; min-height: 34px; cursor: pointer; color: var(--muted); font-size: 14px; }
-.check input { width: 18px; height: 18px; accent-color: var(--moss); }
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  user-select: none;
+}
 .check:hover { color: var(--text); }
+.check input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--sunken);
+  color: var(--bg);
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.check input[type="radio"] { border-radius: 50%; }
+.check input:hover { border-color: var(--text); }
+.check input:checked {
+  background: var(--moss);
+  border-color: var(--moss);
+}
+.check input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='%23141312' d='M2 6.5 4.8 9.2 10 3.2 8.8 2 4.8 6.8 3.2 5.2z'/%3E%3C/svg%3E");
+  background-size: 12px 12px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.check input[type="radio"]:checked {
+  background-image: radial-gradient(circle, var(--bg) 0 3.5px, transparent 4px);
+}
+.check input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.check input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+[data-theme="light"] .check input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='%23fbf8f3' d='M2 6.5 4.8 9.2 10 3.2 8.8 2 4.8 6.8 3.2 5.2z'/%3E%3C/svg%3E");
+}
+[data-theme="light"] .check input[type="radio"]:checked {
+  background-image: radial-gradient(circle, var(--surface) 0 3.5px, transparent 4px);
+}
 .results { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .discover-back { margin-bottom: 8px; }
 .result { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: var(--space-4); padding: var(--space-4); align-items: start; cursor: pointer; transition: border-color var(--t-fast), transform var(--t-fast) var(--ease); }
