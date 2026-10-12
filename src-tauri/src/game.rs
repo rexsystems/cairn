@@ -256,6 +256,14 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
     games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None });
     inst.last_played = Some(started);
     instance::save(&paths, &inst)?;
+    crate::telemetry::spawn(
+        paths.settings_file(),
+        "game_launch",
+        serde_json::json!({
+            "loader": inst.loader,
+            "mc_version": inst.mc_version,
+        }),
+    );
     if settings.discord_rpc {
         crate::discord::set_playing(&inst.name, &inst.mc_version, &inst.loader);
     }

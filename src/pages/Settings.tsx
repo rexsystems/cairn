@@ -62,6 +62,7 @@ export function SettingsPage() {
     || formWithEnv.isolateGameEnv !== settings.isolateGameEnv
     || formWithEnv.discordRpc !== settings.discordRpc
     || formWithEnv.gamepadNav !== settings.gamepadNav
+    || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
     || JSON.stringify(formWithEnv.gameEnv) !== JSON.stringify(settings.gameEnv ?? {})
   );
 
@@ -122,6 +123,12 @@ export function SettingsPage() {
           <Switch checked={form.gamepadNav} onChange={(v) => instant("gamepadNav", v)} label="Gamepad navigation in the launcher" />
           <Switch checked={form.discordRpc} onChange={(v) => set("discordRpc", v)} label="Discord Rich Presence while playing" />
           <small className="muted">Presence needs a Discord app id in the CAIRN_DISCORD_APP_ID environment variable.</small>
+          <Switch
+            checked={form.telemetryEnabled !== false}
+            onChange={(v) => set("telemetryEnabled", v)}
+            label="Share anonymous usage (opens, launches, installs)"
+          />
+          <small className="muted">No account names or worlds. Crash reports use GlitchTip separately.</small>
         </section>
 
         <section className="panel settings-section" aria-labelledby="s-game">

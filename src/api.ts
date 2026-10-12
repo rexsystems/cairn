@@ -55,6 +55,7 @@ export interface Settings {
   gameEnv: Record<string, string>;
   discordRpc: boolean;
   gamepadNav: boolean;
+  telemetryEnabled: boolean;
 }
 
 export interface AppInfo { version: string; dataDir: string; clientId: string; clientIdSource: string; authFlow: string; os: string }

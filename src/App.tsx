@@ -11,6 +11,7 @@ import { Accounts } from "./pages/Accounts";
 import { SettingsPage } from "./pages/Settings";
 import { CreateInstance } from "./pages/CreateInstance";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { CairnMark } from "./assets/CairnMark";
 
 const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
@@ -152,6 +153,7 @@ function Pages() {
   const key = JSON.stringify(route);
   return (
     <main className="main">
+      <UpdateBanner />
       <div className="page" key={key}>
         <div className="page-inner page-enter">
           {route.name === "home" && <Home />}

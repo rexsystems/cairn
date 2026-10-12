@@ -41,6 +41,8 @@ pub struct Settings {
     pub discord_rpc: bool,
     /// Move focus with a gamepad in the launcher UI.
     pub gamepad_nav: bool,
+    /// Anonymous usage events (Umami). Errors still go to GlitchTip when enabled separately.
+    pub telemetry_enabled: bool,
 }
 
 impl Default for Settings {
@@ -61,6 +63,7 @@ impl Default for Settings {
             game_env: HashMap::new(),
             discord_rpc: true,
             gamepad_nav: true,
+            telemetry_enabled: true,
         }
     }
 }

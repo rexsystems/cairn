@@ -111,6 +111,14 @@ fn get_instance(state: State<AppState>, id: String) -> R<instance::InstanceView>
 #[tauri::command]
 fn create_instance(state: State<AppState>, inst: Instance) -> R<instance::InstanceView> {
     let created = instance::create(&state.paths, inst).map_err(ea)?;
+    telemetry::spawn(
+        state.paths.settings_file(),
+        "instance_create",
+        serde_json::json!({
+            "loader": created.loader,
+            "mc_version": created.mc_version,
+        }),
+    );
     Ok(instance::view(&state.paths, created))
 }
 
@@ -342,7 +350,32 @@ async fn launch_instance(
     server: Option<String>,
     profile_id: Option<String>,
 ) -> R<()> {
-    game::launch(
+    let breadcrumb_inst = instance::get(&state.paths, &id).ok();
+    if let Some(ref inst) = breadcrumb_inst {
+        sentry::configure_scope(|scope| {
+            scope.set_tag("mc_version", &inst.mc_version);
+            scope.set_tag("loader", &inst.loader);
+            scope.set_tag("instance_id", &inst.id);
+        });
+        sentry::add_breadcrumb(sentry::Breadcrumb {
+            category: Some("launch".into()),
+            message: Some(format!(
+                "launch {} ({} {})",
+                inst.name, inst.loader, inst.mc_version
+            )),
+            level: sentry::Level::Info,
+            data: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("world".into(), json!(world));
+                m.insert("server".into(), json!(server));
+                m.insert("profile_id".into(), json!(profile_id));
+                m
+            },
+            ..Default::default()
+        });
+    }
+
+    match game::launch(
         app,
         state.paths.clone(),
         state.games.clone(),
@@ -350,7 +383,19 @@ async fn launch_instance(
         game::LaunchArgs { world, server, profile_id },
     )
     .await
-    .map_err(ea)
+    {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            sentry::add_breadcrumb(sentry::Breadcrumb {
+                category: Some("launch".into()),
+                message: Some(format!("launch failed: {err:#}")),
+                level: sentry::Level::Error,
+                ..Default::default()
+            });
+            sentry::capture_message(&format!("Launch failed: {err:#}"), sentry::Level::Error);
+            Err(ea(err))
+        }
+    }
 }
 
 #[tauri::command]
@@ -494,16 +539,28 @@ async fn modrinth_install(
     let inst = instance::get(&state.paths, &instance_id).map_err(ea)?;
     let task = Task::new(&app, format!("Installing into {}", inst.name));
     let t2 = task.clone();
-    task.run(modrinth::install_project(
-        &state.paths,
-        &inst,
-        &project_id,
-        version_id.as_deref(),
-        include_optional.unwrap_or(false),
-        &t2,
-    ))
-    .await
-    .map_err(ea)
+    let settings_file = state.paths.settings_file();
+    let installed = task
+        .run(modrinth::install_project(
+            &state.paths,
+            &inst,
+            &project_id,
+            version_id.as_deref(),
+            include_optional.unwrap_or(false),
+            &t2,
+        ))
+        .await
+        .map_err(ea)?;
+    telemetry::spawn(
+        settings_file,
+        "mod_install",
+        json!({
+            "loader": inst.loader,
+            "mc_version": inst.mc_version,
+            "count": installed.len(),
+        }),
+    );
+    Ok(installed)
 }
 
 #[tauri::command]
@@ -511,7 +568,26 @@ async fn modrinth_install_modpack(app: AppHandle, state: State<'_, AppState>, pr
     let s = Settings::load(&state.paths.settings_file());
     let task = Task::new(&app, "Installing modpack");
     let t2 = task.clone();
-    let inst = task.run(modrinth::install_modpack_project(&state.paths, &project_id, version_id.as_deref(), s.concurrent_downloads, &t2)).await.map_err(ea)?;
+    let settings_file = state.paths.settings_file();
+    let inst = task
+        .run(modrinth::install_modpack_project(
+            &state.paths,
+            &project_id,
+            version_id.as_deref(),
+            s.concurrent_downloads,
+            &t2,
+        ))
+        .await
+        .map_err(ea)?;
+    telemetry::spawn(
+        settings_file,
+        "instance_create",
+        json!({
+            "loader": inst.loader,
+            "mc_version": inst.mc_version,
+            "source": "modpack",
+        }),
+    );
     Ok(instance::view(&state.paths, inst))
 }
 
@@ -680,6 +756,7 @@ fn open_data_path(app: AppHandle, state: State<AppState>, path: String) -> R<()>
 pub fn run() {
     let paths = Paths::new();
     let data_root = paths.root.clone();
+    let settings_file = paths.settings_file();
     let state = AppState {
         paths,
         games: Arc::new(game::Games::default()),
@@ -695,8 +772,8 @@ pub fn run() {
         .setup(move |app| {
             // Only Cairn's own data folder (screenshots, icons, world thumbnails) is readable by the webview.
             app.asset_protocol_scope().allow_directory(&data_root, true)?;
-            tauri::async_runtime::spawn(async {
-                telemetry::track_app_open().await;
+            tauri::async_runtime::spawn(async move {
+                telemetry::track_app_open(&settings_file).await;
             });
             Ok(())
         })
