@@ -41,6 +41,7 @@ urlencoding = "2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 fastnbt = "2"
 discord-rich-presence = "0.2"
+sentry = "0.49.3"
 
 [profile.release]
 codegen-units = 4
