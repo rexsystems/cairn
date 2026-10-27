@@ -182,13 +182,14 @@ fn install_rec<'a>(
         } else {
             project_id
         };
-        if !seen.insert(pid.clone()) {
+        if pid.is_empty() {
             return Ok(());
         }
         let proj = project(&pid).await?;
-        // Callers may pass a slug; the index and dependency checks use the canonical id.
+        // Callers may pass a slug; track only the canonical id so deps are not skipped
+        // after the pre-resolve insert already marked the same id as seen.
         let pid = proj["id"].as_str().map(String::from).unwrap_or(pid);
-        if !seen.insert(pid.clone()) && !top {
+        if !seen.insert(pid.clone()) {
             return Ok(());
         }
         let title = proj["title"].as_str().unwrap_or(&pid).to_string();
