@@ -24,6 +24,7 @@ export function SkinPreview({
   name,
   bump = 0,
   reducedMotion = false,
+  size = "md",
 }: {
   skinUrl?: string | null;
   capeUrl?: string | null;
@@ -31,8 +32,10 @@ export function SkinPreview({
   name?: string;
   bump?: number;
   reducedMotion?: boolean;
+  /** md = modal / compact; lg = account hero */
+  size?: "md" | "lg";
 }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pausedRef = useRef(false);
   const [ready, setReady] = useState(false);
@@ -53,9 +56,9 @@ export function SkinPreview({
   } | null>(null);
 
   useEffect(() => {
-    const wrap = wrapRef.current;
+    const view = viewRef.current;
     const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+    if (!view || !canvas) return;
 
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -63,8 +66,11 @@ export function SkinPreview({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-    camera.position.set(0, 1.5, -3.25);
+    const large = size === "lg";
+    // Keep camera at chest height relative to the model so lowering doesn't tilt into a top-down shot.
+    const modelY = large ? -0.55 : -0.42;
+    const camera = new THREE.PerspectiveCamera(large ? 34 : 38, 1, 0.1, 100);
+    camera.position.set(0, modelY + 1.32, large ? -2.75 : -3.05);
 
     scene.add(new THREE.AmbientLight(0xffffff, 2));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -72,8 +78,8 @@ export function SkinPreview({
     scene.add(dir);
 
     const root = new THREE.Group();
-    root.position.set(0, -0.05, 1.95);
-    root.scale.setScalar(0.9);
+    root.position.set(0, modelY, large ? 1.7 : 1.9);
+    root.scale.setScalar(large ? 1.16 : 1.06);
     root.rotation.y = Math.PI / 8 + Math.PI;
     scene.add(root);
 
@@ -146,15 +152,15 @@ export function SkinPreview({
     api.current = state;
 
     const resize = () => {
-      const w = wrap.clientWidth || 280;
-      const h = wrap.clientHeight || 360;
+      const w = view.clientWidth || (large ? 360 : 280);
+      const h = view.clientHeight || (large ? 480 : 360);
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
     resize();
     const ro = new ResizeObserver(resize);
-    ro.observe(wrap);
+    ro.observe(view);
 
     let dragging = false;
     let prevX = 0;
@@ -195,10 +201,12 @@ export function SkinPreview({
       if (disposed) return;
       const dt = clock.getDelta();
       if (state.mixer && !pausedRef.current) state.mixer.update(dt);
-      const target = new THREE.Vector3(0, 1, 0);
+      const target = new THREE.Vector3(0, large ? 0.85 : 0.9, 0);
       if (state.scene) {
-        const box = new THREE.Box3().setFromObject(state.scene);
-        box.getCenter(target);
+        const box = new THREE.Box3().setFromObject(state.root!);
+        const c = new THREE.Vector3();
+        box.getCenter(c);
+        target.set(c.x, c.y - box.getSize(new THREE.Vector3()).y * 0.06, c.z);
       }
       camera.lookAt(target);
       renderer.render(scene, camera);
@@ -221,7 +229,7 @@ export function SkinPreview({
       transparent.dispose();
       api.current = null;
     };
-  }, [reducedMotion]);
+  }, [reducedMotion, size]);
 
   useEffect(() => {
     const state = api.current;
@@ -324,22 +332,28 @@ export function SkinPreview({
   }, [bump, reducedMotion]);
 
   return (
-    <div className={`skin-stage${ready ? " is-ready" : ""}`} ref={wrapRef}>
-      <canvas ref={canvasRef} className="skin-canvas" aria-label={name ? `${name} skin preview` : "Skin preview"} />
-      {name && <div className="skin-nametag">{name}</div>}
-      <div className="skin-hint">Drag to rotate</div>
-      {!reducedMotion && (
-        <button
-          type="button"
-          className="skin-pause"
-          aria-pressed={paused}
-          aria-label={paused ? "Resume animation" : "Pause animation"}
-          title={paused ? "Resume" : "Pause"}
-          onClick={() => setPaused((p) => !p)}
-        >
-          <Icon name={paused ? "play" : "pause"} size={16} />
-        </button>
-      )}
+    <div className={`skin-shell skin-shell-${size}${ready ? " is-ready" : ""}`}>
+      {/* 3D view only — dock stays outside this box */}
+      <div className="skin-stage" ref={viewRef}>
+        <canvas ref={canvasRef} className="skin-canvas" aria-label={name ? `${name} skin preview` : "Skin preview"} />
+      </div>
+      <div className="skin-dock">
+        <p className="skin-hint">Drag to rotate</p>
+        {!reducedMotion ? (
+          <button
+            type="button"
+            className="skin-pause"
+            aria-pressed={paused}
+            aria-label={paused ? "Resume animation" : "Pause animation"}
+            title={paused ? "Resume" : "Pause"}
+            onClick={() => setPaused((p) => !p)}
+          >
+            <Icon name={paused ? "play" : "pause"} size={16} />
+          </button>
+        ) : (
+          <span aria-hidden="true" />
+        )}
+      </div>
     </div>
   );
 }

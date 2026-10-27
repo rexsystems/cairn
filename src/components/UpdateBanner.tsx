@@ -25,9 +25,10 @@ export function UpdateBanner() {
         if (sessionStorage.getItem(DISMISS_KEY) === u.version) return;
       } catch { /* ignore */ }
       setPending({ version: u.version, update: u });
+      toast(`Cairn ${u.version} is ready to install.`);
     })();
     return () => { alive = false; };
-  }, []);
+  }, [toast]);
 
   if (!pending) return null;
 

@@ -57,6 +57,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [showCreate, setShowCreate] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const toastId = useRef(0);
+  const instancesRef = useRef<InstanceView[] | null>(null);
+  const gamesRef = useRef<Record<string, GameState>>({});
 
   const toast = useCallback((text: string, error?: boolean) => {
     const id = ++toastId.current;
@@ -66,7 +68,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const refreshInstances = useCallback(async () => {
     try {
-      setInstances(await api.listInstances());
+      const list = await api.listInstances();
+      instancesRef.current = list;
+      setInstances(list);
       setInstancesError(null);
     } catch (e) {
       setInstancesError(String(e));
@@ -79,11 +83,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshAccounts();
     api.getSettings().then(setSettings);
     api.appInfo().then(setInfo);
-    api.gameStates().then((s) => setGames(Object.fromEntries(s.map((g) => [g.instanceId, g]))));
+    api.gameStates().then((s) => {
+      const map = Object.fromEntries(s.map((g) => [g.instanceId, g]));
+      gamesRef.current = map;
+      setGames(map);
+    });
     const subs = [
       on<GameState>("game-state", (g) => {
-        setGames((m) => ({ ...m, [g.instanceId]: g }));
-        if (g.state === "exited") refreshInstances();
+        const prev = gamesRef.current[g.instanceId];
+        const next = { ...gamesRef.current, [g.instanceId]: g };
+        gamesRef.current = next;
+        setGames(next);
+        if (g.state === "exited") {
+          refreshInstances();
+          const wasLive = prev && prev.state !== "exited";
+          const crashed = wasLive && g.exitCode != null && g.exitCode !== 0;
+          if (crashed) {
+            const name = instancesRef.current?.find((i) => i.id === g.instanceId)?.name ?? "Instance";
+            toast(`${name} crashed (exit ${g.exitCode}). Open Logs on that instance for the report.`, true);
+          }
+        }
       }),
       on<TaskEvent>("task", (t) => {
         setTasks((list) => {
@@ -94,7 +113,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     ];
     return () => { subs.forEach((p) => p.then((u) => u())); };
-  }, [refreshInstances, refreshAccounts]);
+  }, [refreshInstances, refreshAccounts, toast]);
 
   // Pick up changes made outside the app (copied folders, renamed instances) when the user moves around.
   useEffect(() => {

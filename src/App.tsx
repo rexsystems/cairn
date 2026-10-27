@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StoreProvider, useStore, type Route } from "./store";
 import { Icon, type IconName } from "./components/Icon";
 import { Avatar, InstanceIcon, Progress } from "./components/ui";
+import { TitleBar } from "./components/TitleBar";
 import { api } from "./api";
 import { Home } from "./pages/Home";
 import { Library } from "./pages/Library";
@@ -170,15 +172,32 @@ function Pages() {
   );
 }
 
-export function App() {
+function Shell() {
+  const { settings } = useStore();
+  const custom = !!settings?.customTitlebar;
+
+  useEffect(() => {
+    if (settings == null) return;
+    void getCurrentWindow().setDecorations(!custom).catch(() => { /* web / denied */ });
+  }, [custom, settings]);
+
   return (
-    <StoreProvider>
+    <div className={`shell${custom ? " shell-custom" : ""}`}>
+      {custom && <TitleBar />}
       <div className="app">
         <Rail />
         <Pages />
       </div>
       <TaskTray />
       <Toasts />
+    </div>
+  );
+}
+
+export function App() {
+  return (
+    <StoreProvider>
+      <Shell />
     </StoreProvider>
   );
 }

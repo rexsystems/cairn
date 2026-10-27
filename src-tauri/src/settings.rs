@@ -43,6 +43,8 @@ pub struct Settings {
     pub gamepad_nav: bool,
     /// Anonymous usage events (Umami). Errors still go to GlitchTip when enabled separately.
     pub telemetry_enabled: bool,
+    /// Frameless window with Cairn's own min / max / close strip.
+    pub custom_titlebar: bool,
 }
 
 impl Default for Settings {
@@ -64,6 +66,7 @@ impl Default for Settings {
             discord_rpc: true,
             gamepad_nav: true,
             telemetry_enabled: true,
+            custom_titlebar: false,
         }
     }
 }

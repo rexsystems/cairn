@@ -9,12 +9,12 @@ import { EmptyState, ErrorState, Loading, Modal, Select } from "../components/ui
 import { buildFacets, compactNumber, loaderLabel, relativeTime } from "../format";
 
 const TYPES = [
-  { id: "mod", label: "Mods" },
-  { id: "resourcepack", label: "Resource packs" },
-  { id: "datapack", label: "Datapacks" },
-  { id: "shader", label: "Shaders" },
-  { id: "modpack", label: "Modpacks" },
-];
+  { id: "mod", label: "Mods", blurb: "Change how the game plays" },
+  { id: "resourcepack", label: "Resource packs", blurb: "Textures, sounds and UI" },
+  { id: "datapack", label: "Datapacks", blurb: "Recipes, loot and world rules" },
+  { id: "shader", label: "Shaders", blurb: "Lighting and atmosphere" },
+  { id: "modpack", label: "Modpacks", blurb: "Full setups as new instances" },
+] as const;
 const SORTS = [
   { id: "relevance", label: "Relevance" },
   { id: "downloads", label: "Downloads" },
@@ -47,9 +47,36 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(openProject ?? null);
+  const [typeCovers, setTypeCovers] = useState<Partial<Record<string, string>>>({});
   const top = useRef<HTMLDivElement>(null);
 
   useEffect(() => { api.tags().then((t) => setTags(t as never)).catch(() => setTags({ categories: [], gameVersions: [] })); }, []);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const entries = await Promise.all(TYPES.map(async (t) => {
+        try {
+          const r = await api.search({
+            query: "",
+            facets: [[`project_type:${t.id}`]],
+            index: "downloads",
+            offset: 0,
+            limit: 8,
+          });
+          const hit = r.hits.find((h) => h.featured_gallery || h.gallery?.[0]) ?? r.hits[0];
+          const src = hit?.featured_gallery || hit?.gallery?.[0] || hit?.icon_url || null;
+          return src ? ([t.id, src] as const) : null;
+        } catch {
+          return null;
+        }
+      }));
+      if (!alive) return;
+      const next: Partial<Record<string, string>> = {};
+      for (const e of entries) if (e) next[e[0]] = e[1];
+      setTypeCovers(next);
+    })();
+    return () => { alive = false; };
+  }, []);
   useEffect(() => { const t = setTimeout(() => setDebounced(query), 280); return () => clearTimeout(t); }, [query]);
   useEffect(() => { setPage(0); }, [debounced, sort, cats, loader, gameVersion, type, targetId]);
   useEffect(() => { setCats([]); }, [type]);
@@ -151,8 +178,29 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
         )}
       </div>
 
-      <div className="tabs" role="tablist" aria-label="Project type">
-        {TYPES.map((t) => <button key={t.id} role="tab" aria-selected={type === t.id} className="tab" onClick={() => setType(t.id)}>{t.label}</button>)}
+      <div className="type-cards" role="tablist" aria-label="Project type">
+        {TYPES.map((t) => {
+          const cover = typeCovers[t.id];
+          const selected = type === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              className={`type-card type-card-${t.id}${selected ? " is-active" : ""}`}
+              onClick={() => setType(t.id)}
+            >
+              <span className="type-card-media" aria-hidden="true">
+                {cover ? <img src={cover} alt="" loading="lazy" /> : <span className="type-card-fallback" />}
+              </span>
+              <span className="type-card-body">
+                <span className="type-card-label">{t.label}</span>
+                <span className="type-card-blurb">{t.blurb}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="discover">
