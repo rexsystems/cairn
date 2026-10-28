@@ -106,15 +106,42 @@ fn collect_args(list: Option<&Value>, features: &Features, vars: &HashMap<&str, 
     out
 }
 
+/// Forge/NeoForge put the vanilla client jar on `-cp` and list `${version_name}.jar` in
+/// `-DignoreList` so bootstraplauncher skips it. That placeholder must be the Minecraft
+/// version id (the jar on the classpath), not the loader profile id — same as Prism.
+fn ensure_classpath_jar_ignored(args: &mut [String], jar_id: &str) {
+    if jar_id.is_empty() {
+        return;
+    }
+    let jar_file = format!("{jar_id}.jar");
+    for a in args.iter_mut() {
+        let Some(list) = a.strip_prefix("-DignoreList=") else { continue };
+        let already = list.split(',').any(|p| {
+            let p = p.trim();
+            p == jar_file || p.ends_with(&format!("/{jar_file}")) || p.ends_with(&format!("\\{jar_file}"))
+        });
+        if !already {
+            a.push(',');
+            a.push_str(&jar_file);
+        }
+    }
+}
+
 /// Builds the JVM + game argument list (everything after the java executable).
 pub fn build_args(paths: &Paths, v: &Value, auth: &LaunchAuth, opts: &LaunchOptions) -> Vec<String> {
     let sep = if cfg!(windows) { ";" } else { ":" };
     let cp = classpath(paths, v, &opts.jar_id).join(sep);
     let asset_index = v.pointer("/assetIndex/id").and_then(|x| x.as_str()).unwrap_or("legacy").to_string();
-    let version_id = v.get("id").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    // Profile id (e.g. neoforge-21.1.250) vs the vanilla jar id on the classpath (e.g. 1.21.1).
+    let profile_id = v.get("id").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let version_name = if opts.jar_id.is_empty() {
+        profile_id.clone()
+    } else {
+        opts.jar_id.clone()
+    };
     let mut vars: HashMap<&str, String> = HashMap::new();
     vars.insert("auth_player_name", auth.name.clone());
-    vars.insert("version_name", version_id.clone());
+    vars.insert("version_name", version_name);
     vars.insert("game_directory", opts.game_dir.to_string_lossy().to_string());
     vars.insert("assets_root", paths.assets().to_string_lossy().to_string());
     vars.insert("game_assets", paths.assets().join("virtual").join(&asset_index).to_string_lossy().to_string());
@@ -165,6 +192,7 @@ pub fn build_args(paths: &Paths, v: &Value, auth: &LaunchAuth, opts: &LaunchOpti
         args.push(cp);
     }
     args.extend(opts.extra_jvm_args.iter().cloned());
+    ensure_classpath_jar_ignored(&mut args, &opts.jar_id);
     args.push(v.get("mainClass").and_then(|x| x.as_str()).unwrap_or("net.minecraft.client.main.Main").to_string());
 
     if let Some(game) = v.pointer("/arguments/game") {
@@ -175,6 +203,11 @@ pub fn build_args(paths: &Paths, v: &Value, auth: &LaunchAuth, opts: &LaunchOpti
             args.extend(["--width".into(), w.to_string(), "--height".into(), h.to_string()]);
         }
     }
+    debug_assert!(
+        !args.iter().any(|a| a.contains("${")),
+        "unresolved launch placeholder in args: {:?}",
+        args.iter().filter(|a| a.contains("${")).collect::<Vec<_>>()
+    );
     args
 }
 
@@ -251,5 +284,46 @@ mod tests {
         assert!(!cp.contains("x.jar"));
         assert!(cp.ends_with("1.21.1.jar"));
         assert!(a.contains(&"Steve".to_string()));
+        assert!(a.iter().all(|x| !x.contains("${")), "unresolved placeholder: {a:?}");
+    }
+
+    #[test]
+    fn neoforge_ignore_list_uses_vanilla_jar_id() {
+        let dir = std::env::temp_dir().join("cairn-test-neoforge-ignore");
+        let paths = Paths::at(&dir);
+        // Profile id is the loader; jar_id / inheritsFrom is the Minecraft jar on -cp.
+        let v = json!({
+            "id":"neoforge-21.1.250","type":"release",
+            "mainClass":"cpw.mods.bootstraplauncher.BootstrapLauncher",
+            "assetIndex":{"id":"17"},
+            "libraries":[],
+            "arguments":{
+                "jvm":[
+                    "-DignoreList=client-extra,${version_name}.jar",
+                    "-DlibraryDirectory=${library_directory}",
+                    "-cp","${classpath}"
+                ],
+                "game":["--version","${version_name}"]
+            }
+        });
+        let auth = LaunchAuth { name: "Steve".into(), uuid: "u".into(), access_token: "t".into(), user_type: "msa".into(), xuid: "0".into() };
+        let opts = LaunchOptions {
+            memory_mb: 4096, extra_jvm_args: vec![], width: None, height: None,
+            game_dir: dir.join("g"), natives_dir: dir.join("n"), jar_id: "1.21.1".into(),
+            quick_play_world: None, quick_play_server: None,
+        };
+        let a = build_args(&paths, &v, &auth, &opts);
+        let ignore = a.iter().find(|x| x.starts_with("-DignoreList=")).expect("ignoreList");
+        assert!(
+            ignore.contains("1.21.1.jar"),
+            "vanilla jar must be ignored, got {ignore}"
+        );
+        assert!(
+            !ignore.contains("neoforge-21.1.250.jar") || ignore.contains("1.21.1.jar"),
+            "{ignore}"
+        );
+        // ${version_name} is the Minecraft version (classpath jar), not the NeoForge profile id.
+        assert!(a.windows(2).any(|w| w[0] == "--version" && w[1] == "1.21.1"));
+        assert!(a.iter().all(|x| !x.contains("${")));
     }
 }

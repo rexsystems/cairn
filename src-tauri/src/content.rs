@@ -3,7 +3,6 @@ use crate::util;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const KINDS: [&str; 4] = ["mods", "resourcepacks", "shaderpacks", "datapacks"];
@@ -62,104 +61,6 @@ pub struct ContentItem {
     pub size: u64,
 }
 
-#[derive(Default)]
-struct JarMeta {
-    name: Option<String>,
-    version: Option<String>,
-    description: Option<String>,
-    authors: Option<String>,
-    icon: Option<String>,
-}
-
-fn read_entry(z: &mut zip::ZipArchive<std::fs::File>, name: &str) -> Option<Vec<u8>> {
-    let mut e = z.by_name(name).ok()?;
-    let mut buf = vec![];
-    e.read_to_end(&mut buf).ok()?;
-    Some(buf)
-}
-
-fn people(v: &serde_json::Value) -> Option<String> {
-    let names: Vec<String> = match v {
-        serde_json::Value::Array(a) => a.iter().filter_map(|p| p.as_str().map(String::from).or_else(|| p.get("name").and_then(|n| n.as_str()).map(String::from))).collect(),
-        serde_json::Value::Object(o) => o.keys().cloned().collect(),
-        _ => vec![],
-    };
-    if names.is_empty() { None } else { Some(names.join(", ")) }
-}
-
-/// Reads name/version/icon from fabric.mod.json, quilt.mod.json, (neo)forge mods.toml or mcmod.info.
-fn jar_meta(path: &Path, cache: &Path) -> JarMeta {
-    let mut m = JarMeta::default();
-    let Ok(f) = std::fs::File::open(path) else { return m };
-    let Ok(mut z) = zip::ZipArchive::new(f) else { return m };
-    let mut icon_entry: Option<String> = None;
-    if let Some(b) = read_entry(&mut z, "fabric.mod.json") {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&b) {
-            m.name = v["name"].as_str().or(v["id"].as_str()).map(String::from);
-            m.version = v["version"].as_str().map(String::from);
-            m.description = v["description"].as_str().map(String::from);
-            m.authors = people(&v["authors"]);
-            icon_entry = match &v["icon"] {
-                serde_json::Value::String(s) => Some(s.clone()),
-                serde_json::Value::Object(o) => o.values().last().and_then(|x| x.as_str()).map(String::from),
-                _ => None,
-            };
-        }
-    } else if let Some(b) = read_entry(&mut z, "quilt.mod.json") {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&b) {
-            let ql = &v["quilt_loader"];
-            m.name = ql.pointer("/metadata/name").and_then(|x| x.as_str()).or(ql["id"].as_str()).map(String::from);
-            m.version = ql["version"].as_str().map(String::from);
-            m.description = ql.pointer("/metadata/description").and_then(|x| x.as_str()).map(String::from);
-            m.authors = ql.pointer("/metadata/contributors").and_then(people);
-            icon_entry = ql.pointer("/metadata/icon").and_then(|x| x.as_str()).map(String::from);
-        }
-    } else if let Some(b) = read_entry(&mut z, "META-INF/neoforge.mods.toml").or_else(|| read_entry(&mut z, "META-INF/mods.toml")) {
-        if let Ok(v) = toml::from_str::<toml::Value>(&String::from_utf8_lossy(&b)) {
-            if let Some(first) = v.get("mods").and_then(|x| x.as_array()).and_then(|a| a.first()) {
-                m.name = first.get("displayName").and_then(|x| x.as_str()).map(String::from);
-                m.version = first.get("version").and_then(|x| x.as_str()).filter(|s| !s.contains("${")).map(String::from);
-                m.description = first.get("description").and_then(|x| x.as_str()).map(|s| s.trim().to_string());
-                m.authors = first.get("authors").and_then(|x| x.as_str()).map(String::from);
-                icon_entry = first.get("logoFile").or(v.get("logoFile")).and_then(|x| x.as_str()).map(String::from);
-            }
-        }
-    } else if let Some(b) = read_entry(&mut z, "mcmod.info") {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&b) {
-            let first = if v.is_array() { v[0].clone() } else { v["modList"][0].clone() };
-            m.name = first["name"].as_str().map(String::from);
-            m.version = first["version"].as_str().map(String::from);
-            m.description = first["description"].as_str().map(String::from);
-        }
-    } else if let Some(b) = read_entry(&mut z, "pack.mcmeta") {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&b) {
-            m.description = v.pointer("/pack/description").and_then(|x| x.as_str()).map(String::from);
-        }
-        icon_entry = Some("pack.png".into());
-    }
-    if let Some(entry) = icon_entry {
-        let key = format!("{:x}", md5_of(path.to_string_lossy().as_bytes(), util::mtime_ms(path)));
-        let out = cache.join("icons").join(format!("{key}.png"));
-        if out.exists() {
-            m.icon = Some(out.to_string_lossy().to_string());
-        } else if let Some(bytes) = read_entry(&mut z, entry.trim_start_matches('/')) {
-            let _ = std::fs::create_dir_all(out.parent().unwrap());
-            if std::fs::write(&out, bytes).is_ok() {
-                m.icon = Some(out.to_string_lossy().to_string());
-            }
-        }
-    }
-    m
-}
-
-fn md5_of(b: &[u8], salt: i64) -> u128 {
-    use md5::{Digest, Md5};
-    let mut h = Md5::new();
-    h.update(b);
-    h.update(salt.to_le_bytes());
-    u128::from_be_bytes(h.finalize().into())
-}
-
 fn accepted(kind: &str, name: &str) -> bool {
     let n = base_name(name).to_lowercase();
     match kind {
@@ -168,7 +69,17 @@ fn accepted(kind: &str, name: &str) -> bool {
     }
 }
 
+fn display_name(file: &str) -> String {
+    base_name(file)
+        .trim_end_matches(".jar")
+        .trim_end_matches(".zip")
+        .to_string()
+}
+
+/// List installed content without opening every jar/zip (that freezes big packs).
+/// Titles/icons come from `.cairn/content.json` when known; otherwise the file name.
 pub fn list(paths: &Paths, dir: &Path, kind: &str) -> Result<Vec<ContentItem>> {
+    let _ = paths;
     if !KINDS.contains(&kind) {
         bail!("unknown content kind");
     }
@@ -185,15 +96,19 @@ pub fn list(paths: &Paths, dir: &Path, kind: &str) -> Result<Vec<ContentItem>> {
         }
         let enabled = !name.ends_with(".disabled");
         let meta = index.files.get(&format!("{kind}/{}", base_name(&name))).cloned().unwrap_or_default();
-        let jm = if is_dir { JarMeta::default() } else { jar_meta(&path, &paths.cache) };
         out.push(ContentItem {
-            title: meta.title.clone().or(jm.name).unwrap_or_else(|| base_name(&name).trim_end_matches(".jar").trim_end_matches(".zip").to_string()),
-            version: meta.version_number.clone().or(jm.version),
-            authors: jm.authors,
-            description: jm.description,
-            icon: meta.icon_url.clone().or(jm.icon),
+            title: meta.title.clone().unwrap_or_else(|| display_name(&name)),
+            version: meta.version_number.clone(),
+            authors: None,
+            description: None,
+            icon: meta.icon_url.clone(),
             project_id: meta.project_id.clone(),
-            size: if is_dir { util::dir_size(&path) } else { e.metadata().map(|m| m.len()).unwrap_or(0) },
+            size: if is_dir {
+                // Folder size walks the tree; skip for list speed (datapack folders).
+                e.metadata().map(|m| m.len()).unwrap_or(0)
+            } else {
+                e.metadata().map(|m| m.len()).unwrap_or(0)
+            },
             file_name: name,
             kind: kind.into(),
             enabled,

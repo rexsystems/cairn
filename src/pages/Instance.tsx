@@ -26,6 +26,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
   const [inst, setInst] = useState<InstanceView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState(initialTab ?? "content");
+  const [tabSeeded, setTabSeeded] = useState(!!initialTab);
   const [menu, setMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -35,6 +36,11 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
     api.getInstance(id).then((i) => { setInst(i); setError(null); }).catch((e) => setError(String(e)));
   }, [id]);
   useEffect(load, [load, games[id]?.state]);
+  useEffect(() => {
+    if (!inst || tabSeeded) return;
+    if (inst.useHorizon) setTab("horizon-mods");
+    setTabSeeded(true);
+  }, [inst, tabSeeded]);
   useEffect(() => {
     if (inst && !inst.useHorizon && tab === "horizon-mods") setTab("content");
   }, [inst, tab]);
@@ -244,12 +250,15 @@ function ExportDialog({ inst, onClose }: { inst: InstanceView; onClose: () => vo
   );
 }
 
+const CONTENT_PAGE = 60;
+
 function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: () => void }) {
   const { go, toast } = useStore();
-  const [kind, setKind] = useState<ContentKind>(inst.loader === "vanilla" ? "resourcepacks" : "mods");
+  const [kind, setKind] = useState<ContentKind>(inst.loader === "vanilla" || inst.useHorizon ? "resourcepacks" : "mods");
   const [items, setItems] = useState<ContentItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [visible, setVisible] = useState(CONTENT_PAGE);
   const [updates, setUpdates] = useState<UpdateInfo[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -259,12 +268,16 @@ function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: () => vo
     setError(null);
     api.listContent(inst.id, kind).then(setItems).catch((e) => setError(String(e)));
   }, [inst.id, kind]);
-  useEffect(() => { setItems(null); load(); }, [load]);
+  useEffect(() => { setItems(null); setVisible(CONTENT_PAGE); load(); }, [load]);
+  useEffect(() => { setVisible(CONTENT_PAGE); }, [q]);
 
-  const kinds: ContentKind[] = inst.loader === "vanilla"
+  const kinds: ContentKind[] = inst.useHorizon
     ? ["resourcepacks", "shaderpacks", "datapacks"]
-    : ["mods", "resourcepacks", "shaderpacks", "datapacks"];
+    : inst.loader === "vanilla"
+      ? ["resourcepacks", "shaderpacks", "datapacks"]
+      : ["mods", "resourcepacks", "shaderpacks", "datapacks"];
   const filtered = (items ?? []).filter((i) => !q.trim() || i.title.toLowerCase().includes(q.toLowerCase()) || i.fileName.toLowerCase().includes(q.toLowerCase()));
+  const shown = filtered.slice(0, visible);
   const updatesFor = new Map((updates ?? []).map((u) => [u.fileName, u]));
 
   const toggle = async (it: ContentItem) => {
@@ -352,9 +365,9 @@ function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: () => vo
         </EmptyState>
       )}
       {items && items.length > 0 && filtered.length === 0 && <EmptyState icon="search" title="Nothing matches that filter" />}
-      {filtered.length > 0 && (
+      {shown.length > 0 && (
         <div className="card content-list">
-          {filtered.map((it) => {
+          {shown.map((it) => {
             const up = updatesFor.get(it.fileName);
             return (
               <div key={it.fileName} className={`content-row ${it.enabled ? "" : "disabled"}`}>
@@ -380,6 +393,11 @@ function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: () => vo
             );
           })}
         </div>
+      )}
+      {filtered.length > shown.length && (
+        <button className="btn" onClick={() => setVisible((n) => n + CONTENT_PAGE)}>
+          Show more ({shown.length} of {filtered.length})
+        </button>
       )}
       <p className="small muted">Drag and drop {kind === "mods" ? ".jar" : ".zip"} files here, or use Add files.</p>
     </div>
