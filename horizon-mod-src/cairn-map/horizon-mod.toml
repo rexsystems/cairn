@@ -1,9 +1,9 @@
 id = "cairn_map"
 name = "Cairn Map"
-version = "0.1.0"
-description = "Corner minimap plus a larger map view (default M). Rebind and settings in Options → Mods."
+version = "0.3.1"
+description = "Minimap + checkpoints from New screen (type name, color, icon, place). B = new, N = list."
 authors = ["Cairn"]
 api = "0.1"
 side = "client"
-capabilities = ["render", "input", "ui", "storage"]
+capabilities = ["render", "input", "ui", "storage", "game-read", "hud", "chat"]
 experimental = ["render", "input", "ui"]

@@ -299,7 +299,7 @@ pub fn bundled_catalog() -> Vec<BundledHorizonMod> {
         BundledHorizonMod {
             id: "cairn_map".into(),
             name: "Cairn Map".into(),
-            description: "Corner minimap + large map (M). Rebind in Options → Mods.".into(),
+            description: "Minimap + checkpoints: B opens New (type name, color, icon, place). N = list. Options → Mods.".into(),
             file_name: "cairn_map.hmod".into(),
         },
         BundledHorizonMod {
