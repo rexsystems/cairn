@@ -21,11 +21,12 @@ export function InstanceCard({ inst: i }: { inst: InstanceView }) {
           <InstanceIcon name={i.name} src={i.iconPath} />
           <div style={{ minWidth: 0 }}>
             <div className="inst-card-name">{i.name}</div>
-            <div className="small muted">{loaderLabel[i.loader]} {i.mcVersion}</div>
+            <div className="small muted">{loaderLabel[i.loader]} {i.mcVersion}{i.useHorizon ? " · Horizon" : ""}</div>
           </div>
         </div>
         <div className="row small muted" style={{ gap: 12 }}>
           {g && g.state !== "exited" ? <span className="chip chip-moss">{g.state === "running" ? "Running" : "Starting"}</span> : <span>{i.lastPlayed ? `Played ${relativeTime(i.lastPlayed)}` : "Not played yet"}</span>}
+          {i.useHorizon && <span className="chip">Horizon</span>}
           {i.modCount > 0 && <span>{i.modCount} {i.modCount === 1 ? "mod" : "mods"}</span>}
           {i.playSeconds >= 60 && <span>{playTime(i.playSeconds)}</span>}
         </div>

@@ -163,7 +163,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
           <p className="muted">Mods, packs and shaders from Modrinth{target ? `, filtered for ${target.name}` : ""}.</p>
         </div>
         {type !== "modpack" && (
-          <label className="field" style={{ minWidth: 240 }}>
+          <div className="field" style={{ minWidth: 240 }}>
             <span>Install into</span>
             <Select
               aria-label="Install into"
@@ -174,7 +174,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
                 ...(instances ?? []).map((i) => ({ value: i.id, label: `${i.name} (${loaderLabel[i.loader]} ${i.mcVersion})` })),
               ]}
             />
-          </label>
+          </div>
         )}
       </div>
 
@@ -252,7 +252,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
               <Icon name="search" size={16} />
               <input className="input" type="search" placeholder={`Search ${typeLabel}`} value={query} onChange={(e) => setQuery(e.target.value)} />
             </label>
-            <label className="field" style={{ flex: "0 0 180px" }}>
+            <div className="field" style={{ flex: "0 0 180px" }}>
               <span className="sr-only">Sort by</span>
               <Select
                 aria-label="Sort by"
@@ -260,7 +260,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
                 onChange={setSort}
                 options={SORTS.map((s) => ({ value: s.id, label: `Sort: ${s.label}` }))}
               />
-            </label>
+            </div>
           </div>
           {result && !error && <p className="small muted" aria-live="polite">{compactNumber(result.total_hits)} results</p>}
 
@@ -452,7 +452,7 @@ function ProjectModal({ id, target, eligible, installed, onTarget, onClose, onIn
               </div>
             ) : (
               <div className="row" style={{ alignItems: "flex-end" }}>
-                <label className="field" style={{ flex: "1 1 240px" }}>
+                <div className="field" style={{ flex: "1 1 240px" }}>
                   <span>Install into</span>
                   <Select
                     aria-label="Install into"
@@ -463,7 +463,7 @@ function ProjectModal({ id, target, eligible, installed, onTarget, onClose, onIn
                       ...eligible.map((i) => ({ value: i.id, label: `${i.name} (${loaderLabel[i.loader]} ${i.mcVersion})` })),
                     ]}
                   />
-                </label>
+                </div>
                 {installed && target ? (
                   <span className="chip chip-moss" style={{ minHeight: 40 }}><Icon name="check" size={14} />Installed in {target.name}</span>
                 ) : (

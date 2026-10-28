@@ -4,6 +4,7 @@ pub mod content;
 pub mod curseforge;
 pub mod discord;
 pub mod game;
+pub mod horizon;
 pub mod instance;
 pub mod java;
 pub mod loaders;
@@ -142,6 +143,13 @@ fn update_instance(state: State<AppState>, inst: Instance) -> R<instance::Instan
     cur.width = inst.width;
     cur.height = inst.height;
     cur.group = inst.group.filter(|g| !g.trim().is_empty());
+    if inst.use_horizon && !cur.horizon_allowed() {
+        return Err(format!(
+            "Horizon only works with vanilla Minecraft {}.",
+            instance::HORIZON_MC_VERSION
+        ));
+    }
+    cur.use_horizon = inst.use_horizon && cur.horizon_allowed();
     instance::save(&state.paths, &cur).map_err(ea)?;
     Ok(instance::view(&state.paths, cur))
 }

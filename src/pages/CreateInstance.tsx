@@ -24,8 +24,14 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
   const [loaderVersion, setLoaderVersion] = useState("");
   const [name, setName] = useState("");
   const [memory, setMemory] = useState(settings?.defaultMemoryMb ?? 4096);
+  const [useHorizon, setUseHorizon] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const horizonOk = loader === "vanilla" && mc === "26.3";
+  useEffect(() => {
+    if (!horizonOk) setUseHorizon(false);
+  }, [horizonOk]);
 
   useEffect(() => {
     api.mcVersions().then((v) => {
@@ -65,6 +71,7 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
         loader,
         loaderVersion: loader === "vanilla" ? null : loaderVersion || null,
         memoryMb: memory,
+        useHorizon: horizonOk && useHorizon,
       });
       await refreshInstances();
       onClose();
@@ -103,7 +110,7 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="row" style={{ alignItems: "flex-end", gap: 16 }}>
-        <label className="field" style={{ flex: "1 1 200px" }}>
+        <div className="field" style={{ flex: "1 1 200px" }}>
           <span>Minecraft version</span>
           {versionsError ? <span className="field-error">Could not load versions: {versionsError}</span> : (
             <Select
@@ -115,12 +122,12 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
               options={shown.map((v) => ({ value: v.id, label: `${v.id}${v.type === "snapshot" ? " (snapshot)" : ""}` }))}
             />
           )}
-        </label>
+        </div>
         <Switch checked={snapshots} onChange={setSnapshots} label="Show snapshots" />
       </div>
 
       {loader !== "vanilla" && (
-        <label className="field">
+        <div className="field">
           <span>{loaderLabel[loader]} version</span>
           {loaderError && <span className="field-error">Could not load {loaderLabel[loader]} versions: {loaderError}</span>}
           {!loaderError && (
@@ -134,7 +141,7 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
             />
           )}
           {noLoaderBuild && <small>{loaderLabel[loader]} does not support Minecraft {mc} yet.</small>}
-        </label>
+        </div>
       )}
 
       <label className="field">
@@ -142,6 +149,13 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
         <input type="range" min={1024} max={16384} step={512} value={memory} onChange={(e) => setMemory(Number(e.target.value))} style={{ accentColor: "var(--moss)", minHeight: 32 }} />
         <small>Most modpacks run well with 4 to 6 GB. You can change this later.</small>
       </label>
+
+      {horizonOk && (
+        <div className="field">
+          <Switch checked={useHorizon} onChange={setUseHorizon} label="Play with Horizon" />
+          <small>Uses the Rust client instead of Java. Worlds stay in this instance. Online-mode servers may not work yet.</small>
+        </div>
+      )}
       {error && <p className="field-error" role="alert">{error}</p>}
     </Modal>
   );

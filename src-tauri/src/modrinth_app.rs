@@ -360,6 +360,7 @@ pub fn import_profile(paths: &Paths, key: &str, task: &Task) -> Result<Instance>
         launch_version: None,
         launch_profiles: vec![],
         active_launch_profile: None,
+        use_horizon: false,
     };
     inst = instance::create(paths, inst)?;
 

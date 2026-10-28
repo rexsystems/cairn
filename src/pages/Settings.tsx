@@ -63,6 +63,7 @@ export function SettingsPage() {
     || formWithEnv.discordRpc !== settings.discordRpc
     || formWithEnv.gamepadNav !== settings.gamepadNav
     || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
+    || (formWithEnv.curseforgeApiKey ?? "") !== (settings.curseforgeApiKey ?? "")
     || JSON.stringify(formWithEnv.gameEnv) !== JSON.stringify(settings.gameEnv ?? {})
   );
 
@@ -129,6 +130,25 @@ export function SettingsPage() {
             label="Share anonymous usage (opens, launches, installs)"
           />
           <small className="muted">No account names or worlds. Crash reports use GlitchTip separately.</small>
+          <label className="field">
+            <span>CurseForge API key</span>
+            <input
+              className="input mono"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={form.curseforgeApiKey ?? ""}
+              placeholder="$2a$10$…"
+              onChange={(e) => set("curseforgeApiKey", e.target.value)}
+              onBlur={() => {
+                if (!settings) return;
+                if ((form.curseforgeApiKey ?? "") !== (settings.curseforgeApiKey ?? "")) {
+                  void persist({ ...form, curseforgeApiKey: form.curseforgeApiKey ?? "" }, true);
+                }
+              }}
+            />
+          </label>
+          <small className="muted">Needed to import CurseForge modpack zips. Get a key at console.curseforge.com.</small>
         </section>
 
         <section className="panel settings-section" aria-labelledby="s-game">

@@ -101,7 +101,7 @@ export function Library() {
               ))}
             </div>
           )}
-          <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
+          <div className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
             <span className="small muted" style={{ fontWeight: 700 }}>Sort</span>
             <Select
               style={{ width: 170 }}
@@ -114,7 +114,7 @@ export function Library() {
                 { value: "created", label: "Newest first" },
               ]}
             />
-          </label>
+          </div>
         </div>
       )}
 

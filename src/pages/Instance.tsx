@@ -65,6 +65,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
           <div className="row">
             <span className="chip">Minecraft {inst.mcVersion}</span>
             <span className="chip">{loaderLabel[inst.loader]}{inst.loaderVersion ? ` ${inst.loaderVersion}` : ""}</span>
+            {inst.useHorizon && <span className="chip">Horizon</span>}
             {inst.pack && <span className="chip">From {inst.pack.title} {inst.pack.versionNumber}</span>}
             {running && <span className="chip chip-moss">{games[inst.id].state === "running" ? "Running" : "Starting"}</span>}
           </div>
@@ -460,7 +461,7 @@ function LogsTab({ inst }: { inst: InstanceView }) {
   return (
     <div className="stack">
       <div className="row" style={{ gap: 12 }}>
-        <label className="field" style={{ flex: "0 1 320px" }}>
+        <div className="field" style={{ flex: "0 1 320px" }}>
           <span className="sr-only">Log source</span>
           <Select
             aria-label="Log source"
@@ -471,7 +472,7 @@ function LogsTab({ inst }: { inst: InstanceView }) {
               ...files.map((f) => ({ value: f.path, label: f.name })),
             ]}
           />
-        </label>
+        </div>
         <label className="search" style={{ maxWidth: 320 }}>
           <span className="sr-only">Filter log lines</span>
           <Icon name="search" size={16} />
@@ -533,30 +534,45 @@ function OptionsTab({ inst, onSaved }: { inst: InstanceView; onSaved: (i: Instan
       <section className="panel settings-section">
         <header><h2>General</h2></header>
         <label className="field"><span>Name</span><input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} /></label>
-        <label className="field">
+        <div className="field">
           <span>Minecraft version</span>
           <Select
             aria-label="Minecraft version"
             value={form.mcVersion}
-            onChange={(v) => { set("mcVersion", v); set("loaderVersion", null); }}
+            onChange={(v) => {
+              setForm((f) => ({
+                ...f,
+                mcVersion: v,
+                loaderVersion: null,
+                useHorizon: f.loader === "vanilla" && v === "26.3" ? f.useHorizon : false,
+              }));
+            }}
             options={[
               ...(!versions.some((v) => v.id === form.mcVersion) ? [{ value: form.mcVersion, label: form.mcVersion }] : []),
               ...versions.map((v) => ({ value: v.id, label: v.id })),
             ]}
           />
           <small>Changing versions can break worlds and mods. Back up first.</small>
-        </label>
-        <label className="field">
+        </div>
+        <div className="field">
           <span>Loader</span>
           <Select
             aria-label="Loader"
             value={form.loader}
-            onChange={(v) => { set("loader", v as InstanceView["loader"]); set("loaderVersion", null); }}
+            onChange={(v) => {
+              const loader = v as InstanceView["loader"];
+              setForm((f) => ({
+                ...f,
+                loader,
+                loaderVersion: null,
+                useHorizon: loader === "vanilla" && f.mcVersion === "26.3" ? f.useHorizon : false,
+              }));
+            }}
             options={Object.entries(loaderLabel).map(([k, v]) => ({ value: k, label: v }))}
           />
-        </label>
+        </div>
         {form.loader !== "vanilla" && (
-          <label className="field">
+          <div className="field">
             <span>{loaderLabel[form.loader]} version</span>
             <Select
               aria-label={`${loaderLabel[form.loader]} version`}
@@ -568,8 +584,26 @@ function OptionsTab({ inst, onSaved }: { inst: InstanceView; onSaved: (i: Instan
               ]}
             />
             {lvs && lvs.length === 0 && <small className="field-error">No {loaderLabel[form.loader]} build for {form.mcVersion}.</small>}
-          </label>
+          </div>
         )}
+        {(() => {
+          const horizonOk = form.loader === "vanilla" && form.mcVersion === "26.3";
+          return (
+            <div className="field">
+              <Switch
+                checked={!!form.useHorizon && horizonOk}
+                onChange={(v) => set("useHorizon", v)}
+                label="Play with Horizon"
+                disabled={!horizonOk}
+              />
+              <small>
+                {horizonOk
+                  ? "Rust client instead of Java. Worlds stay here. Online-mode servers may not work yet."
+                  : "Horizon needs vanilla Minecraft 26.3."}
+              </small>
+            </div>
+          );
+        })()}
       </section>
       <section className="panel settings-section">
         <header><h2>Java and memory</h2><p className="small muted">Leave Java empty and Cairn picks or downloads the right version.</p></header>
@@ -589,7 +623,7 @@ function OptionsTab({ inst, onSaved }: { inst: InstanceView; onSaved: (i: Instan
           <h2>Launch profiles</h2>
           <p className="small muted">Named JVM setups. “Shaders off” hides the shaderpacks folder for that run.</p>
         </header>
-        <label className="field" style={{ maxWidth: 360 }}>
+        <div className="field" style={{ maxWidth: 360 }}>
           <span>Active profile</span>
           <Select
             aria-label="Active launch profile"
@@ -600,7 +634,7 @@ function OptionsTab({ inst, onSaved }: { inst: InstanceView; onSaved: (i: Instan
               ...(form.launchProfiles ?? []).map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
-        </label>
+        </div>
         <div className="stack" style={{ gap: 10 }}>
           {(form.launchProfiles ?? []).map((p, i) => (
             <div key={p.id} className="panel" style={{ padding: 12 }}>

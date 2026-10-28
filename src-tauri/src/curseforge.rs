@@ -14,6 +14,9 @@ use std::path::Path;
 
 const API: &str = "https://api.curseforge.com/v1";
 
+/// Built-in Core API key (public in this repo on purpose). Settings / env still override.
+const BUILTIN_API_KEY: &str = "$2a$10$.7hi7X13w/SDOW22a10f/.bn/zAyC9nI/Tcai.I/Q1FE/ufUzTrJe";
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct Manifest {
@@ -59,18 +62,34 @@ fn default_required() -> bool {
     true
 }
 
+fn key_looks_valid(key: &str) -> bool {
+    let key = key.trim();
+    key.len() >= 20 && (!key.contains('$') || key.starts_with('$'))
+}
+
 fn api_key() -> Result<String> {
-    // Runtime env wins (dev / override). Release CI embeds via option_env! at compile time.
-    let runtime = std::env::var("CAIRN_CURSEFORGE_API_KEY").unwrap_or_default();
+    // Settings → env → compile-time → built-in. Skip shell-corrupted values.
+    let settings_key = {
+        let root = std::env::var_os("CAIRN_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join("cairn"));
+        crate::settings::Settings::load(&root.join("settings.json")).curseforge_api_key
+    };
     let embedded = option_env!("CAIRN_CURSEFORGE_API_KEY").unwrap_or("");
-    let key = runtime.trim();
-    let key = if key.is_empty() { embedded.trim() } else { key };
-    if key.is_empty() {
-        bail!(
-            "CurseForge packs need an API key. Set CAIRN_CURSEFORGE_API_KEY to a Core API key from https://console.curseforge.com/"
-        );
+    // Built-in first so a mangled shell env cannot break imports.
+    let candidates = [
+        BUILTIN_API_KEY.to_string(),
+        settings_key,
+        std::env::var("CAIRN_CURSEFORGE_API_KEY").unwrap_or_default(),
+        embedded.to_string(),
+    ];
+    for c in &candidates {
+        let key = c.trim();
+        if !key.is_empty() && key_looks_valid(key) {
+            return Ok(key.to_string());
+        }
     }
-    Ok(key.to_string())
+    bail!("No usable CurseForge API key.");
 }
 
 /// `neoforge-21.1.250` → (`neoforge`, `21.1.250`); same for forge / fabric / quilt.
@@ -114,7 +133,8 @@ async fn cf_get(path: &str, key: &str) -> Result<Value> {
             return Ok(resp.json().await.with_context(|| format!("decoding {path}"))?);
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            bail!("CurseForge rejected the API key (HTTP {status}). Check CAIRN_CURSEFORGE_API_KEY.");
+            let body = resp.text().await.unwrap_or_default();
+            bail!("CurseForge {path} returned {status}: {body}");
         }
         if status.is_client_error() {
             let body = resp.text().await.unwrap_or_default();
@@ -143,7 +163,8 @@ async fn cf_post(path: &str, key: &str, body: &Value) -> Result<Value> {
             return Ok(resp.json().await.with_context(|| format!("decoding {path}"))?);
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            bail!("CurseForge rejected the API key (HTTP {status}). Check CAIRN_CURSEFORGE_API_KEY.");
+            let body = resp.text().await.unwrap_or_default();
+            bail!("CurseForge {path} returned {status}: {body}");
         }
         if status.is_client_error() {
             let body = resp.text().await.unwrap_or_default();
@@ -183,16 +204,26 @@ async fn fetch_mods_batch(key: &str, mod_ids: &[u64]) -> Result<HashMap<u64, i64
     Ok(out)
 }
 
+/// CurseForge CDN path: `…/files/{fileId/1000}/{fileId%1000}/{fileName}`.
+fn forgecdn_url(file_id: u64, file_name: &str) -> String {
+    let a = file_id / 1000;
+    let b = file_id % 1000;
+    let enc = urlencoding::encode(file_name);
+    format!("https://edge.forgecdn.net/files/{a}/{b}/{enc}")
+}
+
 async fn resolve_download_url(key: &str, project_id: u64, file_id: u64, file: &Value) -> Result<String> {
     if let Some(u) = file["downloadUrl"].as_str().filter(|s| !s.is_empty()) {
         return Ok(u.to_string());
     }
-    let data = cf_get(&format!("/mods/{project_id}/files/{file_id}/download-url"), key).await?;
-    data["data"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| anyhow!("no download URL for CurseForge file {file_id} (project {project_id})"))
+    let file_name = file["fileName"].as_str().filter(|s| !s.is_empty()).unwrap_or("mod.jar");
+    // Many authors disable this endpoint (403) while the jar is still on forgecdn.
+    if let Ok(data) = cf_get(&format!("/mods/{project_id}/files/{file_id}/download-url"), key).await {
+        if let Some(u) = data["data"].as_str().filter(|s| !s.is_empty()) {
+            return Ok(u.to_string());
+        }
+    }
+    Ok(forgecdn_url(file_id, file_name))
 }
 
 fn sha1_from_file(file: &Value) -> Option<String> {

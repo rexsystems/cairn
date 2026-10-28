@@ -36,6 +36,8 @@ export interface Instance {
   launchVersion?: string | null;
   launchProfiles?: LaunchProfile[];
   activeLaunchProfile?: string | null;
+  /** Launch Horizon (Rust client) instead of Java. Vanilla 26.3 only. */
+  useHorizon?: boolean;
 }
 
 export interface InstanceView extends Instance { path: string; iconPath?: string | null; modCount: number; cover?: string | null }
@@ -56,6 +58,7 @@ export interface Settings {
   discordRpc: boolean;
   gamepadNav: boolean;
   telemetryEnabled: boolean;
+  curseforgeApiKey?: string;
 }
 
 export interface AppInfo { version: string; dataDir: string; clientId: string; clientIdSource: string; authFlow: string; os: string }

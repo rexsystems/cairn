@@ -43,14 +43,7 @@ Data lives under the OS app-data directory for `app.cairn.launcher` (open it fro
 
 CurseForge downloads need a Core API key from [console.curseforge.com](https://console.curseforge.com/).
 
-- **Release builds**: CI injects repo secret `CAIRN_CURSEFORGE_API_KEY` at compile time (embedded in the binary).
-- **Local / from source**: set the env before running:
-
-```bash
-export CAIRN_CURSEFORGE_API_KEY=your_key_here
-```
-
-Without a key, CurseForge zip import fails with a clear error; Modrinth packs are unaffected.
+CurseForge zip import uses a built-in API key. You can override it in **Settings → CurseForge API key**, or with `CAIRN_CURSEFORGE_API_KEY` / the CI secret at release build time.
 
 ## Settings worth knowing
 

@@ -43,6 +43,9 @@ pub struct Settings {
     pub gamepad_nav: bool,
     /// Anonymous usage events (Umami). Errors still go to GlitchTip when enabled separately.
     pub telemetry_enabled: bool,
+    /// CurseForge Core API key for importing CF modpack zips (Settings → or CAIRN_CURSEFORGE_API_KEY).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub curseforge_api_key: String,
 }
 
 impl Default for Settings {
@@ -64,6 +67,7 @@ impl Default for Settings {
             discord_rpc: true,
             gamepad_nav: true,
             telemetry_enabled: true,
+            curseforge_api_key: String::new(),
         }
     }
 }

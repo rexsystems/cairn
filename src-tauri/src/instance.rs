@@ -48,9 +48,13 @@ pub struct Instance {
     pub launch_version: Option<String>,
     pub launch_profiles: Vec<LaunchProfile>,
     pub active_launch_profile: Option<String>,
+    /// Launch Horizon (Rust client) instead of the Java game. Vanilla 26.3 only.
+    pub use_horizon: bool,
 }
 
 pub const LOADERS: [&str; 5] = ["vanilla", "fabric", "quilt", "forge", "neoforge"];
+/// Minecraft version Horizon currently targets.
+pub const HORIZON_MC_VERSION: &str = "26.3";
 
 impl Instance {
     pub fn dir(&self, paths: &Paths) -> PathBuf {
@@ -58,6 +62,9 @@ impl Instance {
     }
     pub fn icon_path(&self, paths: &Paths) -> Option<String> {
         self.icon.as_ref().map(|i| self.dir(paths).join(i)).filter(|p| p.exists()).map(|p| p.to_string_lossy().to_string())
+    }
+    pub fn horizon_allowed(&self) -> bool {
+        self.loader == "vanilla" && self.mc_version == HORIZON_MC_VERSION
     }
 }
 
@@ -138,6 +145,12 @@ pub fn create(paths: &Paths, mut inst: Instance) -> Result<Instance> {
     }
     if !LOADERS.contains(&inst.loader.as_str()) {
         bail!("Unknown loader {}", inst.loader);
+    }
+    if inst.use_horizon && !(inst.loader == "vanilla" && inst.mc_version == HORIZON_MC_VERSION) {
+        bail!("Horizon only works with vanilla Minecraft {HORIZON_MC_VERSION}.");
+    }
+    if !inst.horizon_allowed() {
+        inst.use_horizon = false;
     }
     inst.name = inst.name.trim().to_string();
     inst.id = unique_id(paths, &inst.name);

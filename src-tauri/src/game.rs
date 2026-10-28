@@ -35,7 +35,7 @@ pub struct GameState {
 pub struct Games {
     pub states: Mutex<HashMap<String, GameState>>,
     pub logs: Mutex<HashMap<String, VecDeque<String>>>,
-    /// Signals a running Java process to exit.
+    /// Signals a running game process (Java or Horizon) to exit.
     pub killers: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
     /// Set while prepare/launch is in flight so Stop works before the process starts.
     pub cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
@@ -105,6 +105,9 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
     }
     let settings = Settings::load(&paths.settings_file());
     let mut inst = instance::get(&paths, &id)?;
+    if inst.use_horizon {
+        return launch_horizon(app, paths, games, id, args, inst, settings).await;
+    }
     let profile = args
         .profile_id
         .as_deref()
@@ -322,6 +325,227 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         crate::discord::clear();
         games.push_log(&app2, &id, format!("[Cairn] Game exited with code {}", code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())), "launcher");
         games.set(&app2, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started, exit_code: code });
+        if let Some(w) = app2.get_webview_window("main") {
+            let _ = w.show();
+        }
+    });
+    Ok(())
+}
+
+async fn launch_horizon(
+    app: AppHandle,
+    paths: Paths,
+    games: Arc<Games>,
+    id: String,
+    args: LaunchArgs,
+    mut inst: Instance,
+    settings: Settings,
+) -> Result<()> {
+    crate::horizon::validate_instance(&inst)?;
+    games.set(
+        &app,
+        GameState {
+            instance_id: id.clone(),
+            state: "preparing".into(),
+            pid: None,
+            started: crate::util::now_ms(),
+            exit_code: None,
+        },
+    );
+    games.logs.lock().unwrap().insert(id.clone(), VecDeque::new());
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    games.cancels.lock().unwrap().insert(id.clone(), cancel.clone());
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    games.killers.lock().unwrap().insert(id.clone(), cancel_tx);
+
+    let width = inst.width.unwrap_or(settings.default_width);
+    let height = inst.height.unwrap_or(settings.default_height);
+    let task = Task::new(&app, format!("Preparing {}", inst.name));
+    let prep = crate::horizon::prepare_launch(
+        &paths,
+        &inst,
+        &task,
+        args.world.as_deref(),
+        args.server.as_deref(),
+        width,
+        height,
+    );
+    let mark_cancelled = |fail_task: bool| {
+        if fail_task {
+            task.fail(&anyhow!("Launch cancelled"));
+        }
+        games.killers.lock().unwrap().remove(&id);
+        games.cancels.lock().unwrap().remove(&id);
+        games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
+        games.set(
+            &app,
+            GameState {
+                instance_id: id.clone(),
+                state: "exited".into(),
+                pid: None,
+                started: 0,
+                exit_code: None,
+            },
+        );
+    };
+    let (bin, hz_args, game_home) = tokio::select! {
+        r = prep => match r {
+            Ok(v) => {
+                task.finish();
+                v
+            }
+            Err(e) => {
+                task.fail(&e);
+                games.killers.lock().unwrap().remove(&id);
+                games.cancels.lock().unwrap().remove(&id);
+                games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+                return Err(e);
+            }
+        },
+        _ = cancel_rx => {
+            mark_cancelled(true);
+            return Ok(());
+        }
+    };
+    games.killers.lock().unwrap().remove(&id);
+    if cancel.load(Ordering::SeqCst) {
+        mark_cancelled(false);
+        return Ok(());
+    }
+
+    games.push_log(&app, &id, format!("[Cairn] Horizon: {}", bin.display()), "launcher");
+    games.push_log(
+        &app,
+        &id,
+        "[Cairn] Horizon auth is incomplete — singleplayer works; online-mode servers may not.".into(),
+        "launcher",
+    );
+    games.push_log(
+        &app,
+        &id,
+        format!("[Cairn] Command: {} {}", bin.display(), hz_args.join(" ")),
+        "launcher",
+    );
+
+    let mut cmd = tokio::process::Command::new(&bin);
+    cmd.args(&hz_args)
+        .current_dir(&game_home)
+        .env_clear()
+        .envs(settings.game_process_env())
+        .env("HORIZON_HOME", &game_home)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(false);
+    if settings.isolate_game_env {
+        games.push_log(&app, &id, "[Cairn] Game env: launcher GTK/WebKit vars stripped".into(), "launcher");
+    }
+    if cancel.load(Ordering::SeqCst) {
+        mark_cancelled(false);
+        return Ok(());
+    }
+    let mut child = match cmd.spawn().context("starting Horizon") {
+        Ok(c) => c,
+        Err(e) => {
+            crate::discord::clear();
+            games.cancels.lock().unwrap().remove(&id);
+            games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+            return Err(e);
+        }
+    };
+    games.cancels.lock().unwrap().remove(&id);
+    if cancel.load(Ordering::SeqCst) {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
+        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+        return Ok(());
+    }
+
+    let started = crate::util::now_ms();
+    games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None });
+    inst.last_played = Some(started);
+    instance::save(&paths, &inst)?;
+    crate::telemetry::spawn(
+        paths.settings_file(),
+        "game_launch",
+        serde_json::json!({
+            "loader": "horizon",
+            "mc_version": inst.mc_version,
+        }),
+    );
+    if settings.discord_rpc {
+        crate::discord::set_playing(&inst.name, &inst.mc_version, "horizon");
+    }
+    if settings.hide_on_launch {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.hide();
+        }
+    }
+
+    let log_dir = game_home.join(".cairn").join("logs");
+    std::fs::create_dir_all(&log_dir)?;
+    let log_file = Arc::new(Mutex::new(std::fs::File::create(log_dir.join(format!(
+        "launch-{}.log",
+        chrono::Local::now().format("%Y-%m-%d_%H-%M-%S")
+    )))?));
+    for (stream, reader) in [
+        ("stdout", Box::new(child.stdout.take().unwrap()) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+        ("stderr", Box::new(child.stderr.take().unwrap())),
+    ] {
+        let app = app.clone();
+        let games = games.clone();
+        let id = id.clone();
+        let lf = log_file.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(reader).lines();
+            let mut parser = crate::logparse::Log4jParser::default();
+            while let Ok(Some(raw)) = lines.next_line().await {
+                for line in parser.feed(&raw) {
+                    {
+                        use std::io::Write;
+                        let _ = writeln!(lf.lock().unwrap(), "{line}");
+                    }
+                    games.push_log(&app, &id, line, stream);
+                }
+            }
+        });
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    games.killers.lock().unwrap().insert(id.clone(), tx);
+    let app2 = app.clone();
+    tokio::spawn(async move {
+        let code = tokio::select! {
+            r = child.wait() => r.ok().and_then(|s| s.code()),
+            _ = rx => { let _ = child.kill().await; child.wait().await.ok().and_then(|s| s.code()) }
+        };
+        games.killers.lock().unwrap().remove(&id);
+        let secs = ((crate::util::now_ms() - started) / 1000).max(0) as u64;
+        if let Ok(mut i) = instance::get(&paths, &id) {
+            i.play_seconds += secs;
+            let _ = instance::save(&paths, &i);
+        }
+        crate::discord::clear();
+        games.push_log(
+            &app2,
+            &id,
+            format!(
+                "[Cairn] Game exited with code {}",
+                code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())
+            ),
+            "launcher",
+        );
+        games.set(
+            &app2,
+            GameState {
+                instance_id: id.clone(),
+                state: "exited".into(),
+                pid: None,
+                started,
+                exit_code: code,
+            },
+        );
         if let Some(w) = app2.get_webview_window("main") {
             let _ = w.show();
         }
