@@ -63,7 +63,6 @@ export function SettingsPage() {
     || formWithEnv.discordRpc !== settings.discordRpc
     || formWithEnv.gamepadNav !== settings.gamepadNav
     || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
-    || formWithEnv.customTitlebar !== settings.customTitlebar
     || JSON.stringify(formWithEnv.gameEnv) !== JSON.stringify(settings.gameEnv ?? {})
   );
 
@@ -120,12 +119,6 @@ export function SettingsPage() {
             </div>
           </div>
           <Switch checked={form.reduceMotion} onChange={(v) => instant("reduceMotion", v)} label="Reduce motion" />
-          <Switch
-            checked={form.customTitlebar ?? false}
-            onChange={(v) => instant("customTitlebar", v)}
-            label="Custom window controls"
-          />
-          <small className="muted">Replaces the system title bar with Cairn min, max and close buttons.</small>
           <Switch checked={form.hideOnLaunch} onChange={(v) => set("hideOnLaunch", v)} label="Hide Cairn while the game runs" />
           <Switch checked={form.gamepadNav} onChange={(v) => instant("gamepadNav", v)} label="Gamepad navigation in the launcher" />
           <Switch checked={form.discordRpc} onChange={(v) => set("discordRpc", v)} label="Discord Rich Presence while playing" />

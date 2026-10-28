@@ -56,7 +56,6 @@ export interface Settings {
   discordRpc: boolean;
   gamepadNav: boolean;
   telemetryEnabled: boolean;
-  customTitlebar: boolean;
 }
 
 export interface AppInfo { version: string; dataDir: string; clientId: string; clientIdSource: string; authFlow: string; os: string }
