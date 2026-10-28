@@ -634,6 +634,20 @@ async fn set_account_cape(state: State<'_, AppState>, id: String, cape_id: Optio
 }
 
 #[tauri::command]
+async fn set_account_skin(state: State<'_, AppState>, id: String, path: String, model: String) -> R<accounts::AccountCosmetics> {
+    let _lock = state.accounts_lock.lock().await;
+    let mut f = AccountsFile::load(&state.paths);
+    accounts::set_account_skin(&mut f, &state.paths, &id, &path, &model).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn set_account_skin_from_history(state: State<'_, AppState>, id: String, skin_id: String) -> R<accounts::AccountCosmetics> {
+    let _lock = state.accounts_lock.lock().await;
+    let mut f = AccountsFile::load(&state.paths);
+    accounts::set_account_skin_from_history(&mut f, &state.paths, &id, &skin_id).await.map_err(ea)
+}
+
+#[tauri::command]
 async fn add_offline_account(state: State<'_, AppState>, name: String) -> R<Vec<accounts::AccountView>> {
     let _g = state.accounts_lock.lock().await;
     let mut f = AccountsFile::load(&state.paths);
@@ -789,7 +803,7 @@ pub fn run() {
             launch_instance, kill_instance, game_states, game_log, install_instance,
             mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
-            list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, msa_login, msa_cancel,
+            list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
             list_java, install_java, open_data_path
         ])
         .run(tauri::generate_context!())

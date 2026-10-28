@@ -94,7 +94,8 @@ export interface Account {
   needsSignIn: boolean;
 }
 export interface CapeOption { id: string; alias: string; url: string; active: boolean }
-export interface AccountCosmetics { account: Account; capes: CapeOption[] }
+export interface SkinOption { id: string; url: string; model: string; active: boolean }
+export interface AccountCosmetics { account: Account; capes: CapeOption[]; skins: SkinOption[] }
 export interface JavaInstall { path: string; version: string; major: number; managed: boolean }
 
 export interface SearchHit {
@@ -202,6 +203,8 @@ export const api = {
   addOfflineAccount: (name: string) => invoke<Account[]>("add_offline_account", { name }),
   accountCosmetics: (id: string) => invoke<AccountCosmetics>("account_cosmetics", { id }),
   setAccountCape: (id: string, capeId: string | null) => invoke<AccountCosmetics>("set_account_cape", { id, capeId }),
+  setAccountSkin: (id: string, path: string, model: string) => invoke<AccountCosmetics>("set_account_skin", { id, path, model }),
+  setAccountSkinFromHistory: (id: string, skinId: string) => invoke<AccountCosmetics>("set_account_skin_from_history", { id, skinId }),
   msaLogin: () => invoke<Account[] | null>("msa_login"),
   msaCancel: () => invoke<void>("msa_cancel"),
 

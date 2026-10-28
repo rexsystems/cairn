@@ -50,6 +50,7 @@ export function SkinPreview({
     root: THREE.Group | null;
     scene: THREE.Object3D | null;
     transparent: THREE.Texture;
+    frameCamera: () => void;
     play: (name: string) => void;
     scheduleRandom: () => void;
     clearTimer: () => void;
@@ -67,10 +68,8 @@ export function SkinPreview({
 
     const scene = new THREE.Scene();
     const large = size === "lg";
-    // Keep camera at chest height relative to the model so lowering doesn't tilt into a top-down shot.
-    const modelY = large ? -0.55 : -0.42;
-    const camera = new THREE.PerspectiveCamera(large ? 34 : 38, 1, 0.1, 100);
-    camera.position.set(0, modelY + 1.32, large ? -2.75 : -3.05);
+    const camera = new THREE.PerspectiveCamera(large ? 32 : 36, 1, 0.1, 100);
+    camera.position.set(0, 1.1, -3.4);
 
     scene.add(new THREE.AmbientLight(0xffffff, 2));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -78,15 +77,39 @@ export function SkinPreview({
     scene.add(dir);
 
     const root = new THREE.Group();
-    root.position.set(0, modelY, large ? 1.7 : 1.9);
-    root.scale.setScalar(large ? 1.16 : 1.06);
     root.rotation.y = Math.PI / 8 + Math.PI;
     scene.add(root);
+    const lookAt = new THREE.Vector3(0, 1, 0);
 
     const transparent = createTransparentTexture();
     const clock = new THREE.Clock();
     let raf = 0;
     let disposed = false;
+
+    const frameCamera = () => {
+      if (!root.children.length) return;
+      root.position.set(0, 0, 0);
+      root.scale.setScalar(1);
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      const size3 = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size3);
+      box.getCenter(center);
+      root.position.sub(center);
+      root.position.y += size3.y * 0.04;
+      root.updateMatrixWorld(true);
+      box.setFromObject(root);
+      box.getSize(size3);
+      box.getCenter(center);
+      const fov = (camera.fov * Math.PI) / 180;
+      const fitH = size3.y / (2 * Math.tan(fov / 2));
+      const fitW = size3.x / ((2 * Math.tan(fov / 2)) * Math.max(camera.aspect, 0.01));
+      const dist = Math.max(fitH, fitW) * (large ? 1.45 : 1.55);
+      // Keep a level look — slight bias up so feet aren't crushed by perspective.
+      camera.position.set(center.x, center.y + size3.y * 0.02, center.z - dist);
+      lookAt.set(center.x, center.y + size3.y * 0.02, center.z);
+    };
 
     const state = {
       mixer: null as THREE.AnimationMixer | null,
@@ -97,6 +120,7 @@ export function SkinPreview({
       root,
       scene: null as THREE.Object3D | null,
       transparent,
+      frameCamera,
       play(name: string) {
         const action = state.actions[name];
         if (!state.mixer || !action) return;
@@ -152,11 +176,13 @@ export function SkinPreview({
     api.current = state;
 
     const resize = () => {
-      const w = view.clientWidth || (large ? 360 : 280);
-      const h = view.clientHeight || (large ? 480 : 360);
+      const w = Math.max(1, view.clientWidth || (large ? 360 : 280));
+      const h = Math.max(1, view.clientHeight || (large ? 400 : 360));
+      // updateStyle false + CSS 100% — aspect must match the stage or the model looks stretched.
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      frameCamera();
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -201,14 +227,7 @@ export function SkinPreview({
       if (disposed) return;
       const dt = clock.getDelta();
       if (state.mixer && !pausedRef.current) state.mixer.update(dt);
-      const target = new THREE.Vector3(0, large ? 0.85 : 0.9, 0);
-      if (state.scene) {
-        const box = new THREE.Box3().setFromObject(state.root!);
-        const c = new THREE.Vector3();
-        box.getCenter(c);
-        target.set(c.x, c.y - box.getSize(new THREE.Vector3()).y * 0.06, c.z);
-      }
-      camera.lookAt(target);
+      camera.lookAt(lookAt);
       renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
     };
@@ -267,6 +286,7 @@ export function SkinPreview({
           applySkinTexture(player, tex);
         }
         applyCapeTexture(player, null, state.transparent);
+        state.frameCamera();
 
         if (!reducedMotion && state.actions[BASE]) {
           state.play(BASE);
@@ -295,6 +315,7 @@ export function SkinPreview({
         } else {
           applyCapeTexture(state.scene!, null, state.transparent);
         }
+        api.current?.frameCamera();
       } catch { /* */ }
     })();
     return () => { cancelled = true; };

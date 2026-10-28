@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, type Account, type AccountCosmetics, type CapeOption } from "../api";
+import { open } from "@tauri-apps/plugin-dialog";
+import { api, type Account, type AccountCosmetics, type CapeOption, type SkinOption } from "../api";
 import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { CapeThumb } from "../components/CapeThumb";
+import { SkinThumb } from "../components/SkinThumb";
 import { Avatar, Loading, Modal } from "../components/ui";
 import { SkinPreview } from "../components/SkinPreview";
 import { relativeTime } from "../format";
@@ -331,6 +333,9 @@ function AccountHero({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [bump, setBump] = useState(0);
+  const [uploadModel, setUploadModel] = useState<"classic" | "slim">(
+    account.skinModel === "slim" ? "slim" : "classic",
+  );
 
   const load = async () => {
     setError(null);
@@ -345,13 +350,21 @@ function AccountHero({
 
   const acc = data?.account ?? account;
   const capes = data?.capes ?? [];
+  const skins = data?.skins ?? [];
 
   useEffect(() => {
     setData(null);
     setBusy(null);
     setError(null);
+    setUploadModel(account.skinModel === "slim" ? "slim" : "classic");
     void load();
   }, [account.id]);
+
+  useEffect(() => {
+    if (data?.account.skinModel) {
+      setUploadModel(data.account.skinModel === "slim" ? "slim" : "classic");
+    }
+  }, [data?.account.skinModel]);
 
   const equip = async (capeId: string | null) => {
     if (busy) return;
@@ -385,6 +398,48 @@ function AccountHero({
     }
   };
 
+  const changeSkin = async (model: "classic" | "slim") => {
+    if (busy) return;
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Minecraft skin", extensions: ["png"] }],
+    });
+    if (!file) return;
+    const path = Array.isArray(file) ? file[0] : file;
+    if (!path) return;
+    setBusy("skin");
+    try {
+      const c = await api.setAccountSkin(account.id, path, model);
+      setData(c);
+      setBump((n) => n + 1);
+      onAccounts(await api.listAccounts());
+      onToast(`Skin updated (${model})`);
+    } catch (e) {
+      onToast(String(e), true);
+    } finally {
+      setBusy((b) => (b === "skin" ? null : b));
+    }
+  };
+
+  const equipPastSkin = async (skin: SkinOption) => {
+    if (busy || skin.active) return;
+    const token = `skin:${skin.id}`;
+    setBusy(token);
+    try {
+      const c = await api.setAccountSkinFromHistory(account.id, skin.id);
+      setData(c);
+      setBump((n) => n + 1);
+      onAccounts(await api.listAccounts());
+      onToast("Past skin equipped");
+    } catch (e) {
+      onToast(String(e), true);
+    } finally {
+      setBusy((b) => (b === token ? null : b));
+    }
+  };
+
+  const model = (acc.skinModel === "slim" ? "slim" : "classic") as "classic" | "slim";
+
   return (
     <section className="account-hero panel" aria-labelledby="hero-name">
       <div className="account-hero-preview">
@@ -394,7 +449,7 @@ function AccountHero({
           <SkinPreview
             skinUrl={acc.skinUrl}
             capeUrl={acc.capeUrl}
-            model={acc.skinModel ?? "classic"}
+            model={model}
             name={acc.username}
             bump={bump}
             reducedMotion={reducedMotion}
@@ -415,7 +470,57 @@ function AccountHero({
             {acc.needsSignIn && <span className="chip chip-ember">Sign in again</span>}
           </div>
           <p className="small muted mono" style={{ wordBreak: "break-all" }}>{acc.uuid}</p>
-          <p className="small muted">Microsoft · added {relativeTime(acc.added)} · model {acc.skinModel ?? "classic"}</p>
+          <p className="small muted">Microsoft · added {relativeTime(acc.added)}</p>
+        </div>
+
+        <div className="stack" style={{ gap: 12 }}>
+          <div>
+            <h3 style={{ fontSize: 17, marginBottom: 4 }}>Skin</h3>
+            <p className="small muted">Upload a 64×64 PNG. Classic is wide arms; slim is Alex-style.</p>
+          </div>
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <div className="segmented" role="group" aria-label="Arm model for upload">
+              <button type="button" aria-pressed={uploadModel === "classic"} disabled={!!busy} onClick={() => setUploadModel("classic")}>
+                Classic
+              </button>
+              <button type="button" aria-pressed={uploadModel === "slim"} disabled={!!busy} onClick={() => setUploadModel("slim")}>
+                Slim
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={!!busy}
+              onClick={() => void changeSkin(uploadModel)}
+            >
+              <Icon name="image" size={14} />{busy === "skin" ? "Uploading…" : "Change skin"}
+            </button>
+          </div>
+          {data && skins.length > 0 && (
+            <div className="stack" style={{ gap: 8 }}>
+              <p className="small muted">Past skins Cairn has seen on this account. Click one to re-equip.</p>
+              <div className="skin-grid">
+                {skins.map((s) => {
+                  const token = `skin:${s.id}`;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`skin-card${s.active ? " is-active" : ""}${busy === token ? " is-busy" : ""}`}
+                      disabled={busy !== null && busy !== token}
+                      aria-busy={busy === token}
+                      onClick={() => void equipPastSkin(s)}
+                      title={s.active ? "Current skin" : `Equip ${s.model} skin`}
+                    >
+                      <SkinThumb url={s.url} />
+                      <span className="small">{s.active ? "Current" : s.model}</span>
+                      {busy === token && <span className="small muted">Saving…</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="stack" style={{ gap: 12 }}>

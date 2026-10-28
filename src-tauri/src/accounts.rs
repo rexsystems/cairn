@@ -5,6 +5,18 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// Locally remembered skins. Mojang's profile API only returns the active skin,
+/// so Cairn keeps a short history of URLs seen/uploaded for this account.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SkinHistoryEntry {
+    pub id: String,
+    pub url: String,
+    /// classic | slim
+    pub model: String,
+    pub seen: i64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Account {
@@ -16,6 +28,8 @@ pub struct Account {
     pub cape_url: Option<String>,
     /// classic | slim
     pub skin_model: String,
+    #[serde(default)]
+    pub skin_history: Vec<SkinHistoryEntry>,
     pub added: i64,
     pub ms_flow: String, // live | msal
     pub client_id: String,
@@ -58,9 +72,96 @@ pub struct CapeOption {
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct SkinOption {
+    pub id: String,
+    pub url: String,
+    pub model: String,
+    pub active: bool,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct AccountCosmetics {
     pub account: AccountView,
     pub capes: Vec<CapeOption>,
+    pub skins: Vec<SkinOption>,
+}
+
+const SKIN_HISTORY_MAX: usize = 24;
+
+fn skin_id_for_url(url: &str) -> String {
+    url.rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(url)
+        .chars()
+        .take(40)
+        .collect()
+}
+
+fn remember_skin(acc: &mut Account, url: &str, model: &str) {
+    if url.is_empty() {
+        return;
+    }
+    let model = if model.eq_ignore_ascii_case("slim") { "slim" } else { "classic" };
+    let now = util::now_ms();
+    if let Some(pos) = acc.skin_history.iter().position(|h| h.url == url) {
+        let mut entry = acc.skin_history.remove(pos);
+        entry.model = model.into();
+        entry.seen = now;
+        acc.skin_history.insert(0, entry);
+    } else {
+        acc.skin_history.insert(
+            0,
+            SkinHistoryEntry {
+                id: skin_id_for_url(url),
+                url: url.into(),
+                model: model.into(),
+                seen: now,
+            },
+        );
+    }
+    acc.skin_history.truncate(SKIN_HISTORY_MAX);
+}
+
+fn skins_payload(acc: &Account) -> Vec<SkinOption> {
+    let active = acc.skin_url.as_deref();
+    let mut out: Vec<SkinOption> = acc
+        .skin_history
+        .iter()
+        .map(|h| SkinOption {
+            id: h.id.clone(),
+            url: h.url.clone(),
+            model: h.model.clone(),
+            active: active == Some(h.url.as_str()),
+        })
+        .collect();
+    if let Some(url) = &acc.skin_url {
+        if !out.iter().any(|s| &s.url == url) {
+            out.insert(
+                0,
+                SkinOption {
+                    id: skin_id_for_url(url),
+                    url: url.clone(),
+                    model: if acc.skin_model.is_empty() {
+                        "classic".into()
+                    } else {
+                        acc.skin_model.clone()
+                    },
+                    active: true,
+                },
+            );
+        }
+    }
+    out
+}
+
+fn cosmetics_response(file: &AccountsFile, idx: usize, capes: Vec<CapeOption>) -> AccountCosmetics {
+    AccountCosmetics {
+        account: file.view(&file.accounts[idx]),
+        capes,
+        skins: skins_payload(&file.accounts[idx]),
+    }
 }
 
 impl AccountsFile {
@@ -104,7 +205,16 @@ impl AccountsFile {
         let id = acc.id.clone();
         if let Some(existing) = self.accounts.iter_mut().find(|a| a.kind == acc.kind && a.uuid == acc.uuid) {
             let keep_id = existing.id.clone();
-            *existing = Account { id: keep_id.clone(), ..acc };
+            let keep_history = existing.skin_history.clone();
+            *existing = Account {
+                id: keep_id.clone(),
+                skin_history: keep_history,
+                ..acc
+            };
+            if let Some(url) = existing.skin_url.clone() {
+                let model = existing.skin_model.clone();
+                remember_skin(existing, &url, &model);
+            }
             self.active = Some(keep_id);
         } else {
             self.accounts.push(acc);
@@ -394,21 +504,26 @@ fn cosmetics_from_profile(profile: &Value) -> (Option<String>, Option<String>, S
 
 pub fn account_from_login(flow: &str, client_id: &str, refresh: String, token: String, expires: i64, profile: &Value) -> Account {
     let (skin_url, cape_url, skin_model, _) = cosmetics_from_profile(profile);
-    Account {
+    let mut acc = Account {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "microsoft".into(),
         username: profile["name"].as_str().unwrap_or("Player").into(),
         uuid: dashed(profile["id"].as_str().unwrap_or_default()),
-        skin_url,
+        skin_url: skin_url.clone(),
         cape_url,
-        skin_model,
+        skin_model: skin_model.clone(),
+        skin_history: Vec::new(),
         added: util::now_ms(),
         ms_flow: flow.into(),
         client_id: client_id.into(),
         refresh_token: refresh,
         mc_token: token,
         mc_expires: expires,
+    };
+    if let Some(url) = &skin_url {
+        remember_skin(&mut acc, url, &skin_model);
     }
+    acc
 }
 
 fn apply_profile(acc: &mut Account, profile: &Value) {
@@ -419,6 +534,20 @@ fn apply_profile(acc: &mut Account, profile: &Value) {
         acc.uuid = dashed(id);
     }
     let (skin_url, cape_url, skin_model, _) = cosmetics_from_profile(profile);
+    // Remember every skin Mojang still lists (usually just ACTIVE), plus the active one.
+    if let Some(arr) = profile["skins"].as_array() {
+        for s in arr {
+            let Some(url) = s["url"].as_str() else { continue };
+            let model = s["variant"]
+                .as_str()
+                .map(|v| if v.eq_ignore_ascii_case("SLIM") { "slim" } else { "classic" })
+                .unwrap_or("classic");
+            remember_skin(acc, url, model);
+        }
+    }
+    if let Some(url) = &skin_url {
+        remember_skin(acc, url, &skin_model);
+    }
     acc.skin_url = skin_url;
     acc.cape_url = cape_url;
     acc.skin_model = skin_model;
@@ -467,7 +596,7 @@ pub async fn load_cosmetics(file: &mut AccountsFile, paths: &Paths, id: &str) ->
     apply_profile(&mut file.accounts[idx], &profile);
     let (_, _, _, capes) = cosmetics_from_profile(&profile);
     file.save(paths)?;
-    Ok(AccountCosmetics { account: file.view(&file.accounts[idx]), capes })
+    Ok(cosmetics_response(file, idx, capes))
 }
 
 pub async fn set_active_cape(file: &mut AccountsFile, paths: &Paths, id: &str, cape_id: Option<&str>) -> Result<AccountCosmetics> {
@@ -502,7 +631,103 @@ pub async fn set_active_cape(file: &mut AccountsFile, paths: &Paths, id: &str, c
     apply_profile(&mut file.accounts[idx], &profile);
     let (_, _, _, capes) = cosmetics_from_profile(&profile);
     file.save(paths)?;
-    Ok(AccountCosmetics { account: file.view(&file.accounts[idx]), capes })
+    Ok(cosmetics_response(file, idx, capes))
+}
+
+async fn upload_skin_bytes(file: &mut AccountsFile, paths: &Paths, idx: usize, bytes: Vec<u8>, variant: &str, file_name: &str) -> Result<AccountCosmetics> {
+    if bytes.len() < 8 || &bytes[0..8] != b"\x89PNG\r\n\x1a\n" {
+        bail!("Skin must be a PNG file.");
+    }
+    if bytes.len() > 2 * 1024 * 1024 {
+        bail!("Skin file is too large (max 2 MB).");
+    }
+    fresh_token(&mut file.accounts[idx]).await?;
+    let token = file.accounts[idx].mc_token.clone();
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(file_name.to_string())
+        .mime_str("image/png")
+        .context("skin mime")?;
+    let form = reqwest::multipart::Form::new().text("variant", variant.to_string()).part("file", part);
+    let resp = CLIENT
+        .post("https://api.minecraftservices.com/minecraft/profile/skins")
+        .bearer_auth(&token)
+        .multipart(form)
+        .send()
+        .await
+        .context("uploading skin")?;
+    if !resp.status().is_success() {
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        let msg = body["errorMessage"].as_str().or(body["error"].as_str()).unwrap_or("Could not change skin.");
+        bail!("{msg}");
+    }
+    let profile = fetch_profile(&file.accounts[idx]).await?;
+    apply_profile(&mut file.accounts[idx], &profile);
+    let (_, _, _, capes) = cosmetics_from_profile(&profile);
+    file.save(paths)?;
+    Ok(cosmetics_response(file, idx, capes))
+}
+
+/// Upload a local PNG as the account skin (`classic` or `slim` arms).
+pub async fn set_account_skin(file: &mut AccountsFile, paths: &Paths, id: &str, path: &str, model: &str) -> Result<AccountCosmetics> {
+    let idx = file.accounts.iter().position(|a| a.id == id).ok_or_else(|| anyhow!("Account not found"))?;
+    if file.accounts[idx].kind != "microsoft" {
+        bail!("Only Microsoft accounts have skins.");
+    }
+    let variant = match model.trim().to_ascii_lowercase().as_str() {
+        "slim" => "slim",
+        "classic" | "" => "classic",
+        other => bail!("Unknown skin model '{other}'. Use classic or slim."),
+    };
+    let bytes = std::fs::read(path).with_context(|| format!("reading skin {path}"))?;
+    let file_name = std::path::Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("skin.png")
+        .to_string();
+    upload_skin_bytes(file, paths, idx, bytes, variant, &file_name).await
+}
+
+/// Re-equip a previously seen skin from local history (downloads the texture URL and re-uploads).
+pub async fn set_account_skin_from_history(file: &mut AccountsFile, paths: &Paths, id: &str, skin_id: &str) -> Result<AccountCosmetics> {
+    let idx = file.accounts.iter().position(|a| a.id == id).ok_or_else(|| anyhow!("Account not found"))?;
+    if file.accounts[idx].kind != "microsoft" {
+        bail!("Only Microsoft accounts have skins.");
+    }
+    let entry = file.accounts[idx]
+        .skin_history
+        .iter()
+        .find(|h| h.id == skin_id)
+        .cloned()
+        .ok_or_else(|| anyhow!("That past skin is not in history anymore."))?;
+    if file.accounts[idx].skin_url.as_deref() == Some(entry.url.as_str()) {
+        fresh_token(&mut file.accounts[idx]).await?;
+        let profile = fetch_profile(&file.accounts[idx]).await?;
+        apply_profile(&mut file.accounts[idx], &profile);
+        let (_, _, _, capes) = cosmetics_from_profile(&profile);
+        file.save(paths)?;
+        return Ok(cosmetics_response(file, idx, capes));
+    }
+    let cache = paths.cache.join("skins").join(format!("{}.png", entry.id));
+    let bytes = if cache.is_file() {
+        std::fs::read(&cache).with_context(|| format!("reading cached skin {}", cache.display()))?
+    } else {
+        let resp = CLIENT
+            .get(&entry.url)
+            .send()
+            .await
+            .context("downloading past skin")?;
+        if !resp.status().is_success() {
+            bail!("Could not download that past skin. It may no longer be available.");
+        }
+        let bytes = resp.bytes().await.context("reading past skin")?.to_vec();
+        if let Some(parent) = cache.parent() {
+            let _ = std::fs::create_dir_all(parent);
+            let _ = std::fs::write(&cache, &bytes);
+        }
+        bytes
+    };
+    let variant = if entry.model.eq_ignore_ascii_case("slim") { "slim" } else { "classic" };
+    upload_skin_bytes(file, paths, idx, bytes, variant, "skin.png").await
 }
 
 #[cfg(test)]
