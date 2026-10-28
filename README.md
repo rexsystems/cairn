@@ -1,8 +1,8 @@
 # Cairn
 
-Minecraft launcher for Fabric, Quilt, Forge and NeoForge instances, with Modrinth installs built in.
+Minecraft launcher for Fabric, Quilt, Forge and NeoForge instances, with Modrinth installs built in. Library can also import CurseForge modpack zips.
 
-Cairn is not affiliated with Mojang, Microsoft or Modrinth. Minecraft is a trademark of Mojang AB.
+Cairn is not affiliated with Mojang, Microsoft, Modrinth or CurseForge. Minecraft is a trademark of Mojang AB.
 
 ## Install
 
@@ -34,9 +34,26 @@ Useful scripts:
 
 Data lives under the OS app-data directory for `app.cairn.launcher` (open it from **Settings → Open data folder**).
 
+## Importing modpacks
+
+**Library → Import pack** accepts:
+
+- Modrinth `.mrpack`
+- CurseForge modpack `.zip` (`manifest.json` + `overrides/`, e.g. ATM packs)
+
+CurseForge downloads need a Core API key from [console.curseforge.com](https://console.curseforge.com/).
+
+- **Release builds**: CI injects repo secret `CAIRN_CURSEFORGE_API_KEY` at compile time (embedded in the binary).
+- **Local / from source**: set the env before running:
+
+```bash
+export CAIRN_CURSEFORGE_API_KEY=your_key_here
+```
+
+Without a key, CurseForge zip import fails with a clear error; Modrinth packs are unaffected.
+
 ## Settings worth knowing
 
-- **Custom window controls**: optional Cairn title bar (min / restore / close) instead of the system chrome
 - Theme, reduce motion, hide-on-launch, gamepad nav, Discord Rich Presence
 - Default RAM, JVM args, window size, parallel downloads
 - Game environment isolation so launcher GTK/WebKit flags do not leak into Minecraft

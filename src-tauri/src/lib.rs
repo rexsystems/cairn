@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod backup;
 pub mod content;
+pub mod curseforge;
 pub mod discord;
 pub mod game;
 pub mod instance;
@@ -184,6 +185,28 @@ async fn import_mrpack(app: AppHandle, state: State<'_, AppState>, path: String)
     let task = Task::new(&app, "Importing modpack");
     let t2 = task.clone();
     let inst = task.run(modrinth::install_mrpack(&state.paths, &PathBuf::from(path), None, None, s.concurrent_downloads, &t2)).await.map_err(ea)?;
+    Ok(instance::view(&state.paths, inst))
+}
+
+/// Import a Modrinth `.mrpack` or CurseForge modpack `.zip` (sniffs format).
+#[tauri::command]
+async fn import_modpack(app: AppHandle, state: State<'_, AppState>, path: String) -> R<instance::InstanceView> {
+    let s = Settings::load(&state.paths.settings_file());
+    let paths = state.paths.clone();
+    let p = PathBuf::from(&path);
+    let task = Task::new(&app, "Importing modpack");
+    let t2 = task.clone();
+    let conc = s.concurrent_downloads;
+    let inst = task
+        .run(async move {
+            if curseforge::is_curseforge_zip(&p) {
+                curseforge::install_curseforge_zip(&paths, &p, conc, &t2).await
+            } else {
+                modrinth::install_mrpack(&paths, &p, None, None, conc, &t2).await
+            }
+        })
+        .await
+        .map_err(ea)?;
     Ok(instance::view(&state.paths, inst))
 }
 
@@ -794,7 +817,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info, get_settings, save_settings,
             list_instances, get_instance, create_instance, update_instance, delete_instance, duplicate_instance, set_instance_icon,
-            import_mrpack, export_mrpack,
+            import_mrpack, import_modpack, export_mrpack,
             list_modrinth_app_profiles, import_modrinth_app_profile,
             list_content, toggle_content, remove_content, add_content_files, installed_projects, check_updates, apply_updates,
             list_worlds, list_screenshots, list_log_files, read_instance_file,

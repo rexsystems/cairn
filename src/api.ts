@@ -147,6 +147,8 @@ export const api = {
   duplicateInstance: (id: string) => invoke<InstanceView>("duplicate_instance", { id }),
   setInstanceIcon: (id: string, path: string | null) => invoke<InstanceView>("set_instance_icon", { id, path }),
   importMrpack: (path: string) => invoke<InstanceView>("import_mrpack", { path }),
+  /** Modrinth `.mrpack` or CurseForge modpack `.zip` (format sniffed). */
+  importModpack: (path: string) => invoke<InstanceView>("import_modpack", { path }),
   exportMrpack: (id: string, dest: string, extra: string[]) => invoke<string>("export_mrpack", { id, dest, extra }),
   listModrinthAppProfiles: () => invoke<ModrinthAppProfile[]>("list_modrinth_app_profiles"),
   importModrinthAppProfile: (key: string) => invoke<InstanceView>("import_modrinth_app_profile", { key }),

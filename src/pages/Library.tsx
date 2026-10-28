@@ -32,11 +32,18 @@ export function Library() {
   const loadersPresent = Array.from(new Set((instances ?? []).map((i) => i.loader)));
 
   const importPack = async () => {
-    const file = await open({ multiple: false, filters: [{ name: "Modrinth modpack", extensions: ["mrpack"] }] });
+    const file = await open({
+      multiple: false,
+      filters: [
+        { name: "Modpack", extensions: ["mrpack", "zip"] },
+        { name: "Modrinth modpack", extensions: ["mrpack"] },
+        { name: "CurseForge modpack", extensions: ["zip"] },
+      ],
+    });
     if (!file) return;
     setImporting(true);
     try {
-      const inst = await api.importMrpack(file as string);
+      const inst = await api.importModpack(file as string);
       await refreshInstances();
       toast(`Imported ${inst.name}`);
       go({ name: "instance", id: inst.id });
@@ -73,7 +80,7 @@ export function Library() {
         <div className="row">
           <button className="btn" onClick={() => setImportApp(true)}><Icon name="download" />Import from app</button>
           <button className="btn" onClick={restoreBackup} disabled={restoring}><Icon name="upload" />{restoring ? "Restoring..." : "Restore backup"}</button>
-          <button className="btn" onClick={importPack} disabled={importing}><Icon name="upload" />{importing ? "Importing..." : "Import .mrpack"}</button>
+          <button className="btn" onClick={importPack} disabled={importing}><Icon name="upload" />{importing ? "Importing..." : "Import pack"}</button>
           <button className="btn btn-play" style={{ minHeight: 40, fontSize: 15 }} onClick={() => setShowCreate(true)}><Icon name="plus" />New instance</button>
         </div>
       </div>
