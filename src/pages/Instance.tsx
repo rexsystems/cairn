@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, fileSrc, on, type ContentItem, type ContentKind, type FileEntry, type HorizonModItem, type InstanceView, type LaunchProfile, type LoaderVersion, type LogLine, type McVersion, type ServerEntry, type UpdateInfo, type World } from "../api";
+import { api, fileSrc, on, type BundledHorizonMod, type ContentItem, type ContentKind, type FileEntry, type HorizonModItem, type InstanceView, type LaunchProfile, type LoaderVersion, type LogLine, type McVersion, type ServerEntry, type UpdateInfo, type World } from "../api";
 import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { EmptyState, ErrorState, InstanceIcon, Loading, Modal, PopoverMenu, Select, Switch } from "../components/ui";
@@ -143,12 +143,15 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
 function HorizonModsTab({ inst }: { inst: InstanceView }) {
   const { toast } = useStore();
   const [items, setItems] = useState<HorizonModItem[] | null>(null);
+  const [bundled, setBundled] = useState<BundledHorizonMod[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setError(null);
-    api.listHorizonMods(inst.id).then(setItems).catch((e) => setError(String(e)));
+    Promise.all([api.listHorizonMods(inst.id), api.listBundledHorizonMods()])
+      .then(([list, samples]) => { setItems(list); setBundled(samples); })
+      .catch((e) => setError(String(e)));
   }, [inst.id]);
   useEffect(() => { setItems(null); load(); }, [load]);
 
@@ -161,35 +164,53 @@ function HorizonModsTab({ inst }: { inst: InstanceView }) {
       load();
     } catch (e) { toast(String(e), true); }
   };
-  const installZoom = async () => {
-    setBusy(true);
+  const installSample = async (sampleId: string) => {
+    setBusyId(sampleId);
     try {
-      const m = await api.installCairnZoomMod(inst.id);
-      toast(`Installed ${m.name} (hold C in-game)`);
+      const m = await api.installBundledHorizonMod(inst.id, sampleId);
+      toast(`Installed ${m.name}`);
       load();
-    } catch (e) { toast(String(e), true); } finally { setBusy(false); }
+    } catch (e) { toast(String(e), true); } finally { setBusyId(null); }
   };
 
   if (error) return <ErrorState title="Horizon mods could not be listed" error={error} onRetry={load} />;
   if (!items) return <Loading label="Reading Horizon mods" />;
 
-  const hasZoom = items.some((m) => m.id === "cairn_zoom");
+  const installedIds = new Set(items.map((m) => m.id));
+  const available = bundled.filter((b) => !installedIds.has(b.id));
 
   return (
     <div className="stack" style={{ gap: 16 }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         <button className="btn" onClick={addFiles}><Icon name="plus" />Add .hmod</button>
-        {!hasZoom && (
-          <button className="btn btn-quiet" onClick={installZoom} disabled={busy}>
-            <Icon name="download" />{busy ? "Installing…" : "Install Cairn Zoom"}
-          </button>
-        )}
         <button className="btn btn-quiet btn-icon" aria-label="Open horizon-mods folder" title="Open folder" onClick={() => api.openDataPath(`${inst.path}/horizon-mods`).catch((e) => toast(String(e), true))}><Icon name="folder" /></button>
       </div>
-      <p className="small muted">Horizon runs `.hmod` packages (Rust → WASM), not Fabric/Forge jars. Drop files here or use Add. Enable a mod, then Play.</p>
+      <p className="small muted">
+        Horizon runs `.hmod` (Rust → WASM), not Fabric/Forge jars. Rebind mod keys in-game under Options → Mods (not Controls).
+        Voice chat and full world maps need APIs Horizon does not expose yet.
+      </p>
+      {available.length > 0 && (
+        <div className="stack" style={{ gap: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>Cairn samples</h3>
+          <div className="card content-list">
+            {available.map((b) => (
+              <div key={b.id} className="content-row">
+                <div className="content-icon" style={{ display: "grid", placeItems: "center" }} aria-hidden="true"><Icon name="download" /></div>
+                <div className="content-main">
+                  <div className="content-title">{b.name}</div>
+                  <div className="content-sub">{b.description}</div>
+                </div>
+                <button className="btn btn-sm" disabled={!!busyId} onClick={() => installSample(b.id)}>
+                  {busyId === b.id ? "…" : "Install"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {items.length === 0 ? (
         <EmptyState icon="box" title="No Horizon mods yet">
-          Install Cairn Zoom to try hold-to-zoom, or add any `.hmod` from playhorizon.dev.
+          Install a Cairn sample above, or add a `.hmod` from playhorizon.dev.
         </EmptyState>
       ) : (
         <div className="card content-list">

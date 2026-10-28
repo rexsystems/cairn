@@ -1,9 +1,9 @@
 id = "cairn_zoom"
 name = "Cairn Zoom"
-version = "0.1.0"
-description = "Hold C to zoom in. Scroll the wheel while holding to zoom further. A Cairn test mod."
+version = "0.2.0"
+description = "Hold Zoom key to zoom (rebind in Options → Mods). Scroll while holding to change level. Settings on the same page."
 authors = ["Cairn"]
 api = "0.1"
 side = "client"
-capabilities = ["render", "input"]
-experimental = ["render", "input"]
+capabilities = ["render", "input", "ui", "storage"]
+experimental = ["render", "input", "ui"]

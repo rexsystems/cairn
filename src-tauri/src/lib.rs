@@ -316,10 +316,19 @@ fn add_horizon_mod_files(state: State<AppState>, id: String, files: Vec<String>)
 }
 
 #[tauri::command]
-fn install_cairn_zoom_mod(state: State<AppState>, id: String) -> R<horizon_mods::HorizonModItem> {
+fn list_bundled_horizon_mods() -> Vec<horizon_mods::BundledHorizonMod> {
+    horizon_mods::bundled_catalog()
+}
+
+#[tauri::command]
+fn install_bundled_horizon_mod(state: State<AppState>, id: String, sample_id: String) -> R<horizon_mods::HorizonModItem> {
     let dir = horizon_game_dir(&state, &id)?;
-    let bytes = include_bytes!("../resources/horizon-mods/cairn_zoom.hmod");
-    let tmp = state.paths.cache.join("cairn_zoom.hmod");
+    let sample = horizon_mods::bundled_catalog()
+        .into_iter()
+        .find(|s| s.id == sample_id)
+        .ok_or_else(|| format!("Unknown sample mod {sample_id}"))?;
+    let bytes = horizon_mods::bundled_bytes(&sample.file_name).ok_or_else(|| format!("Missing bundled file {}", sample.file_name))?;
+    let tmp = state.paths.cache.join(&sample.file_name);
     std::fs::create_dir_all(tmp.parent().unwrap()).map_err(e)?;
     std::fs::write(&tmp, bytes).map_err(e)?;
     horizon_mods::install_bundled(&dir, &tmp, true).map_err(ea)
@@ -876,7 +885,7 @@ pub fn run() {
             import_mrpack, import_modpack, export_mrpack,
             list_modrinth_app_profiles, import_modrinth_app_profile,
             list_content, toggle_content, remove_content, add_content_files, installed_projects, check_updates, apply_updates,
-            list_horizon_mods, toggle_horizon_mod, remove_horizon_mod, add_horizon_mod_files, install_cairn_zoom_mod,
+            list_horizon_mods, toggle_horizon_mod, remove_horizon_mod, add_horizon_mod_files, list_bundled_horizon_mods, install_bundled_horizon_mod,
             list_worlds, list_screenshots, list_log_files, read_instance_file,
             list_servers, save_servers,
             backup_instance, restore_instance_backup, search_library_content,

@@ -1,0 +1,8 @@
+id = "cairn_vitals"
+name = "Cairn Vitals"
+version = "0.1.0"
+description = "Shows health and hunger on the HUD. AppleSkin-inspired; Horizon has no saturation API yet."
+authors = ["Cairn"]
+api = "0.1"
+side = "client"
+capabilities = ["game-read", "hud"]

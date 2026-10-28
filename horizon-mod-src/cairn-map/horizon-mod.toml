@@ -1,0 +1,9 @@
+id = "cairn_map"
+name = "Cairn Map"
+version = "0.1.0"
+description = "Corner minimap plus a larger map view (default M). Rebind and settings in Options → Mods."
+authors = ["Cairn"]
+api = "0.1"
+side = "client"
+capabilities = ["render", "input", "ui", "storage"]
+experimental = ["render", "input", "ui"]

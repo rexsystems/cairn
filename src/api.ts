@@ -79,6 +79,12 @@ export interface HorizonModItem {
   size: number;
   capabilities: string[];
 }
+export interface BundledHorizonMod {
+  id: string;
+  name: string;
+  description: string;
+  fileName: string;
+}
 export interface ContentHit {
   instanceId: string; instanceName: string; kind: ContentKind; fileName: string; title: string; projectId?: string | null;
 }
@@ -179,7 +185,8 @@ export const api = {
   toggleHorizonMod: (id: string, modId: string) => invoke<boolean>("toggle_horizon_mod", { id, modId }),
   removeHorizonMod: (id: string, file: string) => invoke<void>("remove_horizon_mod", { id, file }),
   addHorizonModFiles: (id: string, files: string[]) => invoke<HorizonModItem[]>("add_horizon_mod_files", { id, files }),
-  installCairnZoomMod: (id: string) => invoke<HorizonModItem>("install_cairn_zoom_mod", { id }),
+  listBundledHorizonMods: () => invoke<BundledHorizonMod[]>("list_bundled_horizon_mods"),
+  installBundledHorizonMod: (id: string, sampleId: string) => invoke<HorizonModItem>("install_bundled_horizon_mod", { id, sampleId }),
   installedProjects: (id: string) => invoke<string[]>("installed_projects", { id }),
   checkUpdates: (id: string) => invoke<UpdateInfo[]>("check_updates", { id }),
   applyUpdates: (id: string, updates: UpdateInfo[]) => invoke<number>("apply_updates", { id, updates }),

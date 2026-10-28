@@ -277,3 +277,45 @@ pub fn install_bundled(game_dir: &Path, bundled: &Path, enable: bool) -> Result<
         .find(|m| m.id == item.id)
         .unwrap_or(item))
 }
+
+/// Cairn-shipped sample mods (embedded under `resources/horizon-mods/`).
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct BundledHorizonMod {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub file_name: String,
+}
+
+pub fn bundled_catalog() -> Vec<BundledHorizonMod> {
+    vec![
+        BundledHorizonMod {
+            id: "cairn_zoom".into(),
+            name: "Cairn Zoom".into(),
+            description: "Hold Zoom key (rebind in Options → Mods). Scroll to change level.".into(),
+            file_name: "cairn_zoom.hmod".into(),
+        },
+        BundledHorizonMod {
+            id: "cairn_map".into(),
+            name: "Cairn Map".into(),
+            description: "Corner minimap + large map (M). Rebind in Options → Mods.".into(),
+            file_name: "cairn_map.hmod".into(),
+        },
+        BundledHorizonMod {
+            id: "cairn_vitals".into(),
+            name: "Cairn Vitals".into(),
+            description: "Health + hunger on the HUD (AppleSkin-lite).".into(),
+            file_name: "cairn_vitals.hmod".into(),
+        },
+    ]
+}
+
+pub fn bundled_bytes(file_name: &str) -> Option<&'static [u8]> {
+    match file_name {
+        "cairn_zoom.hmod" => Some(include_bytes!("../resources/horizon-mods/cairn_zoom.hmod")),
+        "cairn_map.hmod" => Some(include_bytes!("../resources/horizon-mods/cairn_map.hmod")),
+        "cairn_vitals.hmod" => Some(include_bytes!("../resources/horizon-mods/cairn_vitals.hmod")),
+        _ => None,
+    }
+}
