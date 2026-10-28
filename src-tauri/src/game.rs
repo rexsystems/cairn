@@ -342,6 +342,11 @@ async fn launch_horizon(
     settings: Settings,
 ) -> Result<()> {
     crate::horizon::validate_instance(&inst)?;
+    let mut accs = AccountsFile::load(&paths);
+    let active_id = accs
+        .active
+        .clone()
+        .ok_or_else(|| anyhow!("Add an account in Accounts before playing."))?;
     games.set(
         &app,
         GameState {
@@ -362,15 +367,38 @@ async fn launch_horizon(
     let width = inst.width.unwrap_or(settings.default_width);
     let height = inst.height.unwrap_or(settings.default_height);
     let task = Task::new(&app, format!("Preparing {}", inst.name));
-    let prep = crate::horizon::prepare_launch(
-        &paths,
-        &inst,
-        &task,
-        args.world.as_deref(),
-        args.server.as_deref(),
-        width,
-        height,
-    );
+    let prep = async {
+        let (bin, mut hz_args, game_home) = crate::horizon::prepare_launch(
+            &paths,
+            &inst,
+            &task,
+            args.world.as_deref(),
+            args.server.as_deref(),
+            width,
+            height,
+        )
+        .await?;
+        task.stage("Signing in", 0, 0);
+        let idx = accs
+            .accounts
+            .iter()
+            .position(|a| a.id == active_id)
+            .ok_or_else(|| anyhow!("The selected account was removed."))?;
+        if accs.accounts[idx].kind == "microsoft" {
+            accounts::fresh_token(&mut accs.accounts[idx]).await?;
+            accs.save(&paths)?;
+            let session = crate::horizon::write_ms_session_file(&game_home, &accs.accounts[idx])?;
+            hz_args.push("--session-file".into());
+            hz_args.push(session.to_string_lossy().into_owned());
+        } else {
+            let name = accs.accounts[idx].username.clone();
+            crate::horizon::write_offline_player_name(&game_home, &name)?;
+            hz_args.push("--name".into());
+            hz_args.push(name);
+        }
+        let who = (accs.accounts[idx].username.clone(), accs.accounts[idx].kind.clone());
+        Ok::<_, anyhow::Error>((bin, hz_args, game_home, who))
+    };
     let mark_cancelled = |fail_task: bool| {
         if fail_task {
             task.fail(&anyhow!("Launch cancelled"));
@@ -389,7 +417,7 @@ async fn launch_horizon(
             },
         );
     };
-    let (bin, hz_args, game_home) = tokio::select! {
+    let (bin, hz_args, game_home, (username, kind)) = tokio::select! {
         r = prep => match r {
             Ok(v) => {
                 task.finish();
@@ -415,16 +443,31 @@ async fn launch_horizon(
     }
 
     games.push_log(&app, &id, format!("[Cairn] Horizon: {}", bin.display()), "launcher");
+    games.push_log(&app, &id, format!("[Cairn] Account: {username} ({kind})"), "launcher");
+    if kind != "microsoft" {
+        games.push_log(
+            &app,
+            &id,
+            "[Cairn] Offline name — online-mode servers need a Microsoft account.".into(),
+            "launcher",
+        );
+    }
+    // Redact session path contents; keep argv readable without the token file body.
+    let redacted: Vec<String> = hz_args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            if i > 0 && hz_args[i - 1] == "--session-file" {
+                "<session>".into()
+            } else {
+                a.clone()
+            }
+        })
+        .collect();
     games.push_log(
         &app,
         &id,
-        "[Cairn] Horizon auth is incomplete — singleplayer works; online-mode servers may not.".into(),
-        "launcher",
-    );
-    games.push_log(
-        &app,
-        &id,
-        format!("[Cairn] Command: {} {}", bin.display(), hz_args.join(" ")),
+        format!("[Cairn] Command: {} {}", bin.display(), redacted.join(" ")),
         "launcher",
     );
 

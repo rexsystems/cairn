@@ -1,6 +1,7 @@
 node_modules/
 dist/
 src-tauri/target/
+horizon-mod-src/*/target/
 *.log
 .DS_Store
 .vscode/

@@ -159,6 +159,9 @@ pub fn create(paths: &Paths, mut inst: Instance) -> Result<Instance> {
     for sub in ["mods", "resourcepacks", "shaderpacks", "datapacks", "saves", "screenshots", "config"] {
         std::fs::create_dir_all(dir.join(sub))?;
     }
+    if inst.use_horizon {
+        std::fs::create_dir_all(dir.join(crate::horizon_mods::DIR))?;
+    }
     save(paths, &inst)?;
     Ok(inst)
 }

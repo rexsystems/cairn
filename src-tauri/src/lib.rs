@@ -5,6 +5,7 @@ pub mod curseforge;
 pub mod discord;
 pub mod game;
 pub mod horizon;
+pub mod horizon_mods;
 pub mod instance;
 pub mod java;
 pub mod loaders;
@@ -275,6 +276,53 @@ fn add_content_files(state: State<AppState>, id: String, kind: String, files: Ve
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
     files.iter().map(|f| content::add_local(&dir, &kind, &PathBuf::from(f)).map_err(ea)).collect()
+}
+
+// Horizon mods (.hmod)
+
+fn horizon_game_dir(state: &AppState, id: &str) -> Result<PathBuf, String> {
+    let inst = instance::get(&state.paths, id).map_err(ea)?;
+    if !inst.use_horizon {
+        return Err("This instance is not set to play with Horizon.".into());
+    }
+    Ok(inst.dir(&state.paths))
+}
+
+#[tauri::command]
+fn list_horizon_mods(state: State<AppState>, id: String) -> R<Vec<horizon_mods::HorizonModItem>> {
+    let dir = horizon_game_dir(&state, &id)?;
+    horizon_mods::list(&dir).map_err(ea)
+}
+
+#[tauri::command]
+fn toggle_horizon_mod(state: State<AppState>, id: String, mod_id: String) -> R<bool> {
+    let dir = horizon_game_dir(&state, &id)?;
+    horizon_mods::toggle(&dir, &mod_id).map_err(ea)
+}
+
+#[tauri::command]
+fn remove_horizon_mod(state: State<AppState>, id: String, file: String) -> R<()> {
+    let dir = horizon_game_dir(&state, &id)?;
+    horizon_mods::remove(&dir, &file).map_err(ea)
+}
+
+#[tauri::command]
+fn add_horizon_mod_files(state: State<AppState>, id: String, files: Vec<String>) -> R<Vec<horizon_mods::HorizonModItem>> {
+    let dir = horizon_game_dir(&state, &id)?;
+    files
+        .iter()
+        .map(|f| horizon_mods::add_local(&dir, &PathBuf::from(f)).map_err(ea))
+        .collect()
+}
+
+#[tauri::command]
+fn install_cairn_zoom_mod(state: State<AppState>, id: String) -> R<horizon_mods::HorizonModItem> {
+    let dir = horizon_game_dir(&state, &id)?;
+    let bytes = include_bytes!("../resources/horizon-mods/cairn_zoom.hmod");
+    let tmp = state.paths.cache.join("cairn_zoom.hmod");
+    std::fs::create_dir_all(tmp.parent().unwrap()).map_err(e)?;
+    std::fs::write(&tmp, bytes).map_err(e)?;
+    horizon_mods::install_bundled(&dir, &tmp, true).map_err(ea)
 }
 
 #[tauri::command]
@@ -828,6 +876,7 @@ pub fn run() {
             import_mrpack, import_modpack, export_mrpack,
             list_modrinth_app_profiles, import_modrinth_app_profile,
             list_content, toggle_content, remove_content, add_content_files, installed_projects, check_updates, apply_updates,
+            list_horizon_mods, toggle_horizon_mod, remove_horizon_mod, add_horizon_mod_files, install_cairn_zoom_mod,
             list_worlds, list_screenshots, list_log_files, read_instance_file,
             list_servers, save_servers,
             backup_instance, restore_instance_backup, search_library_content,

@@ -260,6 +260,44 @@ pub fn validate_instance(inst: &crate::instance::Instance) -> Result<()> {
     Ok(())
 }
 
+/// Persist offline display name so Horizon does not invent `Player#####`.
+pub fn write_offline_player_name(game_home: &Path, name: &str) -> Result<()> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 16 {
+        bail!("Player name must be 1–16 characters");
+    }
+    std::fs::write(game_home.join("horizon-player.txt"), format!("name:{name}\n"))?;
+    Ok(())
+}
+
+/// One-shot Microsoft session file for Horizon (`--session-file`). Mode 0600; Horizon deletes it after read.
+pub fn write_ms_session_file(game_home: &Path, acc: &crate::accounts::Account) -> Result<PathBuf> {
+    if acc.kind != "microsoft" {
+        bail!("not a Microsoft account");
+    }
+    if acc.mc_token.is_empty() {
+        bail!("Sign in to {} again from Accounts.", acc.username);
+    }
+    let dir = game_home.join(".cairn");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("horizon-session.json");
+    let body = serde_json::json!({
+        "name": acc.username,
+        "uuid": acc.uuid,
+        "access_token": acc.mc_token,
+        "user_type": "msa",
+    });
+    std::fs::write(&path, serde_json::to_vec(&body)?)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)?.permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&path, perms)?;
+    }
+    Ok(path)
+}
+
 /// Binary, args, and game home (`HORIZON_HOME`) for spawning the client.
 pub async fn prepare_launch(
     paths: &Paths,
@@ -297,7 +335,6 @@ Play {HORIZON_MC_VERSION} once in the official launcher, then run Prepare in the
         args.push(w.to_string());
     }
     if let Some(s) = server {
-        // Horizon joins offline-mode servers; online-mode MS auth is incomplete.
         args.push("--server".into());
         args.push(s.to_string());
     }

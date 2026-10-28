@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, fileSrc, on, type ContentItem, type ContentKind, type FileEntry, type InstanceView, type LaunchProfile, type LoaderVersion, type LogLine, type McVersion, type ServerEntry, type UpdateInfo, type World } from "../api";
+import { api, fileSrc, on, type ContentItem, type ContentKind, type FileEntry, type HorizonModItem, type InstanceView, type LaunchProfile, type LoaderVersion, type LogLine, type McVersion, type ServerEntry, type UpdateInfo, type World } from "../api";
 import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { EmptyState, ErrorState, InstanceIcon, Loading, Modal, PopoverMenu, Select, Switch } from "../components/ui";
@@ -8,7 +8,7 @@ import { PlayButton } from "../components/PlayButton";
 import { InstanceCover } from "../components/InstanceCover";
 import { bytes, loaderLabel, playTime, relativeTime } from "../format";
 
-const TABS = [
+const BASE_TABS = [
   { id: "content", label: "Content" },
   { id: "worlds", label: "Worlds" },
   { id: "servers", label: "Servers" },
@@ -35,6 +35,9 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
     api.getInstance(id).then((i) => { setInst(i); setError(null); }).catch((e) => setError(String(e)));
   }, [id]);
   useEffect(load, [load, games[id]?.state]);
+  useEffect(() => {
+    if (inst && !inst.useHorizon && tab === "horizon-mods") setTab("content");
+  }, [inst, tab]);
 
   if (error) return <ErrorState title="This instance could not be opened" error={error} onRetry={load} />;
   if (!inst) return <Loading label="Opening instance" />;
@@ -50,6 +53,9 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
   };
 
   const running = games[inst.id] && games[inst.id].state !== "exited";
+  const tabs = inst.useHorizon
+    ? [{ id: "horizon-mods", label: "Horizon mods" }, ...BASE_TABS]
+    : BASE_TABS;
 
   return (
     <>
@@ -96,11 +102,12 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
 
       <div>
         <div className="tabs" role="tablist" aria-label="Instance sections">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button key={t.id} role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} className="tab" onClick={() => setTab(t.id)}>{t.label}</button>
           ))}
         </div>
         <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} style={{ paddingTop: 20 }}>
+          {tab === "horizon-mods" && inst.useHorizon && <HorizonModsTab inst={inst} />}
           {tab === "content" && <ContentTab inst={inst} onChange={() => { load(); refreshInstances(); }} />}
           {tab === "worlds" && <WorldsTab inst={inst} />}
           {tab === "servers" && <ServersTab inst={inst} />}
@@ -124,6 +131,86 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
       )}
       {exporting && <ExportDialog inst={inst} onClose={() => setExporting(false)} />}
     </>
+  );
+}
+
+function HorizonModsTab({ inst }: { inst: InstanceView }) {
+  const { toast } = useStore();
+  const [items, setItems] = useState<HorizonModItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    setError(null);
+    api.listHorizonMods(inst.id).then(setItems).catch((e) => setError(String(e)));
+  }, [inst.id]);
+  useEffect(() => { setItems(null); load(); }, [load]);
+
+  const addFiles = async () => {
+    const files = await open({ multiple: true, filters: [{ name: "Horizon mod", extensions: ["hmod"] }] });
+    if (!files) return;
+    try {
+      const added = await api.addHorizonModFiles(inst.id, Array.isArray(files) ? files : [files]);
+      toast(`Added ${added.length} ${added.length === 1 ? "mod" : "mods"}`);
+      load();
+    } catch (e) { toast(String(e), true); }
+  };
+  const installZoom = async () => {
+    setBusy(true);
+    try {
+      const m = await api.installCairnZoomMod(inst.id);
+      toast(`Installed ${m.name} (hold C in-game)`);
+      load();
+    } catch (e) { toast(String(e), true); } finally { setBusy(false); }
+  };
+
+  if (error) return <ErrorState title="Horizon mods could not be listed" error={error} onRetry={load} />;
+  if (!items) return <Loading label="Reading Horizon mods" />;
+
+  const hasZoom = items.some((m) => m.id === "cairn_zoom");
+
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <button className="btn" onClick={addFiles}><Icon name="plus" />Add .hmod</button>
+        {!hasZoom && (
+          <button className="btn btn-quiet" onClick={installZoom} disabled={busy}>
+            <Icon name="download" />{busy ? "Installing…" : "Install Cairn Zoom"}
+          </button>
+        )}
+        <button className="btn btn-quiet btn-icon" aria-label="Open horizon-mods folder" title="Open folder" onClick={() => api.openDataPath(`${inst.path}/horizon-mods`).catch((e) => toast(String(e), true))}><Icon name="folder" /></button>
+      </div>
+      <p className="small muted">Horizon runs `.hmod` packages (Rust → WASM), not Fabric/Forge jars. Drop files here or use Add. Enable a mod, then Play.</p>
+      {items.length === 0 ? (
+        <EmptyState icon="box" title="No Horizon mods yet">
+          Install Cairn Zoom to try hold-to-zoom, or add any `.hmod` from playhorizon.dev.
+        </EmptyState>
+      ) : (
+        <div className="card content-list">
+          {items.map((m) => (
+            <div key={m.fileName} className="content-row">
+              <div className="content-icon" style={{ display: "grid", placeItems: "center" }} aria-hidden="true"><Icon name="box" /></div>
+              <div className="content-main">
+                <div className="content-title">{m.name}{m.version ? ` ${m.version}` : ""}</div>
+                <div className="content-sub">{m.description || m.id}{m.capabilities.length ? ` · ${m.capabilities.join(", ")}` : ""} · {bytes(m.size)}</div>
+              </div>
+              <div className="row" style={{ flexWrap: "nowrap", gap: 4, alignItems: "center" }}>
+                <Switch
+                  checked={m.enabled}
+                  onChange={async () => {
+                    try { await api.toggleHorizonMod(inst.id, m.id); load(); } catch (e) { toast(String(e), true); }
+                  }}
+                  label={m.enabled ? "On" : "Off"}
+                />
+                <button className="btn btn-quiet btn-icon btn-sm" aria-label={`Remove ${m.name}`} onClick={async () => {
+                  try { await api.removeHorizonMod(inst.id, m.fileName); toast(`Removed ${m.name}`); load(); } catch (e) { toast(String(e), true); }
+                }}><Icon name="trash" size={16} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

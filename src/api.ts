@@ -68,6 +68,17 @@ export interface ContentItem {
   fileName: string; kind: ContentKind; enabled: boolean; title: string; version?: string | null;
   authors?: string | null; description?: string | null; icon?: string | null; projectId?: string | null; size: number;
 }
+export interface HorizonModItem {
+  fileName: string;
+  id: string;
+  name: string;
+  version?: string | null;
+  description?: string | null;
+  authors?: string | null;
+  enabled: boolean;
+  size: number;
+  capabilities: string[];
+}
 export interface ContentHit {
   instanceId: string; instanceName: string; kind: ContentKind; fileName: string; title: string; projectId?: string | null;
 }
@@ -163,6 +174,12 @@ export const api = {
   toggleContent: (id: string, kind: ContentKind, file: string) => invoke<string>("toggle_content", { id, kind, file }),
   removeContent: (id: string, kind: ContentKind, file: string) => invoke<void>("remove_content", { id, kind, file }),
   addContentFiles: (id: string, kind: ContentKind, files: string[]) => invoke<string[]>("add_content_files", { id, kind, files }),
+
+  listHorizonMods: (id: string) => invoke<HorizonModItem[]>("list_horizon_mods", { id }),
+  toggleHorizonMod: (id: string, modId: string) => invoke<boolean>("toggle_horizon_mod", { id, modId }),
+  removeHorizonMod: (id: string, file: string) => invoke<void>("remove_horizon_mod", { id, file }),
+  addHorizonModFiles: (id: string, files: string[]) => invoke<HorizonModItem[]>("add_horizon_mod_files", { id, files }),
+  installCairnZoomMod: (id: string) => invoke<HorizonModItem>("install_cairn_zoom_mod", { id }),
   installedProjects: (id: string) => invoke<string[]>("installed_projects", { id }),
   checkUpdates: (id: string) => invoke<UpdateInfo[]>("check_updates", { id }),
   applyUpdates: (id: string, updates: UpdateInfo[]) => invoke<number>("apply_updates", { id, updates }),
