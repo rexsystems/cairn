@@ -5,6 +5,7 @@ import { Icon } from "../../components/Icon";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Select } from "../../components/ui";
 import { classify } from "../../lib/logs";
+import { CrashHelp } from "../../components/CrashHelp";
 
 type Line = { t: string; s: string };
 const FLUSH_MS = 100;
@@ -23,6 +24,7 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
   const [follow, setFollow] = useState(true);
   const [sharing, setSharing] = useState<"idle" | "confirm" | "busy">("idle");
   const [showAll, setShowAll] = useState(false);
+  const [diagnose, setDiagnose] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,6 +61,9 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
   useEffect(() => { if (follow && box.current) box.current.scrollTop = box.current.scrollHeight; }, [shown, follow]);
 
   useEffect(() => { setSharing("idle"); setShowAll(false); }, [source]);
+  // Explain a crash as soon as the game goes down.
+  const crashedAt = games[inst.id]?.crashed ? games[inst.id].started : 0;
+  useEffect(() => { if (crashedAt) setDiagnose(true); }, [crashedAt]);
   const hidden = showAll ? 0 : Math.max(0, shown.length - SHOW);
   const visible = hidden ? shown.slice(hidden) : shown;
 
@@ -100,6 +105,7 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
         </label>
         <label className="check"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />Follow output</label>
         <span className="spacer" />
+        <button className="btn" aria-pressed={diagnose} onClick={() => setDiagnose((d) => !d)}><Icon name="warn" />Find the cause</button>
         <button className="btn" onClick={() => navigator.clipboard.writeText(shown.map((l) => l.t).join("\n")).then(() => toast("Copied log to clipboard"))}><Icon name="copy" />Copy</button>
         {sharing === "confirm" ? (
           <span className="row" style={{ gap: 6 }} role="group" aria-label="Confirm upload">
@@ -119,12 +125,13 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
           }}><Icon name="folder" />Open folder</button>
         )}
       </div>
-      {files.some((f) => f.name.startsWith("Crash report:")) && (
+      {diagnose && <CrashHelp instanceId={inst.id} log={source === "live" ? undefined : source} onClose={() => setDiagnose(false)} />}
+      {!diagnose && files.some((f) => f.name.startsWith("Crash report:")) && (
         <div className="notice" role="status">
           <Icon name="warn" />
           <div style={{ flex: 1 }}>
             <b>Crash reports on disk</b>
-            <p className="small muted">Pick a “Crash report” in the source list, then copy it or open the folder.</p>
+            <p className="small muted">Pick a “Crash report” in the source list, then press Find the cause.</p>
           </div>
           <button className="btn btn-sm" onClick={() => {
             const crash = files.find((f) => f.name.startsWith("Crash report:"));

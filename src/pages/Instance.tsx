@@ -14,6 +14,7 @@ import { ServersTab } from "./instance/ServersTab";
 import { WorldsTab } from "./instance/WorldsTab";
 import { ScreenshotsTab } from "./instance/ScreenshotsTab";
 import { LogsTab } from "./instance/LogsTab";
+import { ActivityTab } from "./instance/ActivityTab";
 import { OptionsTab } from "./instance/OptionsTab";
 
 const BASE_TABS = [
@@ -22,6 +23,7 @@ const BASE_TABS = [
   { id: "servers", label: "Servers" },
   { id: "screenshots", label: "Screenshots" },
   { id: "logs", label: "Logs" },
+  { id: "activity", label: "Activity" },
   { id: "options", label: "Options" },
 ];
 
@@ -124,6 +126,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
           {tab === "servers" && <ServersTab inst={inst} />}
           {tab === "screenshots" && <ScreenshotsTab inst={inst} />}
           {tab === "logs" && <LogsTab inst={inst} />}
+          {tab === "activity" && <ActivityTab inst={inst} />}
           {tab === "options" && <OptionsTab inst={inst} onSaved={(i) => { setInst(i); refreshInstances(); }} />}
         </div>
       </div>

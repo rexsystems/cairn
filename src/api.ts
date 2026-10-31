@@ -148,7 +148,10 @@ export interface ManualPickup { instanceId: string; titles: string[]; remaining:
 export interface World { folder: string; icon?: string | null; lastPlayed: number; size: number }
 export interface ServerEntry { name: string; ip: string; icon?: string | null; acceptTextures?: number | null }
 export interface FileEntry { name: string; path: string; modified: number; size: number }
-export interface GameState { instanceId: string; state: "preparing" | "running" | "exited"; pid?: number | null; started: number; exitCode?: number | null }
+export interface GameState { instanceId: string; state: "preparing" | "running" | "exited"; pid?: number | null; started: number; exitCode?: number | null; crashed?: boolean }
+export interface PlaySession { started: number; ended: number; seconds: number; exitCode?: number | null; crashed: boolean; reason?: string | null; log?: string | null }
+export interface InstanceStats { totalSeconds: number; sessions: number; crashes: number; longestSeconds: number; weekSeconds: number; days: number[]; recent: PlaySession[] }
+export interface CrashAnalysis { source: string | null; issues: CompatIssue[] }
 export interface LogLine { instanceId: string; line: string; stream: string }
 export interface TaskEvent { id: string; title: string; stage: string; done: number; total: number; state: "running" | "done" | "error"; error?: string | null }
 export interface McVersion { id: string; type: string; url: string; releaseTime: string }
@@ -264,6 +267,9 @@ export const api = {
   },
   kill: (id: string) => invoke<boolean>("kill_instance", { id }),
   gameStates: () => invoke<GameState[]>("game_states"),
+  instanceStats: (id: string) => invoke<InstanceStats>("instance_stats", { id }),
+  /** `log` is a path inside the instance; without it the last crash is used. */
+  analyzeCrash: (id: string, log?: string) => invoke<CrashAnalysis>("analyze_crash", { id, log: log ?? null }),
   gameLog: (id: string) => invoke<string[]>("game_log", { id }),
   /** Uploads to mclo.gs; returns the public link. */
   shareLog: (content: string) => invoke<string>("share_log", { content }),

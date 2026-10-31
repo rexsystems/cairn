@@ -1005,3 +1005,15 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 
 /* Long logs: skip layout and paint for lines that are off screen. */
 .log-line { content-visibility: auto; contain-intrinsic-size: auto 19px; }
+
+/* Activity tab */
+.activity-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); }
+.activity-tile { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+.activity-tile b { font-size: 20px; }
+.activity-chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding: 16px; }
+.activity-day { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; }
+.activity-bar { width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--accent); }
+.activity-day span { white-space: nowrap; font-size: 11px; }
+.activity-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.activity-list li { display: grid; grid-template-columns: 150px 90px 1fr auto; gap: 12px; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
+.activity-list li.crashed .activity-result { color: var(--ember); display: inline-flex; gap: 6px; align-items: center; }

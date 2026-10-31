@@ -109,10 +109,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (g.state === "exited") {
           refreshInstances();
           const wasLive = prev && prev.state !== "exited";
-          const crashed = wasLive && g.exitCode != null && g.exitCode !== 0;
-          if (crashed) {
+          if (wasLive && g.crashed) {
             const name = instancesRef.current?.find((i) => i.id === g.instanceId)?.name ?? "Instance";
-            toast(`${name} crashed (exit ${g.exitCode}). Open Logs on that instance for the report.`, true);
+            toast(`${name} crashed. Its Logs tab can find the cause.`, true);
           }
         }
       }),
