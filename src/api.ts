@@ -97,7 +97,45 @@ export interface ContentHit {
 export interface UpdateInfo {
   kind: ContentKind; fileName: string; title: string; icon?: string | null; projectId: string;
   currentVersion: string; newVersion: string; newVersionId: string;
+  source: ContentSource;
 }
+
+export type ContentSource = "modrinth" | "curseforge";
+
+export interface InstallRoot { projectId: string; versionId?: string | null }
+export interface PlanCandidate {
+  source: ContentSource;
+  project: { id: string; slug: string; title: string; projectType: string; icon?: string | null; pageUrl?: string | null };
+  versionId: string;
+  versionNumber: string;
+  fileName: string;
+  url?: string | null;
+  downloadPage?: string | null;
+  size?: number | null;
+}
+export type PlanReason = { type: "requested" } | { type: "update"; from: string } | { type: "dependencyOf"; title: string };
+export interface PlanItem { candidate: PlanCandidate; reason: PlanReason; replaces: string[]; optional: boolean }
+export interface PlanNote { title: string; message: string }
+export interface InstallPlan { items: PlanItem[]; skipped: PlanNote[]; problems: PlanNote[] }
+export interface PendingDownload {
+  projectId: string; fileId: string; title: string; versionNumber: string; fileName: string; folder: string;
+  downloadPage: string; size?: number | null; icon?: string | null; replaces: string[];
+}
+export interface InstallResult { installed: { title: string; fileName: string }[]; pending: PendingDownload[] }
+export interface PendingView { items: PendingDownload[]; watching: boolean; downloadsDir?: string | null }
+
+export type Fix =
+  | { type: "installMod"; modId: string; projectId?: string | null; source?: string | null }
+  | { type: "enableMod"; file: string }
+  | { type: "disableMod"; file: string }
+  | { type: "setMemory"; mb: number }
+  | { type: "useManagedJava" }
+  | { type: "searchMod"; query: string }
+  | { type: "manualDownloads" };
+export type FixAction = Fix & { label: string };
+export interface CompatIssue { key: string; severity: "error" | "warning"; title: string; detail: string; files: string[]; fixes: FixAction[] }
+export interface CompatReport { issues: CompatIssue[]; pending: PendingDownload[]; mods: number }
+export interface ManualPickup { instanceId: string; titles: string[]; remaining: number }
 export interface World { folder: string; icon?: string | null; lastPlayed: number; size: number }
 export interface ServerEntry { name: string; ip: string; icon?: string | null; acceptTextures?: number | null }
 export interface FileEntry { name: string; path: string; modified: number; size: number }
@@ -127,7 +165,10 @@ export interface SearchHit {
   project_id: string; slug: string; title: string; description: string; author: string; icon_url?: string | null;
   downloads: number; follows: number; project_type: string; categories: string[]; display_categories?: string[];
   versions: string[]; gallery?: string[]; featured_gallery?: string | null; date_modified: string; color?: number | null;
+  /** Set on CurseForge hits only. */
+  source?: ContentSource; page_url?: string | null; distribution?: boolean;
 }
+export interface CurseForgeSearch { query: string; projectType: string; gameVersion: string; loader: string; sort: string; offset: number; limit: number }
 export interface SearchResult { hits: SearchHit[]; total_hits: number; offset: number; limit: number }
 
 export interface ModrinthAppProfile {
@@ -230,10 +271,28 @@ export const api = {
   project: (id: string) => invoke<any>("modrinth_project", { id }),
   versions: (id: string, loaders: string[], gameVersions: string[]) => invoke<any[]>("modrinth_versions", { id, loaders, gameVersions }),
   tags: () => invoke<{ categories: any[]; loaders: any[]; gameVersions: any[] }>("modrinth_tags"),
-  install: (instanceId: string, projectId: string, versionId?: string | null, includeOptional = false) =>
-    invoke<{ title: string; fileName: string }[]>("modrinth_install", { instanceId, projectId, versionId: versionId ?? null, includeOptional }),
   versionDeps: (versionId: string) => invoke<DepInfo[]>("modrinth_version_deps", { versionId }),
   installModpack: (projectId: string, versionId?: string | null) => invoke<InstanceView>("modrinth_install_modpack", { projectId, versionId: versionId ?? null }),
+
+  /** Resolves required dependencies and conflicts without touching the instance. */
+  planInstall: (instanceId: string, source: ContentSource, roots: InstallRoot[], includeOptional = false) =>
+    invoke<InstallPlan>("plan_install", { instanceId, source, roots, includeOptional }),
+  installContent: (instanceId: string, source: ContentSource, roots: InstallRoot[], includeOptional = false, allowProblems = false) =>
+    invoke<InstallResult>("install_content", { instanceId, source, roots, includeOptional, allowProblems }),
+  checkCompat: (id: string) => invoke<CompatReport>("check_compat", { id }),
+  applyFix: (id: string, fix: Fix) => invoke<string>("apply_fix", { id, fix }),
+  pendingDownloads: (id: string) => invoke<PendingView>("pending_downloads", { id }),
+  openManualDownload: (id: string, fileId?: string | null) => invoke<void>("open_manual_download", { id, fileId: fileId ?? null }),
+  importManualDownload: (id: string, path: string) => invoke<string>("import_manual_download", { id, path }),
+  dismissManualDownload: (id: string, fileId: string) => invoke<void>("dismiss_manual_download", { id, fileId }),
+
+  curseforgeAvailable: () => invoke<boolean>("curseforge_available"),
+  curseforgeSearch: (params: CurseForgeSearch) => invoke<SearchResult>("curseforge_search", { params }),
+  curseforgeProject: (id: string) => invoke<any>("curseforge_project", { id }),
+  curseforgeFiles: (id: string, gameVersion?: string | null, loader?: string | null) =>
+    invoke<any[]>("curseforge_files", { id, gameVersion: gameVersion ?? null, loader: loader ?? null }),
+  curseforgeInstallModpack: (projectId: string, fileId?: string | null) =>
+    invoke<InstanceView>("curseforge_install_modpack", { projectId, fileId: fileId ?? null }),
 
   listAccounts: () => invoke<Account[]>("list_accounts"),
   setActiveAccount: (id: string) => invoke<Account[]>("set_active_account", { id }),

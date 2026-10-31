@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { api, fileSrc, type ContentItem, type ContentKind, type InstanceView, type UpdateInfo } from "../../api";
+import { api, fileSrc, type CompatReport, type ContentItem, type ContentKind, type InstanceView, type UpdateInfo } from "../../api";
 import { useStore } from "../../store";
 import { Icon } from "../../components/Icon";
 import { EmptyState, ErrorState, Loading } from "../../components/ui";
+import { CompatIssues } from "../../components/CompatIssues";
+import { ManualDownloads } from "../../components/ManualDownloads";
 import { bytes } from "../../format";
 import { KIND_FOLDER, KIND_LABEL, KIND_TYPE } from "./kinds";
 
@@ -20,6 +22,8 @@ export function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: (
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [report, setReport] = useState<CompatReport | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -52,6 +56,15 @@ export function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: (
     if (!files) return;
     await addPaths(Array.isArray(files) ? files : [files]);
   };
+  const scan = useCallback(async (quiet = false) => {
+    setScanning(true);
+    try {
+      const r = await api.checkCompat(inst.id);
+      setReport(r);
+      if (!quiet) toast(r.issues.length ? `${r.issues.length} ${r.issues.length === 1 ? "problem" : "problems"} found` : `All ${r.mods} mods look compatible`);
+    } catch (e) { if (!quiet) toast(String(e), true); } finally { setScanning(false); }
+  }, [inst.id, toast]);
+  const afterFix = () => { load(); onChange(); void scan(true); };
   const check = async () => {
     setChecking(true);
     try {
@@ -68,6 +81,7 @@ export function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: (
       toast(`Updated ${n} ${n === 1 ? "file" : "files"}`);
       setUpdates((u) => (u ?? []).filter((x) => !list.includes(x)));
       load();
+      if (report) void scan(true);
     } catch (e) { toast(String(e), true); } finally { setUpdating(false); }
   };
 
@@ -96,16 +110,21 @@ export function ContentTab({ inst, onChange }: { inst: InstanceView; onChange: (
         </label>
         <span className="spacer" />
         <button className="btn btn-icon" aria-label={`Open ${KIND_LABEL[kind]} folder`} title="Open folder" onClick={() => api.openDataPath(`${inst.path}/${KIND_FOLDER[kind]}`).catch((e) => toast(String(e), true))}><Icon name="folder" /></button>
+        {kind === "mods" && <button className="btn" onClick={() => scan()} disabled={scanning}><Icon name="check" />{scanning ? "Checking..." : "Check mods"}</button>}
         <button className="btn" onClick={check} disabled={checking}><Icon name="update" />{checking ? "Checking..." : "Check for updates"}</button>
         <button className="btn" onClick={addFiles}><Icon name="upload" />Add files</button>
         <button className="btn" onClick={() => go({ name: "discover", instanceId: inst.id, projectType: KIND_TYPE[kind] })}><Icon name="plus" />Find {KIND_LABEL[kind].toLowerCase()}</button>
       </div>
 
+      <ManualDownloads instanceId={inst.id} onChange={afterFix} />
+      {kind === "mods" && report && report.issues.filter((i) => i.key !== "manual-downloads").length > 0 && (
+        <CompatIssues instanceId={inst.id} issues={report.issues.filter((i) => i.key !== "manual-downloads")} onFixed={afterFix} />
+      )}
       {updates && updates.length > 0 && (
         <div className="notice" role="status">
           <Icon name="update" />
           <div style={{ flex: 1 }}>
-            <b>{updates.length} {updates.length === 1 ? "update" : "updates"} from Modrinth</b>
+            <b>{updates.length} {updates.length === 1 ? "update" : "updates"} available</b>
             <p className="small muted">{updates.slice(0, 4).map((u) => `${u.title} ${u.newVersion}`).join(", ")}{updates.length > 4 ? ` and ${updates.length - 4} more` : ""}</p>
           </div>
           <button className="btn" onClick={() => applyAll(updates)} disabled={updating}>{updating ? "Updating..." : "Update all"}</button>

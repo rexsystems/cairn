@@ -14,6 +14,8 @@ import { GlobalSearch } from "./components/GlobalSearch";
 import { PrivacyPrompt } from "./components/PrivacyPrompt";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { CairnMark } from "./assets/CairnMark";
+import { InstallDialog } from "./components/InstallDialog";
+import { PreLaunchDialog } from "./components/PreLaunchDialog";
 
 const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
   { name: "home", label: "Home", icon: "home" },
@@ -150,7 +152,7 @@ function Toasts() {
 }
 
 function Pages() {
-  const { route, showCreate, setShowCreate, showSearch, setShowSearch } = useStore();
+  const { route, showCreate, setShowCreate, showSearch, setShowSearch, installRequest, requestInstall } = useStore();
   const key = JSON.stringify(route);
   return (
     <main className="main">
@@ -160,13 +162,15 @@ function Pages() {
           {route.name === "home" && <Home />}
           {route.name === "library" && <Library />}
           {route.name === "instance" && <InstancePage id={route.id} initialTab={route.tab} />}
-          {route.name === "discover" && <Discover instanceId={route.instanceId} initialType={route.projectType} openProject={route.projectId} />}
+          {route.name === "discover" && <Discover instanceId={route.instanceId} initialType={route.projectType} openProject={route.projectId} initialQuery={route.query} />}
           {route.name === "accounts" && <Accounts />}
           {route.name === "settings" && <SettingsPage />}
         </div>
       </div>
       {showCreate && <CreateInstance onClose={() => setShowCreate(false)} />}
       {showSearch && <GlobalSearch onClose={() => setShowSearch(false)} />}
+      {installRequest && <InstallDialog req={installRequest} onClose={() => requestInstall(null)} />}
+      <PreLaunchDialog />
     </main>
   );
 }

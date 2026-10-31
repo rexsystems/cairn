@@ -12,6 +12,12 @@ export function renderProjectBody(markdown: string | null | undefined): string {
   return DOMPurify.sanitize(marked.parse(markdown, { async: false }) as string, PURIFY);
 }
 
+/** CurseForge descriptions arrive as HTML rather than markdown. */
+export function renderProjectHtml(html: string | null | undefined): string {
+  if (!html) return "";
+  return DOMPurify.sanitize(html, PURIFY);
+}
+
 /** Only web links leave the launcher; anything else (file:, javascript:, custom schemes) is dropped. */
 export function externalHref(href: string | null | undefined): string | null {
   if (!href) return null;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { externalHref, renderProjectBody } from "../../lib/markdown";
+import { externalHref, renderProjectBody, renderProjectHtml } from "../../lib/markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { api, type InstanceView } from "../../api";
+import { api, type ContentSource, type InstanceView } from "../../api";
 import { useStore } from "../../store";
 import { Icon } from "../../components/Icon";
 import { EmptyState, ErrorState, Loading, Modal, Select } from "../../components/ui";
@@ -9,11 +9,12 @@ import { compactNumber, loaderLabel, relativeTime } from "../../format";
 
 interface Version { id: string; name: string; version_number: string; game_versions: string[]; loaders: string[]; version_type: string; date_published: string; downloads: number }
 
-export function ProjectModal({ id, target, eligible, installed, onTarget, onClose, onInstalled }: {
-  id: string; target: InstanceView | null; eligible: InstanceView[]; installed: boolean;
+export function ProjectModal({ id, source = "modrinth", target, eligible, installed, onTarget, onClose, onInstalled }: {
+  id: string; source?: ContentSource; target: InstanceView | null; eligible: InstanceView[]; installed: boolean;
   onTarget: (id: string) => void; onClose: () => void; onInstalled: () => void;
 }) {
-  const { toast, refreshInstances, go } = useStore();
+  const { toast, refreshInstances, go, requestInstall } = useStore();
+  const cf = source === "curseforge";
   const [project, setProject] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [versions, setVersions] = useState<Version[] | null>(null);
@@ -22,7 +23,7 @@ export function ProjectModal({ id, target, eligible, installed, onTarget, onClos
   const [includeOptional, setIncludeOptional] = useState(false);
   const [deps, setDeps] = useState<{ required: string[]; optional: string[] } | null>(null);
 
-  const load = useCallback(() => { setError(null); api.project(id).then(setProject).catch((e) => setError(String(e))); }, [id]);
+  const load = useCallback(() => { setError(null); (cf ? api.curseforgeProject(id) : api.project(id)).then(setProject).catch((e) => setError(String(e))); }, [id, cf]);
   useEffect(load, [load]);
   const isPack = project?.project_type === "modpack";
   useEffect(() => {
@@ -31,11 +32,12 @@ export function ProjectModal({ id, target, eligible, installed, onTarget, onClos
     setDeps(null);
     const loaders = target && !isPack && project.project_type === "mod" ? (target.loader === "quilt" ? ["quilt", "fabric"] : [target.loader]) : [];
     const gv = target && !isPack ? [target.mcVersion] : [];
-    api.versions(project.id, loaders, gv).then((v) => {
+    const listing = cf ? api.curseforgeFiles(project.project_id, gv[0], target && project.project_type === "mod" ? target.loader : null) : api.versions(project.id, loaders, gv);
+    listing.then((v) => {
       const list = v as Version[];
       setVersions(list);
       const first = list.find((x) => x.version_type === "release") ?? list[0];
-      if (first && project.project_type === "mod") {
+      if (first && project.project_type === "mod" && !cf) {
         api.versionDeps(first.id).then((d) => {
           setDeps({
             required: d.filter((x) => x.dependencyType === "required").map((x) => x.title || x.projectId || "dependency"),
@@ -44,15 +46,16 @@ export function ProjectModal({ id, target, eligible, installed, onTarget, onClos
         }).catch(() => setDeps(null));
       }
     }).catch(() => setVersions([]));
-  }, [project, target, isPack]);
+  }, [project, target, isPack, cf]);
 
-  const body = useMemo(() => renderProjectBody(project?.body), [project]);
+  const body = useMemo(() => (cf ? renderProjectHtml(project?.body_html) : renderProjectBody(project?.body)), [project, cf]);
+  const pid: string = cf ? project?.project_id : project?.id;
 
   const install = async (versionId?: string) => {
     if (isPack) {
       setBusy(versionId ?? "latest");
       try {
-        const inst = await api.installModpack(project.id, versionId);
+        const inst = cf ? await api.curseforgeInstallModpack(pid, versionId) : await api.installModpack(pid, versionId);
         await refreshInstances();
         toast(`Installed ${inst.name}`);
         onClose();
@@ -61,22 +64,16 @@ export function ProjectModal({ id, target, eligible, installed, onTarget, onClos
       return;
     }
     if (!target) { toast("Pick an instance to install into first.", true); return; }
-    setBusy(versionId ?? "latest");
-    try {
-      const done = await api.install(target.id, project.id, versionId, includeOptional);
-      toast(done.length > 1 ? `Installed ${done[0].title} and ${done.length - 1} ${done.length === 2 ? "dependency" : "dependencies"}` : `Installed ${project.title} into ${target.name}`);
-      onInstalled();
-      refreshInstances();
-    } catch (e) { toast(String(e), true); } finally { setBusy(null); }
+    requestInstall({ instanceId: target.id, source, roots: [{ projectId: pid, versionId: versionId ?? null }], title: project.title, includeOptional, onDone: onInstalled });
   };
 
-  const gallery: { url: string; title?: string }[] = project?.gallery ?? [];
+  const gallery: { url: string; title?: string }[] = cf ? (project?.gallery ?? []).map((url: string) => ({ url })) : project?.gallery ?? [];
   const noMatch = !isPack && target && versions && versions.length === 0;
 
   return (
     <Modal wide onClose={onClose} title={project ? project.title : "Loading project"}>
       {error && <ErrorState title="This project could not be loaded" error={error} onRetry={load} />}
-      {!error && !project && <Loading label="Fetching from Modrinth" />}
+      {!error && !project && <Loading label={`Fetching from ${cf ? "CurseForge" : "Modrinth"}`} />}
       {project && (
         <div className="stack" style={{ gap: 20 }}>
           <div className="project-head">
@@ -85,9 +82,13 @@ export function ProjectModal({ id, target, eligible, installed, onTarget, onClos
               <p>{project.description}</p>
               <div className="row small muted">
                 <span><b style={{ color: "var(--text)" }}>{compactNumber(project.downloads)}</b> downloads</span>
-                <span><b style={{ color: "var(--text)" }}>{compactNumber(project.followers)}</b> follows</span>
-                <span>{project.license?.id ?? "No license listed"}</span>
-                <button className="btn btn-quiet btn-sm" onClick={() => openUrl(`https://modrinth.com/${project.project_type}/${project.slug}`)}><Icon name="external" size={14} />Modrinth page</button>
+                <span><b style={{ color: "var(--text)" }}>{compactNumber(project.followers ?? project.follows)}</b> {cf ? "likes" : "follows"}</span>
+                <span>{cf ? `by ${project.author}` : project.license?.id ?? "No license listed"}</span>
+                {cf ? (
+                  project.page_url && <button className="btn btn-quiet btn-sm" onClick={() => openUrl(project.page_url)}><Icon name="external" size={14} />CurseForge page</button>
+                ) : (
+                  <button className="btn btn-quiet btn-sm" onClick={() => openUrl(`https://modrinth.com/${project.project_type}/${project.slug}`)}><Icon name="external" size={14} />Modrinth page</button>
+                )}
               </div>
             </div>
           </div>
@@ -124,8 +125,9 @@ export function ProjectModal({ id, target, eligible, installed, onTarget, onClos
             {noMatch && <p className="field-error">No version of {project.title} supports {loaderLabel[target!.loader]} {target!.mcVersion}.</p>}
             {!isPack && project.project_type === "mod" && (
               <div className="stack" style={{ gap: 8 }}>
-                <small className="muted">Required dependencies install automatically{deps?.required.length ? `: ${deps.required.slice(0, 4).join(", ")}${deps.required.length > 4 ? "…" : ""}` : "."}</small>
-                {deps && deps.optional.length > 0 && (
+                {cf && project.distribution === false && <small className="muted">The author only allows downloads on the CurseForge website. Cairn opens the page and picks the file up from Downloads.</small>}
+                <small className="muted">Required dependencies install automatically{!cf && deps?.required.length ? `: ${deps.required.slice(0, 4).join(", ")}${deps.required.length > 4 ? "…" : ""}` : "."}</small>
+                {!cf && deps && deps.optional.length > 0 && (
                   <label className="check">
                     <input type="checkbox" checked={includeOptional} onChange={(e) => setIncludeOptional(e.target.checked)} />
                     Also install optional ({deps.optional.slice(0, 3).join(", ")}{deps.optional.length > 3 ? "…" : ""})

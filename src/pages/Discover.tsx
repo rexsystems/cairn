@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type SearchHit, type SearchResult } from "../api";
+import { api, type ContentSource, type SearchHit, type SearchResult } from "../api";
 import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { EmptyState, ErrorState, Select } from "../components/ui";
@@ -25,14 +25,16 @@ const MOD_LOADERS = ["fabric", "quilt", "forge", "neoforge"];
 
 interface Tag { name: string; project_type: string; header: string }
 
-export function Discover({ instanceId, initialType, openProject }: { instanceId?: string; initialType?: string; openProject?: string }) {
-  const { instances, go, back, toast, refreshInstances } = useStore();
+export function Discover({ instanceId, initialType, openProject, initialQuery }: { instanceId?: string; initialType?: string; openProject?: string; initialQuery?: string }) {
+  const { instances, go, back, toast, refreshInstances, requestInstall } = useStore();
+  const [source, setSource] = useState<ContentSource>("modrinth");
+  const [cfReady, setCfReady] = useState(false);
   const [type, setType] = useState(initialType ?? "mod");
   const [targetId, setTargetId] = useState<string>(instanceId ?? "");
   const target = useMemo(() => instances?.find((i) => i.id === targetId) ?? null, [instances, targetId]);
   const fromInstance = useMemo(() => (instanceId ? instances?.find((i) => i.id === instanceId) ?? null : null), [instances, instanceId]);
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
+  const [debounced, setDebounced] = useState(initialQuery ?? "");
   const [sort, setSort] = useState("relevance");
   const [page, setPage] = useState(0);
   const [cats, setCats] = useState<string[]>([]);
@@ -48,6 +50,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
   const [typeCovers, setTypeCovers] = useState<Partial<Record<string, string>>>({});
   const top = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { api.curseforgeAvailable().then(setCfReady).catch(() => setCfReady(false)); }, []);
   useEffect(() => { api.tags().then((t) => setTags(t as never)).catch(() => setTags({ categories: [], gameVersions: [] })); }, []);
   useEffect(() => {
     let alive = true;
@@ -76,8 +79,8 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
     return () => { alive = false; };
   }, []);
   useEffect(() => { const t = setTimeout(() => setDebounced(query), 280); return () => clearTimeout(t); }, [query]);
-  useEffect(() => { setPage(0); }, [debounced, sort, cats, loader, gameVersion, type, targetId]);
-  useEffect(() => { setCats([]); }, [type]);
+  useEffect(() => { setPage(0); }, [debounced, sort, cats, loader, gameVersion, type, targetId, source]);
+  useEffect(() => { setCats([]); }, [type, source]);
 
   // An instance target pins version and loader so every result fits it.
   const effVersion = target && type !== "modpack" ? target.mcVersion : gameVersion;
@@ -92,15 +95,18 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
   const search = useCallback(() => {
     setLoading(true);
     setError(null);
-    const facets = buildFacets({ projectType: type, gameVersion: effVersion || undefined, loader: effLoader && effLoader !== "vanilla" ? effLoader : undefined, categories: cats });
-    api.search({ query: debounced, facets, index: sort, offset: page * PAGE, limit: PAGE })
+    const modLoader = effLoader && effLoader !== "vanilla" ? effLoader : undefined;
+    const req = source === "curseforge"
+      ? api.curseforgeSearch({ query: debounced, projectType: type, gameVersion: effVersion || "", loader: modLoader ?? "", sort, offset: page * PAGE, limit: PAGE })
+      : api.search({ query: debounced, facets: buildFacets({ projectType: type, gameVersion: effVersion || undefined, loader: modLoader, categories: cats }), index: sort, offset: page * PAGE, limit: PAGE });
+    req
       .then((r) => { setResult(r); if (page > 0) top.current?.scrollIntoView({ block: "start", behavior: "smooth" }); })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [type, effVersion, effLoader, cats, debounced, sort, page]);
+  }, [type, effVersion, effLoader, cats, debounced, sort, page, source]);
   useEffect(search, [search]);
 
-  const categoryTags = (tags?.categories ?? []).filter((c) => c.project_type === (type === "shader" ? "shader" : type) && c.header === "categories");
+  const categoryTags = source === "curseforge" ? [] : (tags?.categories ?? []).filter((c) => c.project_type === (type === "shader" ? "shader" : type) && c.header === "categories");
   const pages = result ? Math.ceil(result.total_hits / PAGE) : 0;
   const releaseVersions = (tags?.gameVersions ?? []).filter((v) => v.version_type === "release").slice(0, 60);
   const typeLabel = TYPES.find((t) => t.id === type)!.label.toLowerCase();
@@ -115,7 +121,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
     if (type === "modpack") {
       setInstalling(hit.project_id);
       try {
-        const inst = await api.installModpack(hit.project_id, null);
+        const inst = source === "curseforge" ? await api.curseforgeInstallModpack(hit.project_id, null) : await api.installModpack(hit.project_id, null);
         await refreshInstances();
         toast(`Installed ${inst.name}`);
         go({ name: "instance", id: inst.id });
@@ -130,21 +136,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
       toast("Pick an instance to install into first.", true);
       return;
     }
-    setInstalling(hit.project_id);
-    try {
-      const done = await api.install(target.id, hit.project_id, null);
-      toast(
-        done.length > 1
-          ? `Installed ${done[0].title} and ${done.length - 1} ${done.length === 2 ? "dependency" : "dependencies"}`
-          : `Installed ${hit.title} into ${target.name}`,
-      );
-      refreshInstalled();
-      refreshInstances();
-    } catch (e) {
-      toast(String(e), true);
-    } finally {
-      setInstalling(null);
-    }
+    requestInstall({ instanceId: target.id, source, roots: [{ projectId: hit.project_id }], title: hit.title, onDone: refreshInstalled });
   };
 
   return (
@@ -158,7 +150,13 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
             </button>
           )}
           <h1>Discover</h1>
-          <p className="muted">Mods, packs and shaders from Modrinth{target ? `, filtered for ${target.name}` : ""}.</p>
+          <p className="muted">Mods, packs and shaders from {source === "curseforge" ? "CurseForge" : "Modrinth"}{target ? `, filtered for ${target.name}` : ""}.</p>
+          {cfReady && (
+            <div className="segmented" role="group" aria-label="Source" style={{ marginTop: 8 }}>
+              <button aria-pressed={source === "modrinth"} onClick={() => setSource("modrinth")}>Modrinth</button>
+              <button aria-pressed={source === "curseforge"} onClick={() => setSource("curseforge")}>CurseForge</button>
+            </div>
+          )}
         </div>
         {type !== "modpack" && (
           <div className="field" style={{ minWidth: 240 }}>
@@ -262,7 +260,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
           </div>
           {result && !error && <p className="small muted" aria-live="polite">{compactNumber(result.total_hits)} results</p>}
 
-          {error && <ErrorState title="Modrinth search failed" error={error} onRetry={search} />}
+          {error && <ErrorState title={`${source === "curseforge" ? "CurseForge" : "Modrinth"} search failed`} error={error} onRetry={search} />}
           {!error && loading && !result && <div className="stack">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton" />)}</div>}
           {!error && result && result.hits.length === 0 && (
             <EmptyState icon="search" title={`No ${typeLabel} match`}>Try fewer filters or a different search.</EmptyState>
@@ -294,7 +292,7 @@ export function Discover({ instanceId, initialType, openProject }: { instanceId?
       </div>
 
       {detail && (
-        <ProjectModal id={detail} target={target} eligible={eligible} installed={installed.has(detail)}
+        <ProjectModal id={detail} source={source} target={target} eligible={eligible} installed={installed.has(detail)}
           onTarget={setTargetId} onClose={() => setDetail(null)} onInstalled={refreshInstalled} />
       )}
     </>
@@ -328,6 +326,7 @@ function Result({
         </div>
         <p className="result-desc">{hit.description}</p>
         <div className="result-tags">
+          {hit.distribution === false && <span className="chip chip-ember" title="The author only allows downloads on the CurseForge website">Manual download</span>}
           {(hit.display_categories ?? hit.categories).slice(0, 5).map((c) => <span key={c} className="chip">{c.replace(/-/g, " ")}</span>)}
         </div>
       </div>
