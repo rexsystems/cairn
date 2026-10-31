@@ -96,12 +96,12 @@ fn app_info(state: State<AppState>) -> AppInfo {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_settings(state: State<AppState>) -> Settings {
     Settings::load(&state.paths.settings_file())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
     let mut s = settings;
     s.concurrent_downloads = s.concurrent_downloads.clamp(1, 64);
@@ -114,17 +114,17 @@ fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
 
 // Instances
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_instances(state: State<AppState>) -> Vec<instance::InstanceView> {
     instance::list(&state.paths).into_iter().map(|i| instance::view(&state.paths, i)).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_instance(state: State<AppState>, id: String) -> R<instance::InstanceView> {
     Ok(instance::view(&state.paths, instance::get(&state.paths, &id).map_err(ea)?))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_instance(state: State<AppState>, inst: Instance) -> R<instance::InstanceView> {
     let created = instance::create(&state.paths, inst).map_err(ea)?;
     telemetry::spawn(
@@ -138,7 +138,7 @@ fn create_instance(state: State<AppState>, inst: Instance) -> R<instance::Instan
     Ok(instance::view(&state.paths, created))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn update_instance(state: State<AppState>, inst: Instance) -> R<instance::InstanceView> {
     let mut cur = instance::get(&state.paths, &inst.id).map_err(ea)?;
     if cur.mc_version != inst.mc_version || cur.loader != inst.loader || cur.loader_version != inst.loader_version {
@@ -168,17 +168,17 @@ fn update_instance(state: State<AppState>, inst: Instance) -> R<instance::Instan
     Ok(instance::view(&state.paths, cur))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_instance(state: State<AppState>, id: String) -> R<()> {
     instance::delete(&state.paths, &id).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn duplicate_instance(state: State<AppState>, id: String) -> R<instance::InstanceView> {
     Ok(instance::view(&state.paths, instance::duplicate(&state.paths, &id).map_err(ea)?))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_instance_icon(state: State<AppState>, id: String, path: Option<String>) -> R<instance::InstanceView> {
     let mut inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -232,7 +232,7 @@ async fn import_modpack(app: AppHandle, state: State<'_, AppState>, path: String
     Ok(instance::view(&state.paths, inst))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_modrinth_app_profiles() -> R<Vec<modrinth_app::ModrinthAppProfile>> {
     modrinth_app::list_profiles().map_err(ea)
 }
@@ -257,7 +257,7 @@ async fn import_modrinth_app_profile(app: AppHandle, state: State<'_, AppState>,
     Ok(instance::view(&state.paths, inst))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_mrpack(state: State<AppState>, id: String, dest: String, extra: Vec<String>) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let p = modrinth::export_mrpack(&state.paths, &inst, &PathBuf::from(dest), &extra).map_err(ea)?;
@@ -266,25 +266,25 @@ fn export_mrpack(state: State<AppState>, id: String, dest: String, extra: Vec<St
 
 // Content
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_content(state: State<AppState>, id: String, kind: String) -> R<Vec<content::ContentItem>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     content::list(&state.paths, &inst.dir(&state.paths), &kind).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn toggle_content(state: State<AppState>, id: String, kind: String, file: String) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     content::toggle(&inst.dir(&state.paths), &kind, &file).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_content(state: State<AppState>, id: String, kind: String, file: String) -> R<()> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     content::remove(&inst.dir(&state.paths), &kind, &file).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_content_files(state: State<AppState>, id: String, kind: String, files: Vec<String>) -> R<Vec<String>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -301,25 +301,25 @@ fn horizon_game_dir(state: &AppState, id: &str) -> Result<PathBuf, String> {
     Ok(inst.dir(&state.paths))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_horizon_mods(state: State<AppState>, id: String) -> R<Vec<horizon_mods::HorizonModItem>> {
     let dir = horizon_game_dir(&state, &id)?;
     horizon_mods::list(&dir).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn toggle_horizon_mod(state: State<AppState>, id: String, mod_id: String) -> R<bool> {
     let dir = horizon_game_dir(&state, &id)?;
     horizon_mods::toggle(&dir, &mod_id).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_horizon_mod(state: State<AppState>, id: String, file: String) -> R<()> {
     let dir = horizon_game_dir(&state, &id)?;
     horizon_mods::remove(&dir, &file).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_horizon_mod_files(state: State<AppState>, id: String, files: Vec<String>) -> R<Vec<horizon_mods::HorizonModItem>> {
     let dir = horizon_game_dir(&state, &id)?;
     files
@@ -328,12 +328,12 @@ fn add_horizon_mod_files(state: State<AppState>, id: String, files: Vec<String>)
         .collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_bundled_horizon_mods() -> Vec<horizon_mods::BundledHorizonMod> {
     horizon_mods::bundled_catalog()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn install_bundled_horizon_mod(state: State<AppState>, id: String, sample_id: String) -> R<horizon_mods::HorizonModItem> {
     let dir = horizon_game_dir(&state, &id)?;
     let sample = horizon_mods::bundled_catalog()
@@ -395,19 +395,19 @@ async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, u
     .map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_worlds(state: State<AppState>, id: String) -> R<Vec<content::World>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     Ok(content::worlds(&inst.dir(&state.paths)))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_screenshots(state: State<AppState>, id: String) -> R<Vec<content::FileEntry>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     Ok(content::files_in(&inst.dir(&state.paths).join("screenshots"), &[".png", ".jpg"]))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_log_files(state: State<AppState>, id: String) -> R<Vec<content::FileEntry>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -424,7 +424,7 @@ fn list_log_files(state: State<AppState>, id: String) -> R<Vec<content::FileEntr
     Ok(v)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn read_instance_file(state: State<AppState>, id: String, path: String) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = std::fs::canonicalize(inst.dir(&state.paths)).map_err(e)?;
@@ -502,13 +502,13 @@ async fn launch_instance(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_servers(state: State<AppState>, id: String) -> R<Vec<servers::ServerEntry>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     servers::list(&inst.dir(&state.paths)).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_servers(state: State<AppState>, id: String, servers_list: Vec<servers::ServerEntry>) -> R<()> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     servers::save(&inst.dir(&state.paths), &servers_list).map_err(ea)
@@ -548,7 +548,7 @@ async fn restore_instance_backup(app: AppHandle, state: State<'_, AppState>, pat
     Ok(instance::view(&state.paths, inst))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn search_library_content(state: State<AppState>, query: String) -> R<Vec<content::ContentHit>> {
     content::search_all(&state.paths, &query).map_err(ea)
 }
@@ -732,7 +732,7 @@ struct PendingView {
     downloads_dir: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn pending_downloads(state: State<AppState>, id: String) -> R<PendingView> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     Ok(PendingView {
@@ -743,7 +743,7 @@ fn pending_downloads(state: State<AppState>, id: String) -> R<PendingView> {
 }
 
 /// Opens the CurseForge page for one pending file (or all of them) and starts watching Downloads.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_manual_download(app: AppHandle, state: State<AppState>, id: String, file_id: Option<String>) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
@@ -763,7 +763,7 @@ async fn import_manual_download(state: State<'_, AppState>, id: String, path: St
     tokio::task::spawn_blocking(move || manual::import_file(&dir, Path::new(&path))).await.map_err(e)?.map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn dismiss_manual_download(state: State<AppState>, id: String, file_id: String) -> R<()> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -840,7 +840,7 @@ async fn modrinth_install_modpack(app: AppHandle, state: State<'_, AppState>, pr
 
 // Accounts
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_accounts(state: State<AppState>) -> Vec<accounts::AccountView> {
     AccountsFile::load(&state.paths).views()
 }
@@ -972,7 +972,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
 
 // Shortcuts
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_shortcut(state: State<AppState>, id: String) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let icon = inst.icon_path(&state.paths);
@@ -1024,7 +1024,7 @@ async fn install_java(app: AppHandle, state: State<'_, AppState>, major: u32) ->
 }
 
 /// Open a folder/file in the OS file manager. Only paths inside Cairn's data dir are allowed.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_data_path(app: AppHandle, state: State<AppState>, path: String) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     let requested = PathBuf::from(&path);
