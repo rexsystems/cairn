@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, on, type FileEntry, type InstanceView, type LogLine } from "../../api";
 import { useStore } from "../../store";
 import { Icon } from "../../components/Icon";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Select } from "../../components/ui";
 import { classify } from "../../lib/logs";
 
@@ -13,6 +14,7 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
   const [fileText, setFileText] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [follow, setFollow] = useState(true);
+  const [sharing, setSharing] = useState<"idle" | "confirm" | "busy">("idle");
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +38,23 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
   }, [lines, fileText, source, filter]);
 
   useEffect(() => { if (follow && box.current) box.current.scrollTop = box.current.scrollHeight; }, [shown, follow]);
+
+  useEffect(() => setSharing("idle"), [source]);
+
+  const share = async () => {
+    const text = source === "live" ? lines.map((l) => l.t).join("\n") : fileText ?? "";
+    setSharing("busy");
+    try {
+      const url = await api.shareLog(text);
+      await navigator.clipboard.writeText(url).catch(() => {});
+      toast(`Log shared, link copied: ${url}`);
+      openUrl(url).catch(() => {});
+    } catch (err) {
+      toast(String(err), true);
+    } finally {
+      setSharing("idle");
+    }
+  };
 
   const g = games[inst.id];
   return (
@@ -61,6 +80,17 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
         <label className="check"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />Follow output</label>
         <span className="spacer" />
         <button className="btn" onClick={() => navigator.clipboard.writeText(shown.map((l) => l.t).join("\n")).then(() => toast("Copied log to clipboard"))}><Icon name="copy" />Copy</button>
+        {sharing === "confirm" ? (
+          <span className="row" style={{ gap: 6 }} role="group" aria-label="Confirm upload">
+            <span className="small muted">Upload the whole log to mclo.gs? Anyone with the link can read it.</span>
+            <button className="btn btn-play btn-sm" onClick={share}>Upload</button>
+            <button className="btn btn-sm" onClick={() => setSharing("idle")}>Cancel</button>
+          </span>
+        ) : (
+          <button className="btn" disabled={sharing === "busy"} onClick={() => setSharing("confirm")}>
+            <Icon name="external" />{sharing === "busy" ? "Uploading..." : "Share"}
+          </button>
+        )}
         {source !== "live" && (
           <button className="btn" onClick={() => {
             const folder = source.includes("crash-reports") ? `${inst.path}/crash-reports` : source.includes("/logs/") ? `${inst.path}/logs` : `${inst.path}/.cairn/logs`;

@@ -215,6 +215,8 @@ export const api = {
   kill: (id: string) => invoke<boolean>("kill_instance", { id }),
   gameStates: () => invoke<GameState[]>("game_states"),
   gameLog: (id: string) => invoke<string[]>("game_log", { id }),
+  /** Uploads to mclo.gs; returns the public link. */
+  shareLog: (content: string) => invoke<string>("share_log", { content }),
   installInstance: (id: string) => invoke<void>("install_instance", { id }),
 
   mcVersions: () => invoke<McVersion[]>("mc_versions"),

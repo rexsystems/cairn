@@ -14,6 +14,7 @@ pub mod java;
 pub mod loaders;
 pub mod logparse;
 pub mod mc;
+pub mod mclogs;
 pub mod modrinth;
 pub mod modrinth_app;
 pub mod net;
@@ -558,6 +559,12 @@ fn game_log(state: State<AppState>, id: String) -> Vec<String> {
     state.games.logs.locked().get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
 }
 
+/// Uploads a log to mclo.gs and returns the share link.
+#[tauri::command]
+async fn share_log(content: String) -> R<String> {
+    mclogs::upload(&content).await.map_err(ea)
+}
+
 #[tauri::command]
 async fn install_instance(app: AppHandle, state: State<'_, AppState>, id: String) -> R<()> {
     let settings = Settings::load(&state.paths.settings_file());
@@ -908,7 +915,7 @@ pub fn run() {
             mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
-            app_update_check, app_update_install,
+            app_update_check, app_update_install, share_log,
             list_java, install_java, open_data_path
         ])
         .run(tauri::generate_context!())
