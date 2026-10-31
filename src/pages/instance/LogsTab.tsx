@@ -3,13 +3,7 @@ import { api, on, type FileEntry, type InstanceView, type LogLine } from "../../
 import { useStore } from "../../store";
 import { Icon } from "../../components/Icon";
 import { Select } from "../../components/ui";
-
-export function classify(line: string, stream: string) {
-  if (line.startsWith("[Cairn]")) return "launcher";
-  if (/\/(ERROR|FATAL)\]|Exception|^\s+at /.test(line) || stream === "stderr" && /error/i.test(line)) return "error";
-  if (/\/WARN\]/.test(line)) return "warn";
-  return "";
-}
+import { classify } from "../../lib/logs";
 
 export function LogsTab({ inst }: { inst: InstanceView }) {
   const { games, toast } = useStore();
