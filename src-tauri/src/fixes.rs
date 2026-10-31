@@ -165,7 +165,7 @@ pub async fn apply(paths: &Paths, inst: &Instance, fix: &Fix, task: &Task) -> Re
                 Some(p) => (Source::parse(source.as_deref()), p.clone()),
                 None => (Source::Modrinth, resolve_mod_id(mod_id, &target).await?),
             };
-            let applied = deps::install(paths, inst, src, &[Root { project_id: pid, version_id: None }], false, false, task).await?;
+            let applied = deps::install(paths, inst, src, &[Root { project_id: pid, ..Default::default() }], false, false, task).await?;
             let mut names: Vec<String> = applied.installed.iter().map(|i| i.title.clone()).collect();
             names.extend(applied.pending.iter().map(|p| format!("{} (download from CurseForge)", p.title)));
             Ok(format!("Installed {}", names.join(", ")))

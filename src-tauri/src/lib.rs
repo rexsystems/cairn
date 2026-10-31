@@ -24,6 +24,7 @@ pub mod modrinth;
 pub mod modrinth_app;
 pub mod net;
 pub mod paths;
+pub mod perf;
 pub mod prism;
 pub mod servers;
 pub mod settings;
@@ -380,7 +381,7 @@ async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, u
             let roots: Vec<deps::Root> = updates
                 .iter()
                 .filter(|u| deps::Source::parse(u["source"].as_str()) == src)
-                .filter_map(|u| Some(deps::Root { project_id: u["projectId"].as_str()?.into(), version_id: u["newVersionId"].as_str().map(String::from) }))
+                .filter_map(|u| Some(deps::Root { project_id: u["projectId"].as_str()?.into(), version_id: u["newVersionId"].as_str().map(String::from), soft: false }))
                 .collect();
             if roots.is_empty() {
                 continue;
@@ -682,6 +683,33 @@ async fn check_compat(state: State<'_, AppState>, id: String) -> R<fixes::Report
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || fixes::check(&paths, &inst)).await.map_err(e)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PerformanceAdvice {
+    memory: perf::MemoryAdvice,
+    jvm: Vec<perf::JvmPreset>,
+    current_jvm: Option<&'static str>,
+    pack: Vec<deps::Root>,
+}
+
+#[tauri::command]
+async fn performance_advice(state: State<'_, AppState>, id: String) -> R<PerformanceAdvice> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths).join("mods");
+    tokio::task::spawn_blocking(move || {
+        let mods = std::fs::read_dir(&dir).map(|rd| rd.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".jar")).count()).unwrap_or(0);
+        let modded = inst.loader != "vanilla" && !inst.use_horizon;
+        PerformanceAdvice {
+            memory: perf::advise(perf::system_memory_mb(), modded, mods),
+            jvm: perf::jvm_presets(),
+            current_jvm: perf::jvm_preset_of(&inst.jvm_args),
+            pack: perf::pack(&inst.loader, &inst.mc_version),
+        }
+    })
+    .await
+    .map_err(e)
 }
 
 #[tauri::command]
@@ -1064,7 +1092,7 @@ pub fn run() {
             launch_instance, kill_instance, game_states, game_log, install_instance,
             mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install_modpack, modrinth_version_deps,
-            plan_install, install_content, check_compat, apply_fix, pending_downloads, open_manual_download, import_manual_download,
+            plan_install, install_content, check_compat, performance_advice, apply_fix, pending_downloads, open_manual_download, import_manual_download,
             dismiss_manual_download, curseforge_available, curseforge_search, curseforge_project, curseforge_files, curseforge_install_modpack,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
             app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,

@@ -11,6 +11,8 @@ export interface InstallRequest {
   roots: InstallRoot[];
   title: string;
   includeOptional?: boolean;
+  /** Always show the plan, even when it holds no surprises. */
+  review?: boolean;
   onDone?: () => void;
 }
 
@@ -47,7 +49,7 @@ export function InstallDialog({ req, onClose }: { req: InstallRequest; onClose: 
       .then((p) => {
         if (!alive) return;
         setPlan(p);
-        if (!summarizePlan(p).needsReview && !optional) void install(false);
+        if (!summarizePlan(p).needsReview && !optional && !req.review) void install(false);
       })
       .catch((e) => alive && setError(String(e)));
     return () => { alive = false; };

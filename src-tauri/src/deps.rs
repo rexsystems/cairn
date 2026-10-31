@@ -249,12 +249,16 @@ impl Plan {
 }
 
 /// A project the user asked for; `version_id` pins an exact version.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Root {
     pub project_id: String,
     #[serde(default)]
     pub version_id: Option<String>,
+    /// Nice-to-have root (performance packs): skipped instead of failing when it has no
+    /// version for the target or is already installed.
+    #[serde(default)]
+    pub soft: bool,
 }
 
 struct Pending {
@@ -263,6 +267,7 @@ struct Pending {
     rel: Rel,
     parent: Option<String>,
     root: bool,
+    soft: bool,
 }
 
 /// Index keys of files from the same project, or for root mods any jar that provides the same id.
@@ -289,7 +294,7 @@ pub async fn plan<R: Repo>(repo: &R, target: &Target, have: &Have, roots: &[Root
     let mut incompatible: Vec<(String, String)> = vec![];
     let mut queue: Vec<Pending> = roots
         .iter()
-        .map(|r| Pending { project_id: r.project_id.clone(), version_id: r.version_id.clone(), rel: Rel::Required, parent: None, root: true })
+        .map(|r| Pending { project_id: r.project_id.clone(), version_id: r.version_id.clone(), rel: Rel::Required, parent: None, root: true, soft: r.soft })
         .collect();
 
     while !queue.is_empty() {
@@ -302,10 +307,10 @@ pub async fn plan<R: Repo>(repo: &R, target: &Target, have: &Have, roots: &[Root
         for (p, r) in fetched {
             let (info, cand) = match r {
                 Ok(x) => x,
-                Err(e) if p.root => return Err(e),
+                Err(e) if p.root && !p.soft => return Err(e),
                 Err(e) => {
                     let note = Note { title: p.project_id.clone(), message: format!("Could not look up this dependency: {e:#}") };
-                    if p.rel == Rel::Required {
+                    if p.rel == Rel::Required && !p.soft {
                         plan.problems.push(note);
                     } else {
                         plan.skipped.push(note);
@@ -314,6 +319,10 @@ pub async fn plan<R: Repo>(repo: &R, target: &Target, have: &Have, roots: &[Root
                 }
             };
             if !seen.insert(info.id.clone()) {
+                continue;
+            }
+            if p.soft && (have.has_project(src, &info.id) || have.provider_of(&info).is_some()) {
+                plan.skipped.push(Note { title: info.title.clone(), message: "Already installed".into() });
                 continue;
             }
             if p.root {
@@ -335,6 +344,10 @@ pub async fn plan<R: Repo>(repo: &R, target: &Target, have: &Have, roots: &[Root
             }
             let Some(cand) = cand else {
                 let msg = format!("No version for Minecraft {} with {}", target.mc_version, crate::compat::loader_label(&target.loader));
+                if p.soft {
+                    plan.skipped.push(Note { title: info.title.clone(), message: msg });
+                    continue;
+                }
                 if p.root {
                     bail!("{} has no version for Minecraft {} with {}", info.title, target.mc_version, crate::compat::loader_label(&target.loader));
                 }
@@ -368,7 +381,7 @@ pub async fn plan<R: Repo>(repo: &R, target: &Target, have: &Have, roots: &[Root
                         if !id.is_empty() && seen.contains(&id) {
                             continue;
                         }
-                        queue.push(Pending { project_id: id, version_id: d.version_id.clone(), rel: d.rel, parent: Some(cand.project.title.clone()), root: false });
+                        queue.push(Pending { project_id: id, version_id: d.version_id.clone(), rel: d.rel, parent: Some(cand.project.title.clone()), root: false, soft: false });
                     }
                 }
             }
@@ -666,7 +679,7 @@ mod tests {
     }
 
     fn root(id: &str) -> Vec<Root> {
-        vec![Root { project_id: id.into(), version_id: None }]
+        vec![Root { project_id: id.into(), ..Default::default() }]
     }
 
     fn titles(p: &Plan) -> Vec<String> {
@@ -693,6 +706,20 @@ mod tests {
         assert_eq!(p.items[1].reason, Reason::DependencyOf { title: "APP".into() });
         assert_eq!(p.items[2].candidate.version_id, "api-121");
         assert!(p.problems.is_empty());
+    }
+
+    #[test]
+    fn soft_roots_skip_instead_of_failing() {
+        let mut have = Have::default();
+        have.projects.insert((Source::Modrinth, "api".into()), vec!["mods/api-121.jar".into()]);
+        let mut r = sample();
+        r.add("old", "mod", vec![ver("old-1", "1.16.5", "fabric", vec![])]);
+        let roots: Vec<Root> = ["app", "api", "old", "gone"].iter().map(|id| Root { project_id: (*id).into(), soft: true, ..Default::default() }).collect();
+        let p = block_on(plan(&r, &target("fabric", "1.21.1"), &have, &roots, false)).unwrap();
+        assert_eq!(titles(&p), vec!["app", "lib"]);
+        assert!(p.problems.is_empty(), "{:?}", p.problems);
+        let skipped: Vec<&str> = p.skipped.iter().map(|n| n.title.as_str()).collect();
+        assert!(skipped.contains(&"API") && skipped.contains(&"OLD") && skipped.contains(&"gone"), "{skipped:?}");
     }
 
     #[test]

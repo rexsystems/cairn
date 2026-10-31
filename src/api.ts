@@ -102,7 +102,15 @@ export interface UpdateInfo {
 
 export type ContentSource = "modrinth" | "curseforge";
 
-export interface InstallRoot { projectId: string; versionId?: string | null }
+export interface InstallRoot { projectId: string; versionId?: string | null; soft?: boolean }
+export interface MemoryPreset { id: string; label: string; mb: number }
+export interface JvmPreset { id: string; label: string; detail: string; args: string }
+export interface PerformanceAdvice {
+  memory: { totalMb: number; maxSafeMb: number; recommendedMb: number; presets: MemoryPreset[] };
+  jvm: JvmPreset[];
+  currentJvm: string | null;
+  pack: InstallRoot[];
+}
 export interface PlanCandidate {
   source: ContentSource;
   project: { id: string; slug: string; title: string; projectType: string; icon?: string | null; pageUrl?: string | null };
@@ -279,6 +287,7 @@ export const api = {
     invoke<InstallPlan>("plan_install", { instanceId, source, roots, includeOptional }),
   installContent: (instanceId: string, source: ContentSource, roots: InstallRoot[], includeOptional = false, allowProblems = false) =>
     invoke<InstallResult>("install_content", { instanceId, source, roots, includeOptional, allowProblems }),
+  performanceAdvice: (id: string) => invoke<PerformanceAdvice>("performance_advice", { id }),
   checkCompat: (id: string) => invoke<CompatReport>("check_compat", { id }),
   applyFix: (id: string, fix: Fix) => invoke<string>("apply_fix", { id, fix }),
   pendingDownloads: (id: string) => invoke<PendingView>("pending_downloads", { id }),

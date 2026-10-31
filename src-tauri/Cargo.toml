@@ -47,6 +47,7 @@ fastnbt = "2"
 discord-rich-presence = "0.2"
 sentry = "0.49.3"
 tauri-plugin-single-instance = "2"
+sysinfo = { version = "0.35", default-features = false, features = ["system"] }
 
 [profile.release]
 codegen-units = 4
