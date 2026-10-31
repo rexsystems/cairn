@@ -256,6 +256,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let listener = UnixListener::bind(dir.join("discord-ipc-0")).unwrap();
+        // The server stays open until the client is done, or the client's next read sees a reset.
+        let (done, wait) = std::sync::mpsc::channel::<()>();
         let server = std::thread::spawn(move || {
             let (mut s, _) = listener.accept().unwrap();
             let mut head = [0u8; 8];
@@ -270,6 +272,7 @@ mod tests {
             s.write_all(&frame(OP_FRAME, br#"{"evt":"ACTIVITY_JOIN","data":{"secret":"x"}}"#)).unwrap();
             s.read_exact(&mut head).unwrap();
             assert_eq!(u32::from_le_bytes(head[0..4].try_into().unwrap()), OP_PONG);
+            let _ = wait.recv();
         });
         std::env::set_var("XDG_RUNTIME_DIR", &dir);
         let mut c = Conn::connect("123").unwrap();
@@ -281,6 +284,7 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+        done.send(()).unwrap();
         server.join().unwrap();
         assert_eq!(got[0]["evt"], "ACTIVITY_JOIN");
         std::fs::remove_dir_all(&dir).unwrap();
