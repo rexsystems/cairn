@@ -31,6 +31,7 @@ pub mod modrinth_app;
 pub mod net;
 pub mod party;
 pub mod paths;
+pub mod textures;
 pub mod perf;
 pub mod playit;
 pub mod prism;
@@ -651,6 +652,12 @@ fn game_states(state: State<AppState>) -> Vec<game::GameState> {
 #[tauri::command]
 fn game_log(state: State<AppState>, id: String) -> Vec<String> {
     state.games.logs.locked().get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
+}
+
+/// A skin or cape image as a data URL, so the CSP and WebGL never see Mojang's http host.
+#[tauri::command]
+async fn texture(state: State<'_, AppState>, url: String) -> R<String> {
+    textures::data_url(&state.paths, &url).await.map_err(ea)
 }
 
 /// Uploads a log to mclo.gs and returns the share link.
@@ -1546,7 +1553,8 @@ pub fn run() {
             plan_install, install_content, check_compat, performance_advice, apply_fix, instance_stats, analyze_crash, pending_downloads, open_manual_download, import_manual_download,
             dismiss_manual_download, curseforge_available, curseforge_search, curseforge_project, curseforge_files, curseforge_install_modpack,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
-            app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,
+            app_update_check, app_update_install, share_log,
+            texture, create_shortcut, take_launch_request,
             list_java, install_java, open_data_path,
             server_info, server_prepare, server_accept_eula, server_save_config, server_start, server_stop, server_command, server_log,
             playit_status, playit_link, playit_cancel_link, playit_start, playit_stop, playit_unlink, playit_tunnels,

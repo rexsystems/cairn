@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTexture } from "../lib/textures";
 
 /** Minecraft skin atlas face is 8×8 at (8, 8) on a 64×64 sheet. */
 const ATLAS = 64;
@@ -9,6 +10,7 @@ const VIEW = 48;
 
 /** Face crop from a full skin PNG — same idea as CapeThumb. */
 export function SkinThumb({ url, label }: { url: string; label?: string }) {
+  const { src, failed: unavailable } = useTexture(url);
   const [failed, setFailed] = useState(false);
   const scale = VIEW / FACE;
 
@@ -23,9 +25,9 @@ export function SkinThumb({ url, label }: { url: string; label?: string }) {
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      {!failed && (
+      {src && !failed && !unavailable && (
         <img
-          src={url}
+          src={src}
           alt=""
           draggable={false}
           width={ATLAS * scale}

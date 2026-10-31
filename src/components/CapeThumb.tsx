@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTexture } from "../lib/textures";
 
 /** Mojang cape atlas is 64×32; front face is 10×16 at (1,1). */
 const ATLAS_W = 64;
@@ -15,6 +16,7 @@ const VIEW_H = Math.round((VIEW_W * FACE_H) / FACE_W);
  * does not act as a simple crop when the image is larger than the box).
  */
 export function CapeThumb({ url, label }: { url: string; label?: string }) {
+  const { src, failed: unavailable } = useTexture(url);
   const [failed, setFailed] = useState(false);
   const scale = VIEW_W / FACE_W;
 
@@ -27,9 +29,9 @@ export function CapeThumb({ url, label }: { url: string; label?: string }) {
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      {!failed && (
+      {src && !failed && !unavailable && (
         <img
-          src={url}
+          src={src}
           alt=""
           draggable={false}
           width={ATLAS_W * scale}
