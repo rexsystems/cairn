@@ -370,6 +370,8 @@ pub struct UpdateInfo {
     pub current_version: String,
     pub new_version: String,
     pub new_version_id: String,
+    /// "modrinth" or "curseforge".
+    pub source: String,
 }
 
 fn local_hashes(dir: &Path, kind: &str) -> HashMap<String, String> {
@@ -477,6 +479,9 @@ pub async fn check_updates(paths: &Paths, inst: &Instance) -> Result<Vec<UpdateI
                 continue;
             }
             let meta = index.files.get(&format!("{kind}/{}", base_name(fname))).cloned().unwrap_or_default();
+            if meta.source.as_deref() == Some("curseforge") {
+                continue;
+            }
             out.push(UpdateInfo {
                 kind: kind.into(),
                 file_name: fname.clone(),
@@ -486,30 +491,12 @@ pub async fn check_updates(paths: &Paths, inst: &Instance) -> Result<Vec<UpdateI
                 current_version: meta.version_number.clone().unwrap_or_else(|| "installed".into()),
                 new_version: v["version_number"].as_str().unwrap_or_default().into(),
                 new_version_id: v["id"].as_str().unwrap_or_default().into(),
+                source: "modrinth".into(),
             });
         }
     }
     out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     Ok(out)
-}
-
-pub async fn apply_update(paths: &Paths, inst: &Instance, u: &UpdateInfo, task: &Task) -> Result<()> {
-    let dir = inst.dir(paths);
-    let was_disabled = u.file_name.ends_with(".disabled");
-    let old = dir.join(&u.kind).join(&u.file_name);
-    let mut seen = HashSet::new();
-    let mut out = vec![];
-    // install_rec replaces the old file when the project id is already indexed.
-    install_rec(paths, inst, u.project_id.clone(), Some(u.new_version_id.clone()), false, task, &mut seen, &mut out, true).await?;
-    if old.exists() && out.first().map(|i| i.file_name != base_name(&u.file_name)).unwrap_or(false) {
-        std::fs::remove_file(&old)?;
-    }
-    if was_disabled {
-        if let Some(i) = out.first() {
-            let _ = std::fs::rename(dir.join(&u.kind).join(&i.file_name), dir.join(&u.kind).join(format!("{}.disabled", i.file_name)));
-        }
-    }
-    Ok(())
 }
 
 // Modpacks (.mrpack)

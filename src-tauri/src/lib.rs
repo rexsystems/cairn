@@ -8,6 +8,7 @@ pub mod msa_client;
 pub mod curseforge;
 pub mod deps;
 pub mod discord;
+pub mod fixes;
 pub mod game;
 pub mod horizon;
 pub mod horizon_mods;
@@ -15,6 +16,7 @@ pub mod instance;
 pub mod java;
 pub mod loaders;
 pub mod logparse;
+pub mod manual;
 pub mod mc;
 pub mod mclogs;
 pub mod modmeta;
@@ -40,7 +42,7 @@ use serde_json::{json, Value};
 use settings::Settings;
 use util::LockExt;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tasks::Task;
@@ -356,9 +358,16 @@ async fn installed_projects(state: State<'_, AppState>, id: String) -> R<Vec<Str
 #[tauri::command]
 async fn check_updates(state: State<'_, AppState>, id: String) -> R<Vec<modrinth::UpdateInfo>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
-    modrinth::check_updates(&state.paths, &inst).await.map_err(ea)
+    let (mr, cf) = tokio::join!(modrinth::check_updates(&state.paths, &inst), curseforge::check_updates(&state.paths, &inst));
+    let mut out = mr.map_err(ea)?;
+    // No CurseForge key or CurseForge down: still show Modrinth updates.
+    out.extend(cf.unwrap_or_default());
+    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    Ok(out)
 }
 
+/// Updates go through the resolver, so new required dependencies come along and
+/// disabled files stay disabled.
 #[tauri::command]
 async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, updates: Vec<Value>) -> R<u32> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
@@ -367,21 +376,17 @@ async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, u
     let t2 = task.clone();
     task.run(async move {
         let mut n = 0;
-        let total = updates.len() as u64;
-        for (i, u) in updates.into_iter().enumerate() {
-            let u = modrinth::UpdateInfo {
-                kind: u["kind"].as_str().unwrap_or_default().into(),
-                file_name: u["fileName"].as_str().unwrap_or_default().into(),
-                title: u["title"].as_str().unwrap_or_default().into(),
-                icon: None,
-                project_id: u["projectId"].as_str().unwrap_or_default().into(),
-                current_version: String::new(),
-                new_version: u["newVersion"].as_str().unwrap_or_default().into(),
-                new_version_id: u["newVersionId"].as_str().unwrap_or_default().into(),
-            };
-            t2.stage(&format!("Updating {}", u.title), i as u64, total);
-            modrinth::apply_update(&paths, &inst, &u, &t2).await?;
-            n += 1;
+        for src in [deps::Source::Modrinth, deps::Source::Curseforge] {
+            let roots: Vec<deps::Root> = updates
+                .iter()
+                .filter(|u| deps::Source::parse(u["source"].as_str()) == src)
+                .filter_map(|u| Some(deps::Root { project_id: u["projectId"].as_str()?.into(), version_id: u["newVersionId"].as_str().map(String::from) }))
+                .collect();
+            if roots.is_empty() {
+                continue;
+            }
+            let applied = deps::install(&paths, &inst, src, &roots, false, false, &t2).await?;
+            n += (applied.installed.len() + applied.pending.len()) as u32;
         }
         Ok(n)
     })
@@ -632,39 +637,149 @@ async fn modrinth_tags(state: State<'_, AppState>) -> R<Value> {
 }
 
 #[tauri::command]
-async fn modrinth_install(
+async fn plan_install(state: State<'_, AppState>, instance_id: String, source: Option<String>, roots: Vec<deps::Root>, include_optional: Option<bool>) -> R<deps::Plan> {
+    let inst = instance::get(&state.paths, &instance_id).map_err(ea)?;
+    deps::preview(&state.paths, &inst, deps::Source::parse(source.as_deref()), &roots, include_optional.unwrap_or(false)).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn install_content(
     app: AppHandle,
     state: State<'_, AppState>,
     instance_id: String,
-    project_id: String,
-    version_id: Option<String>,
+    source: Option<String>,
+    roots: Vec<deps::Root>,
     include_optional: Option<bool>,
-) -> R<Vec<modrinth::Installed>> {
+    allow_problems: Option<bool>,
+) -> R<deps::Applied> {
     let inst = instance::get(&state.paths, &instance_id).map_err(ea)?;
     let task = Task::new(&app, format!("Installing into {}", inst.name));
     let t2 = task.clone();
     let settings_file = state.paths.settings_file();
-    let installed = task
-        .run(modrinth::install_project(
-            &state.paths,
-            &inst,
-            &project_id,
-            version_id.as_deref(),
-            include_optional.unwrap_or(false),
-            &t2,
-        ))
+    let src = deps::Source::parse(source.as_deref());
+    let applied = task
+        .run(deps::install(&state.paths, &inst, src, &roots, include_optional.unwrap_or(false), allow_problems.unwrap_or(false), &t2))
         .await
         .map_err(ea)?;
+    if !applied.pending.is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), instance_id.clone());
+    }
     telemetry::spawn(
         settings_file,
         "mod_install",
         json!({
             "loader": inst.loader,
             "mc_version": inst.mc_version,
-            "count": installed.len(),
+            "count": applied.installed.len(),
+            "source": src.as_str(),
         }),
     );
-    Ok(installed)
+    Ok(applied)
+}
+
+#[tauri::command]
+async fn check_compat(state: State<'_, AppState>, id: String) -> R<fixes::Report> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let paths = state.paths.clone();
+    tokio::task::spawn_blocking(move || fixes::check(&paths, &inst)).await.map_err(e)
+}
+
+#[tauri::command]
+async fn apply_fix(app: AppHandle, state: State<'_, AppState>, id: String, fix: compat::Fix) -> R<String> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let task = Task::new(&app, format!("Fixing {}", inst.name));
+    let t2 = task.clone();
+    let msg = task.run(fixes::apply(&state.paths, &inst, &fix, &t2)).await.map_err(ea)?;
+    if !deps::load_pending(&inst.dir(&state.paths)).is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), id);
+    }
+    Ok(msg)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingView {
+    items: Vec<deps::PendingDownload>,
+    watching: bool,
+    downloads_dir: Option<String>,
+}
+
+#[tauri::command]
+fn pending_downloads(state: State<AppState>, id: String) -> R<PendingView> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    Ok(PendingView {
+        items: deps::load_pending(&inst.dir(&state.paths)),
+        watching: manual::is_watching(&id),
+        downloads_dir: manual::downloads_dir().map(|d| d.to_string_lossy().into()),
+    })
+}
+
+/// Opens the CurseForge page for one pending file (or all of them) and starts watching Downloads.
+#[tauri::command]
+fn open_manual_download(app: AppHandle, state: State<AppState>, id: String, file_id: Option<String>) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let list = deps::load_pending(&inst.dir(&state.paths));
+    for p in list.iter().filter(|p| file_id.as_ref().map(|f| f == &p.file_id).unwrap_or(true)) {
+        if manual::safe_page(&p.download_page) {
+            app.opener().open_url(&p.download_page, None::<&str>).map_err(e)?;
+        }
+    }
+    manual::watch(app.clone(), state.paths.clone(), id).map_err(ea)
+}
+
+#[tauri::command]
+async fn import_manual_download(state: State<'_, AppState>, id: String, path: String) -> R<String> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths);
+    tokio::task::spawn_blocking(move || manual::import_file(&dir, Path::new(&path))).await.map_err(e)?.map_err(ea)
+}
+
+#[tauri::command]
+fn dismiss_manual_download(state: State<AppState>, id: String, file_id: String) -> R<()> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths);
+    let mut list = deps::load_pending(&dir);
+    list.retain(|p| p.file_id != file_id);
+    deps::save_pending(&dir, &list).map_err(ea)
+}
+
+// CurseForge
+
+#[tauri::command]
+fn curseforge_available() -> bool {
+    curseforge::api_key().is_ok()
+}
+
+#[tauri::command]
+async fn curseforge_search(params: curseforge::SearchParams) -> R<Value> {
+    curseforge::search(&params).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn curseforge_project(id: String) -> R<Value> {
+    curseforge::project(&id).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn curseforge_files(id: String, game_version: Option<String>, loader: Option<String>) -> R<Vec<Value>> {
+    curseforge::files(&id, game_version.as_deref().unwrap_or(""), loader.as_deref().unwrap_or("")).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn curseforge_install_modpack(app: AppHandle, state: State<'_, AppState>, project_id: String, file_id: Option<String>) -> R<instance::InstanceView> {
+    let s = Settings::load(&state.paths.settings_file());
+    let task = Task::new(&app, "Installing modpack");
+    let t2 = task.clone();
+    let inst = task
+        .run(curseforge::install_modpack_project(&state.paths, &project_id, file_id.as_deref(), s.concurrent_downloads.max(1), &t2))
+        .await
+        .map_err(ea)?;
+    if !deps::load_pending(&inst.dir(&state.paths)).is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), inst.id.clone());
+    }
+    telemetry::spawn(state.paths.settings_file(), "instance_create", json!({ "loader": inst.loader, "mc_version": inst.mc_version, "source": "curseforge-modpack" }));
+    Ok(instance::view(&state.paths, inst))
 }
 
 #[tauri::command]
@@ -948,7 +1063,9 @@ pub fn run() {
             backup_instance, restore_instance_backup, search_library_content,
             launch_instance, kill_instance, game_states, game_log, install_instance,
             mc_versions, mc_version_art, loader_versions,
-            modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
+            modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install_modpack, modrinth_version_deps,
+            plan_install, install_content, check_compat, apply_fix, pending_downloads, open_manual_download, import_manual_download,
+            dismiss_manual_download, curseforge_available, curseforge_search, curseforge_project, curseforge_files, curseforge_install_modpack,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
             app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,
             list_java, install_java, open_data_path

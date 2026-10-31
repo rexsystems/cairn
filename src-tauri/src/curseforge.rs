@@ -687,6 +687,57 @@ pub async fn install_modpack_project(paths: &Paths, project_id: &str, file_id: O
     Ok(inst)
 }
 
+/// Newer files for CurseForge-installed content. CurseForge file ids only grow, so a
+/// higher id than the installed one is newer.
+pub async fn check_updates(paths: &Paths, inst: &Instance) -> Result<Vec<crate::modrinth::UpdateInfo>> {
+    use crate::deps::Repo as _;
+    use futures::StreamExt;
+    let dir = inst.dir(paths);
+    let index = crate::content::ContentIndex::load(&dir);
+    let entries: Vec<(String, crate::content::ContentMeta, String)> = index
+        .files
+        .iter()
+        .filter(|(_, m)| m.source.as_deref() == Some("curseforge") && m.project_id.is_some())
+        .filter_map(|(k, m)| {
+            let on_disk = crate::deps::existing_file(&dir, k)?;
+            let name = on_disk.file_name()?.to_string_lossy().to_string();
+            Some((k.clone(), m.clone(), name))
+        })
+        .collect();
+    if entries.is_empty() {
+        return Ok(vec![]);
+    }
+    let repo = Repo::new()?;
+    let target = crate::deps::Target::of(inst);
+    let repo = &repo;
+    let target = &target;
+    let mut out: Vec<crate::modrinth::UpdateInfo> = futures::stream::iter(entries)
+        .map(|(key, meta, name)| async move {
+            let pid = meta.project_id.clone()?;
+            let info = repo.project(&pid).await.ok()?;
+            let c = repo.pick(&info, target).await.ok()??;
+            let cur: u64 = meta.version_id.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0);
+            let new: u64 = c.version_id.parse().ok()?;
+            (new > cur).then(|| crate::modrinth::UpdateInfo {
+                kind: key.split('/').next().unwrap_or("mods").into(),
+                file_name: name,
+                title: info.title.clone(),
+                icon: info.icon.clone(),
+                project_id: pid,
+                current_version: meta.version_number.clone().unwrap_or_else(|| "installed".into()),
+                new_version: c.version_number.clone(),
+                new_version_id: c.version_id.clone(),
+                source: "curseforge".into(),
+            })
+        })
+        .buffer_unordered(8)
+        .filter_map(|x| async { x })
+        .collect()
+        .await;
+    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

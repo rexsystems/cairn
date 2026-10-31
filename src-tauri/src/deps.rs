@@ -563,19 +563,28 @@ pub async fn apply(dir: &Path, plan: &Plan, concurrency: usize, task: &Task) -> 
     Ok(out)
 }
 
-/// Shorthand used by commands: gather, plan with the right repo, apply.
-pub async fn install(paths: &Paths, inst: &Instance, source: Source, roots: &[Root], include_optional: bool, task: &Task) -> Result<Applied> {
+/// Resolves without changing anything, for the confirmation dialog.
+pub async fn preview(paths: &Paths, inst: &Instance, source: Source, roots: &[Root], include_optional: bool) -> Result<Plan> {
     let dir = inst.dir(paths);
     let _ = crate::modrinth::identify(&dir).await;
-    let have = Have::gather(&dir);
+    let have = tokio::task::spawn_blocking(move || Have::gather(&dir)).await?;
     let target = Target::of(inst);
+    match source {
+        Source::Modrinth => plan(&crate::modrinth::Repo, &target, &have, roots, include_optional).await,
+        Source::Curseforge => plan(&crate::curseforge::Repo::new()?, &target, &have, roots, include_optional).await,
+    }
+}
+
+/// Shorthand used by commands: gather, plan with the right repo, apply. Problems stop the
+/// install unless the user already saw them in the preview and chose to continue.
+pub async fn install(paths: &Paths, inst: &Instance, source: Source, roots: &[Root], include_optional: bool, allow_problems: bool, task: &Task) -> Result<Applied> {
+    let dir = inst.dir(paths);
     task.stage("Resolving dependencies", 0, 0);
-    let plan = match source {
-        Source::Modrinth => plan(&crate::modrinth::Repo, &target, &have, roots, include_optional).await?,
-        Source::Curseforge => plan(&crate::curseforge::Repo::new()?, &target, &have, roots, include_optional).await?,
-    };
-    if let Some(p) = plan.problems.first() {
-        bail!("{}: {}", p.title, p.message);
+    let plan = preview(paths, inst, source, roots, include_optional).await?;
+    if !allow_problems {
+        if let Some(p) = plan.problems.first() {
+            bail!("{}: {}", p.title, p.message);
+        }
     }
     let concurrency = crate::settings::Settings::load(&paths.settings_file()).concurrent_downloads.max(1);
     apply(&dir, &plan, concurrency, task).await
