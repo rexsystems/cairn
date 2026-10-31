@@ -9,6 +9,7 @@ import { InstanceCover } from "../components/InstanceCover";
 import { loaderLabel, playTime, relativeTime } from "../format";
 import { HorizonModsTab } from "./instance/HorizonModsTab";
 import { ExportDialog } from "./instance/ExportDialog";
+import { ShareDialog } from "./instance/ShareDialog";
 import { ContentTab } from "./instance/ContentTab";
 import { ServersTab } from "./instance/ServersTab";
 import { WorldsTab } from "./instance/WorldsTab";
@@ -36,6 +37,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
   const [menu, setMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(() => {
@@ -97,6 +99,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
           <button ref={menuBtnRef} className="btn btn-icon" aria-label="More actions" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="more" /></button>
           <PopoverMenu open={menu} onClose={() => setMenu(false)} anchorRef={menuBtnRef}>
             <button role="menuitem" className="menu-item" onClick={duplicate}><Icon name="copy" />Duplicate</button>
+            <button role="menuitem" className="menu-item" onClick={() => { setMenu(false); setSharing(true); }}><Icon name="copy" />Share</button>
             <button role="menuitem" className="menu-item" onClick={() => { setMenu(false); setExporting(true); }}><Icon name="download" />Export as .mrpack</button>
             <button role="menuitem" className="menu-item" onClick={async () => {
               setMenu(false);
@@ -143,6 +146,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
           <p>This removes the instance folder, including its worlds, screenshots and mods. Shared game files stay for other instances.</p>
         </Modal>
       )}
+      {sharing && <ShareDialog inst={inst} onExport={() => { setSharing(false); setExporting(true); }} onClose={() => setSharing(false)} />}
       {exporting && <ExportDialog inst={inst} onClose={() => setExporting(false)} />}
     </>
   );

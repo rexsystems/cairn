@@ -29,6 +29,7 @@ pub mod perf;
 pub mod prism;
 pub mod servers;
 pub mod settings;
+pub mod share;
 pub mod stats;
 pub mod shortcuts;
 pub mod tasks;
@@ -232,6 +233,65 @@ async fn import_modpack(app: AppHandle, state: State<'_, AppState>, path: String
         .await
         .map_err(ea)?;
     Ok(instance::view(&state.paths, inst))
+}
+
+/// Share code for an instance: its version, loader and the exact content versions.
+#[tauri::command(async)]
+fn share_code(state: State<AppState>, id: String) -> R<share::Shared> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let (m, left_out) = share::manifest(&inst.dir(&state.paths), &inst);
+    Ok(share::Shared { code: share::encode(&m).map_err(ea)?, items: m.items.len(), left_out })
+}
+
+#[tauri::command(async)]
+fn read_share_code(code: String) -> R<share::Manifest> {
+    share::decode(&code).map_err(ea)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedImport {
+    instance: instance::InstanceView,
+    installed: usize,
+    pending: Vec<deps::PendingDownload>,
+    /// One line per source that could not be installed; the instance is kept either way.
+    failed: Vec<String>,
+}
+
+/// Builds a new instance from a share code and downloads the listed versions.
+#[tauri::command]
+async fn import_share_code(app: AppHandle, state: State<'_, AppState>, code: String) -> R<SharedImport> {
+    let m = share::decode(&code).map_err(ea)?;
+    let inst = instance::create(
+        &state.paths,
+        Instance { name: m.name.clone(), mc_version: m.mc.clone(), loader: m.loader.clone(), loader_version: m.lv.clone(), ..Default::default() },
+    )
+    .map_err(ea)?;
+    let task = Task::new(&app, format!("Setting up {}", inst.name));
+    let t2 = task.clone();
+    let mut out = SharedImport { instance: instance::view(&state.paths, inst.clone()), installed: 0, pending: vec![], failed: vec![] };
+    let work = async {
+        for (tag, source) in [("m", deps::Source::Modrinth), ("c", deps::Source::Curseforge)] {
+            let roots: Vec<deps::Root> =
+                m.items.iter().filter(|i| i.s == tag).map(|i| deps::Root { project_id: i.p.clone(), version_id: Some(i.v.clone()), soft: true }).collect();
+            if roots.is_empty() {
+                continue;
+            }
+            match deps::install(&state.paths, &inst, source, &roots, false, true, &t2).await {
+                Ok(a) => {
+                    out.installed += a.installed.len();
+                    out.pending.extend(a.pending);
+                }
+                Err(e) => out.failed.push(format!("{} files from {}: {e:#}", roots.len(), if tag == "m" { "Modrinth" } else { "CurseForge" })),
+            }
+        }
+        anyhow::Ok(())
+    };
+    task.run(work).await.map_err(ea)?;
+    if !out.pending.is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), inst.id.clone());
+    }
+    Ok(out)
 }
 
 #[tauri::command(async)]
@@ -1137,6 +1197,7 @@ pub fn run() {
             app_info, get_settings, save_settings,
             list_instances, get_instance, create_instance, update_instance, delete_instance, duplicate_instance, set_instance_icon,
             import_mrpack, import_modpack, export_mrpack,
+            share_code, read_share_code, import_share_code,
             list_modrinth_app_profiles, import_modrinth_app_profile,
             list_content, toggle_content, remove_content, add_content_files, installed_projects, check_updates, apply_updates,
             list_horizon_mods, toggle_horizon_mod, remove_horizon_mod, add_horizon_mod_files, list_bundled_horizon_mods, install_bundled_horizon_mod,

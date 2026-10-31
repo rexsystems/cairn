@@ -151,6 +151,9 @@ export interface FileEntry { name: string; path: string; modified: number; size:
 export interface GameState { instanceId: string; state: "preparing" | "running" | "exited"; pid?: number | null; started: number; exitCode?: number | null; crashed?: boolean }
 export interface PlaySession { started: number; ended: number; seconds: number; exitCode?: number | null; crashed: boolean; reason?: string | null; log?: string | null }
 export interface InstanceStats { totalSeconds: number; sessions: number; crashes: number; longestSeconds: number; weekSeconds: number; days: number[]; recent: PlaySession[] }
+export interface SharedCode { code: string; items: number; leftOut: string[] }
+export interface ShareManifest { name: string; mc: string; loader: string; lv?: string | null; items: { s: "m" | "c"; p: string; v: string }[] }
+export interface SharedImport { instance: InstanceView; installed: number; pending: PendingDownload[]; failed: string[] }
 export interface CrashAnalysis { source: string | null; issues: CompatIssue[] }
 export interface LogLine { instanceId: string; line: string; stream: string }
 export interface TaskEvent { id: string; title: string; stage: string; done: number; total: number; state: "running" | "done" | "error"; error?: string | null }
@@ -228,6 +231,9 @@ export const api = {
   importMrpack: (path: string) => invoke<InstanceView>("import_mrpack", { path }),
   /** Modrinth `.mrpack` or CurseForge modpack `.zip` (format sniffed). */
   importModpack: (path: string) => invoke<InstanceView>("import_modpack", { path }),
+  shareCode: (id: string) => invoke<SharedCode>("share_code", { id }),
+  readShareCode: (code: string) => invoke<ShareManifest>("read_share_code", { code }),
+  importShareCode: (code: string) => invoke<SharedImport>("import_share_code", { code }),
   exportMrpack: (id: string, dest: string, extra: string[]) => invoke<string>("export_mrpack", { id, dest, extra }),
   listModrinthAppProfiles: () => invoke<ModrinthAppProfile[]>("list_modrinth_app_profiles"),
   importModrinthAppProfile: (key: string) => invoke<InstanceView>("import_modrinth_app_profile", { key }),
