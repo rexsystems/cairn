@@ -52,7 +52,15 @@ CurseForge downloads need a Core API key from [console.curseforge.com](https://c
 
 **Library → Import from app** copies instances from Modrinth App, RexLauncher, Prism Launcher, PolyMC and MultiMC (a MultiMC folder is only found in the standard data folder, since MultiMC is portable).
 
-Browsing CurseForge inside Cairn isn't built yet. CurseForge's API terms require a key per app, and many projects turn off third-party downloads (`allowModDistribution: false`), so a browser would need a "download it on the website" fallback. Zip import covers most packs for now.
+**Discover → CurseForge** browses and installs CurseForge mods, packs and resource packs with the same key. Projects that turn off third-party downloads (`allowModDistribution: false`) open on the website instead; Cairn watches your Downloads folder and installs the file once it arrives.
+
+**Library → Paste share code** rebuilds an instance from a `CAIRN1:` code made with **Instance → ⋯ → Share**. Codes only list Modrinth and CurseForge versions, so files added by hand are left out (export an `.mrpack` for those).
+
+## Hosting a server
+
+The **Host** tab of an instance sets up a matching server in `servers/<instance id>` under the data folder (vanilla, Fabric, Quilt, Forge or NeoForge). Client-only mods are skipped. The server won't start until you accept the Minecraft EULA, and it listens on `127.0.0.1` unless you turn on LAN. Cairn never opens ports on your router.
+
+To let friends join over the internet, **Link playit.gg** downloads the playit agent (checked against a pinned SHA-256) and opens playit.gg to approve it. The agent exists for Windows and Linux only.
 
 ## Settings worth knowing
 
@@ -62,7 +70,8 @@ Browsing CurseForge inside Cairn isn't built yet. CurseForge's API terms require
 - Game environment isolation so launcher GTK/WebKit flags do not leak into Minecraft
 - Managed Eclipse Temurin installs when a version needs a Java you do not have yet, checked against Adoptium's SHA-256
 - **Logs → Share** uploads a log to [mclo.gs](https://mclo.gs) after you confirm, and copies the link
-- **Instance → ⋯ → Create desktop shortcut** (Windows and Linux) starts that instance directly. Opening Cairn twice focuses the running window
+- **Lighter graphics** turns off blur and heavy animations for slow GPUs or software rendering
+- **Instance → ⋯ → Create desktop shortcut** (Windows, macOS and Linux, including Flatpak) starts that instance directly. Opening Cairn twice focuses the running window
 
 Sign-in uses the official Minecraft launcher's Microsoft client by default. To use your own Azure app, set `CAIRN_MSA_CLIENT_ID` at runtime or build time (see `src-tauri/src/msa_client.rs`). Adding an offline account needs a signed-in Microsoft account that owns Minecraft.
 
