@@ -6,24 +6,43 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Select } from "../../components/ui";
 import { classify } from "../../lib/logs";
 
+type Line = { t: string; s: string };
+const FLUSH_MS = 100;
+const KEEP = 8000;
+/** Lines drawn at once; earlier ones stay one click away. */
+const SHOW = 1500;
+const keepTail = (l: Line[]) => (l.length > KEEP ? l.slice(-KEEP) : l);
+
 export function LogsTab({ inst }: { inst: InstanceView }) {
   const { games, toast } = useStore();
   const [source, setSource] = useState<string>("live");
-  const [lines, setLines] = useState<{ t: string; s: string }[]>([]);
+  const [lines, setLines] = useState<Line[]>([]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [fileText, setFileText] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [follow, setFollow] = useState(true);
   const [sharing, setSharing] = useState<"idle" | "confirm" | "busy">("idle");
+  const [showAll, setShowAll] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.gameLog(inst.id).then((l) => setLines(l.map((t) => ({ t, s: "stdout" }))));
     api.listLogFiles(inst.id).then(setFiles).catch(() => setFiles([]));
+    // A starting game prints thousands of lines; render them in batches, not one by one.
+    let pending: Line[] = [];
+    let timer = 0;
+    const flush = () => {
+      timer = 0;
+      const batch = pending;
+      pending = [];
+      setLines((prev) => keepTail([...prev, ...batch]));
+    };
     const un = on<LogLine>("game-log", (l) => {
-      if (l.instanceId === inst.id) setLines((prev) => (prev.length > 8000 ? [...prev.slice(-6000), { t: l.line, s: l.stream }] : [...prev, { t: l.line, s: l.stream }]));
+      if (l.instanceId !== inst.id) return;
+      pending.push({ t: l.line, s: l.stream });
+      if (!timer) timer = window.setTimeout(flush, FLUSH_MS);
     });
-    return () => { un.then((u) => u()); };
+    return () => { un.then((u) => u()); window.clearTimeout(timer); };
   }, [inst.id]);
 
   useEffect(() => {
@@ -39,7 +58,9 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
 
   useEffect(() => { if (follow && box.current) box.current.scrollTop = box.current.scrollHeight; }, [shown, follow]);
 
-  useEffect(() => setSharing("idle"), [source]);
+  useEffect(() => { setSharing("idle"); setShowAll(false); }, [source]);
+  const hidden = showAll ? 0 : Math.max(0, shown.length - SHOW);
+  const visible = hidden ? shown.slice(hidden) : shown;
 
   const share = async () => {
     const text = source === "live" ? lines.map((l) => l.t).join("\n") : fileText ?? "";
@@ -115,7 +136,12 @@ export function LogsTab({ inst }: { inst: InstanceView }) {
       <div className="log-view" ref={box} tabIndex={0} aria-label="Game log" role="log">
         {shown.length === 0 ? (
           <span className="muted">{source === "live" ? "Nothing logged yet. Press Play and the game output streams here." : fileText === null ? "Reading file..." : "This file is empty."}</span>
-        ) : shown.map((l, i) => <div key={i} className={`log-line ${classify(l.t, l.s)}`}>{l.t}</div>)}
+        ) : (
+          <>
+            {hidden > 0 && <button className="btn btn-sm" onClick={() => setShowAll(true)}>Show {hidden.toLocaleString()} earlier lines</button>}
+            {visible.map((l, i) => <div key={hidden + i} className={`log-line ${classify(l.t, l.s)}`}>{l.t}</div>)}
+          </>
+        )}
       </div>
     </div>
   );
