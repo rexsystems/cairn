@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 use std::io::Read;
+use std::path::PathBuf;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -134,7 +135,7 @@ pub async fn install(paths: &Paths, loader: &str, mc: &str, loader_version: Opti
 }
 
 /// Maven repos publish `<file>.sha256` / `<file>.sha1` next to artifacts; older Forge builds may lack the sha256.
-async fn maven_checksums(url: &str) -> (Option<String>, Option<String>) {
+pub async fn maven_checksums(url: &str) -> (Option<String>, Option<String>) {
     let sha256 = net::get_text(&format!("{url}.sha256")).await.ok().and_then(|t| net::parse_checksum(&t, 64));
     if sha256.is_some() {
         return (None, sha256);
@@ -143,7 +144,8 @@ async fn maven_checksums(url: &str) -> (Option<String>, Option<String>) {
     (sha1, None)
 }
 
-async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, java: &str, task: &Task) -> Result<String> {
+/// Downloads (or reuses) the Forge or NeoForge installer jar, checked against the Maven checksums.
+pub async fn fetch_installer(paths: &Paths, loader: &str, mc: &str, lv: &str, task: &Task) -> Result<PathBuf> {
     let (url, file) = if loader == "forge" {
         let full = format!("{mc}-{lv}");
         (format!("https://maven.minecraftforge.net/net/minecraftforge/forge/{full}/forge-{full}-installer.jar"), format!("forge-{full}-installer.jar"))
@@ -156,6 +158,22 @@ async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, jav
     net::download(&Download { url, dest: installer.clone(), sha1, sha256, size: None })
         .await
         .with_context(|| format!("downloading the {loader} installer"))?;
+    Ok(installer)
+}
+
+/// Picks the loader version to use: the one given, else the newest stable (or newest) build.
+pub async fn resolve_version(loader: &str, mc: &str, given: Option<&str>) -> Result<String> {
+    if let Some(v) = given.filter(|v| !v.is_empty()) {
+        return Ok(v.to_string());
+    }
+    let all = versions(loader, mc).await?;
+    let pick = if matches!(loader, "fabric" | "quilt") { all.iter().find(|v| v.stable).or(all.first()) } else { all.first() };
+    pick.map(|v| v.version.clone()).ok_or_else(|| anyhow!("No {loader} build for Minecraft {mc}"))
+}
+
+async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, java: &str, task: &Task) -> Result<String> {
+    let installer = fetch_installer(paths, loader, mc, lv, task).await?;
+    let file = installer.file_name().unwrap_or_default().to_string_lossy().into_owned();
 
     let (profile, version_json) = read_installer(&installer)?;
     // Legacy installers (Forge 1.12.2 and older) embed the full version JSON.
