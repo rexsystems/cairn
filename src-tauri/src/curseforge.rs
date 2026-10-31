@@ -1,5 +1,5 @@
 //! CurseForge modpack zip import (`manifest.json` + `overrides/`).
-//! Downloads require `CAIRN_CURSEFORGE_API_KEY` (Core API key from console.curseforge.com).
+//! Downloads need a Core API key: Settings, `CAIRN_CURSEFORGE_API_KEY` at runtime, or the same var at build time.
 
 use crate::instance::{self, Instance};
 use crate::net::{self, Download, CLIENT};
@@ -13,9 +13,6 @@ use std::io::Read;
 use std::path::Path;
 
 const API: &str = "https://api.curseforge.com/v1";
-
-/// Built-in Core API key (public in this repo on purpose). Settings / env still override.
-const BUILTIN_API_KEY: &str = "$2a$10$.7hi7X13w/SDOW22a10f/.bn/zAyC9nI/Tcai.I/Q1FE/ufUzTrJe";
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -67,29 +64,23 @@ fn key_looks_valid(key: &str) -> bool {
     key.len() >= 20 && (!key.contains('$') || key.starts_with('$'))
 }
 
+/// Settings, then the runtime env, then the key baked in at build time from the
+/// `CAIRN_CURSEFORGE_API_KEY` CI secret. Shell-mangled values are skipped.
 fn api_key() -> Result<String> {
-    // Settings → env → compile-time → built-in. Skip shell-corrupted values.
-    let settings_key = {
-        let root = std::env::var_os("CAIRN_HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join("cairn"));
-        crate::settings::Settings::load(&root.join("settings.json")).curseforge_api_key
-    };
-    let embedded = option_env!("CAIRN_CURSEFORGE_API_KEY").unwrap_or("");
-    // Built-in first so a mangled shell env cannot break imports.
+    let settings_key = crate::settings::Settings::load(&crate::paths::Paths::new().settings_file()).curseforge_api_key;
     let candidates = [
-        BUILTIN_API_KEY.to_string(),
         settings_key,
         std::env::var("CAIRN_CURSEFORGE_API_KEY").unwrap_or_default(),
-        embedded.to_string(),
+        option_env!("CAIRN_CURSEFORGE_API_KEY").unwrap_or_default().to_string(),
     ];
-    for c in &candidates {
-        let key = c.trim();
-        if !key.is_empty() && key_looks_valid(key) {
-            return Ok(key.to_string());
-        }
-    }
-    bail!("No usable CurseForge API key.");
+    candidates
+        .iter()
+        .map(|c| c.trim())
+        .find(|k| key_looks_valid(k))
+        .map(String::from)
+        .ok_or_else(|| {
+            anyhow!("CurseForge downloads need an API key. Add one under Settings → CurseForge API key (free at console.curseforge.com).")
+        })
 }
 
 /// `neoforge-21.1.250` → (`neoforge`, `21.1.250`); same for forge / fabric / quilt.

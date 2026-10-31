@@ -156,7 +156,7 @@ export function SettingsPage() {
               }}
             />
           </label>
-          <small className="muted">Needed to import CurseForge modpack zips. Get a key at console.curseforge.com.</small>
+          <small className="muted">Used to import CurseForge modpack zips. Official builds include a key; one set here takes priority. Get your own at console.curseforge.com.</small>
         </section>
 
         <section className="panel settings-section" aria-labelledby="s-game">
