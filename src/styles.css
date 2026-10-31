@@ -711,11 +711,12 @@ html.reduce-motion .select-chevron { animation: none; transition: none; }
   cursor: pointer;
   transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
-.add-account-choice:hover {
+.add-account-choice:hover:not(:disabled) {
   border-color: var(--accent-edge);
   background: var(--raised);
   transform: translateY(-1px);
 }
+.add-account-choice:disabled { opacity: 0.55; cursor: not-allowed; }
 .add-account-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .add-account-choice-icon {
   display: grid;
@@ -729,7 +730,7 @@ html.reduce-motion .select-chevron { animation: none; transition: none; }
 .add-account-choice-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .add-account-choice-copy strong { font-family: var(--font-display); font-weight: 800; font-size: 16px; }
 [data-motion="reduced"] .add-account-choice { transition: none; }
-[data-motion="reduced"] .add-account-choice:hover { transform: none; }
+[data-motion="reduced"] .add-account-choice:hover:not(:disabled) { transform: none; }
 
 .skin-shell {
   display: flex;

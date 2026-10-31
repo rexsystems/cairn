@@ -153,7 +153,7 @@ export function Accounts() {
       ) : (
         !starting && (
           <div className="panel account-empty stack" style={{ gap: 14 }}>
-            <p className="muted">No account yet. Add one to play: Microsoft for online servers and Realms, or offline for LAN and singleplayer.</p>
+            <p className="muted">No account yet. Sign in with the Microsoft account that owns Minecraft. After that you can add offline names for LAN and singleplayer.</p>
             <button type="button" className="btn btn-play" style={{ alignSelf: "flex-start" }} onClick={openAdd}>
               <Icon name="plus" />Add account
             </button>
@@ -240,11 +240,15 @@ export function Accounts() {
                     <span className="small muted">Online servers, Realms, skin and cape from your Minecraft profile.</span>
                   </span>
                 </button>
-                <button type="button" className="add-account-choice" onClick={() => setAdding("offline")}>
+                <button type="button" className="add-account-choice" onClick={() => setAdding("offline")} disabled={ms.length === 0}>
                   <span className="add-account-choice-icon" aria-hidden="true"><Icon name="user" size={22} /></span>
                   <span className="add-account-choice-copy">
                     <strong>Offline</strong>
-                    <span className="small muted">LAN, singleplayer, or servers with online mode off. No Microsoft sign-in.</span>
+                    <span className="small muted">
+                      {ms.length === 0
+                        ? "Sign in with a Microsoft account that owns Minecraft first."
+                        : "LAN, singleplayer, or servers with online mode off."}
+                    </span>
                   </span>
                 </button>
               </div>

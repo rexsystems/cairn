@@ -235,6 +235,10 @@ pub fn valid_offline_name(name: &str) -> bool {
 
 pub fn add_offline(file: &mut AccountsFile, name: &str) -> Result<Account> {
     let name = name.trim();
+    // Offline play is for people who own the game; existing offline accounts keep working.
+    if !file.has_microsoft() {
+        bail!("Sign in with a Microsoft account that owns Minecraft before adding an offline account.");
+    }
     if !valid_offline_name(name) {
         bail!("Use 3 to 16 characters: letters, numbers and underscores.");
     }
@@ -708,14 +712,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offline_without_microsoft() {
+    fn offline_needs_microsoft() {
         let mut f = AccountsFile::default();
+        assert!(add_offline(&mut f, "Steve").is_err());
+        f.upsert(Account { id: "m".into(), kind: "microsoft".into(), uuid: "x".into(), username: "Real".into(), ..Default::default() });
         let a = add_offline(&mut f, "Steve").unwrap();
         assert_eq!(a.uuid, crate::mc::launch::offline_uuid("Steve"));
         assert_eq!(f.active.as_deref(), Some(a.id.as_str()));
         assert!(add_offline(&mut f, "no spaces").is_err());
         assert!(add_offline(&mut f, "ab").is_err());
-        f.upsert(Account { id: "m".into(), kind: "microsoft".into(), uuid: "x".into(), username: "Real".into(), ..Default::default() });
         f.remove("m");
         assert_eq!(f.accounts.len(), 1);
         assert_eq!(f.accounts[0].kind, "offline");
