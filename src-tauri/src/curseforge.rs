@@ -326,6 +326,7 @@ pub async fn install_curseforge_zip(paths: &Paths, file: &Path, concurrency: usi
                 url,
                 dest,
                 sha1: sha1_from_file(meta),
+                sha256: None,
                 size: meta["fileLength"].as_u64(),
             });
         }

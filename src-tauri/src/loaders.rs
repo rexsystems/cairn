@@ -133,6 +133,16 @@ pub async fn install(paths: &Paths, loader: &str, mc: &str, loader_version: Opti
     }
 }
 
+/// Maven repos publish `<file>.sha256` / `<file>.sha1` next to artifacts; older Forge builds may lack the sha256.
+async fn maven_checksums(url: &str) -> (Option<String>, Option<String>) {
+    let sha256 = net::get_text(&format!("{url}.sha256")).await.ok().and_then(|t| net::parse_checksum(&t, 64));
+    if sha256.is_some() {
+        return (None, sha256);
+    }
+    let sha1 = net::get_text(&format!("{url}.sha1")).await.ok().and_then(|t| net::parse_checksum(&t, 40));
+    (sha1, None)
+}
+
 async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, java: &str, task: &Task) -> Result<String> {
     let (url, file) = if loader == "forge" {
         let full = format!("{mc}-{lv}");
@@ -142,7 +152,10 @@ async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, jav
     };
     let installer = paths.cache.join("installers").join(&file);
     task.stage(&format!("Downloading the {loader} installer"), 0, 0);
-    net::download(&Download { url, dest: installer.clone(), sha1: None, size: None }).await?;
+    let (sha1, sha256) = maven_checksums(&url).await;
+    net::download(&Download { url, dest: installer.clone(), sha1, sha256, size: None })
+        .await
+        .with_context(|| format!("downloading the {loader} installer"))?;
 
     let (profile, version_json) = read_installer(&installer)?;
     // Legacy installers (Forge 1.12.2 and older) embed the full version JSON.
@@ -193,6 +206,7 @@ async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, jav
             url: c["url"].as_str().unwrap_or_default().into(),
             dest: paths.version_jar(mc),
             sha1: c["sha1"].as_str().map(String::from),
+            sha256: None,
             size: None,
         })
         .await?;

@@ -222,6 +222,7 @@ fn install_rec<'a>(
             url: file["url"].as_str().unwrap_or_default().into(),
             dest: dest.clone(),
             sha1: file.pointer("/hashes/sha1").and_then(|h| h.as_str()).map(String::from),
+            sha256: None,
             size: file["size"].as_u64(),
         })
         .await?;
@@ -477,7 +478,7 @@ pub async fn install_mrpack(
             let rel = f["path"].as_str().unwrap_or_default();
             let dest = safe_join(&dir, rel).ok_or_else(|| anyhow!("modpack contains an unsafe path: {rel}"))?;
             let url = f["downloads"].as_array().and_then(|d| d.first()).and_then(|u| u.as_str()).ok_or_else(|| anyhow!("no download for {rel}"))?;
-            dls.push(Download { url: url.into(), dest, sha1: f.pointer("/hashes/sha1").and_then(|x| x.as_str()).map(String::from), size: f["fileSize"].as_u64() });
+            dls.push(Download { url: url.into(), dest, sha1: f.pointer("/hashes/sha1").and_then(|x| x.as_str()).map(String::from), sha256: None, size: f["fileSize"].as_u64() });
         }
         let total = dls.len() as u64;
         let t = task.clone();
@@ -500,7 +501,7 @@ pub async fn install_mrpack(
             }
         }
         if let Some(icon) = icon_url {
-            if net::download(&Download { url: icon, dest: dir.join("icon.png"), sha1: None, size: None }).await.is_ok() {
+            if net::download(&Download { url: icon, dest: dir.join("icon.png"), sha1: None, sha256: None, size: None }).await.is_ok() {
                 let mut i = instance::get(paths, &inst.id)?;
                 i.icon = Some("icon.png".into());
                 instance::save(paths, &i)?;
@@ -531,6 +532,7 @@ pub async fn install_modpack_project(paths: &Paths, project_id: &str, version_id
         url: file["url"].as_str().unwrap_or_default().into(),
         dest: dest.clone(),
         sha1: file.pointer("/hashes/sha1").and_then(|h| h.as_str()).map(String::from),
+        sha256: None,
         size: None,
     })
     .await?;

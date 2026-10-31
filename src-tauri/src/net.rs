@@ -41,11 +41,13 @@ pub async fn get_text(url: &str) -> Result<String> {
     Ok(r.text().await?)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Download {
     pub url: String,
     pub dest: PathBuf,
     pub sha1: Option<String>,
+    /// Checked in addition to `sha1` when the source publishes it (Adoptium, Maven, GitHub).
+    pub sha256: Option<String>,
     pub size: Option<u64>,
 }
 
@@ -56,10 +58,46 @@ fn already_ok(d: &Download) -> bool {
             return false;
         }
     }
+    if meta.len() == 0 {
+        return false;
+    }
+    if let Some(h) = &d.sha256 {
+        if !crate::util::sha256_file(&d.dest).map(|x| x.eq_ignore_ascii_case(h)).unwrap_or(false) {
+            return false;
+        }
+    }
     match &d.sha1 {
         Some(h) => crate::util::sha1_file(&d.dest).map(|x| x.eq_ignore_ascii_case(h)).unwrap_or(false),
-        None => meta.len() > 0,
+        None => true,
     }
+}
+
+/// A file arrived but its hash does not match what the source published.
+#[derive(Debug)]
+pub struct ChecksumMismatch {
+    pub url: String,
+    pub algo: &'static str,
+    pub expected: String,
+    pub got: String,
+}
+
+impl std::fmt::Display for ChecksumMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} checksum mismatch for {} (expected {}, got {}). The file was deleted; try again, and report it if it keeps happening.",
+            self.algo, self.url, self.expected, self.got
+        )
+    }
+}
+
+impl std::error::Error for ChecksumMismatch {}
+
+/// Pull the hex out of a published checksum file or GitHub digest ("sha256:<hex>", "<hex>  name").
+pub fn parse_checksum(text: &str, hex_len: usize) -> Option<String> {
+    let token = text.trim().split_whitespace().next()?;
+    let token = token.rsplit(':').next()?;
+    (token.len() == hex_len && token.bytes().all(|b| b.is_ascii_hexdigit())).then(|| token.to_ascii_lowercase())
 }
 
 pub async fn download(d: &Download) -> Result<()> {
@@ -70,7 +108,14 @@ pub async fn download(d: &Download) -> Result<()> {
     for attempt in 0..4 {
         match download_once(d).await {
             Ok(()) => return Ok(()),
-            Err(e) => last = Some(e),
+            Err(e) => {
+                // A second mismatch means the source itself is wrong; retrying will not help.
+                let mismatch = e.downcast_ref::<ChecksumMismatch>().is_some();
+                last = Some(e);
+                if mismatch && attempt >= 1 {
+                    break;
+                }
+            }
         }
         tokio::time::sleep(Duration::from_millis(500 * (attempt + 1))).await;
     }
@@ -89,19 +134,23 @@ async fn download_once(d: &Download) -> Result<()> {
     let mut file = tokio::fs::File::create(&tmp).await?;
     let mut stream = resp.bytes_stream();
     use sha1::Digest;
-    let mut hasher = sha1::Sha1::new();
+    let mut h1 = sha1::Sha1::new();
+    let mut h256 = sha2::Sha256::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
-        hasher.update(&chunk);
+        h1.update(&chunk);
+        h256.update(&chunk);
         file.write_all(&chunk).await?;
     }
     file.flush().await?;
     drop(file);
-    if let Some(expected) = &d.sha1 {
-        let got = hex::encode(hasher.finalize());
-        if !got.eq_ignore_ascii_case(expected) {
-            let _ = tokio::fs::remove_file(&tmp).await;
-            bail!("checksum mismatch for {} (expected {expected}, got {got})", d.url);
+    let checks = [("SHA-1", &d.sha1, hex::encode(h1.finalize())), ("SHA-256", &d.sha256, hex::encode(h256.finalize()))];
+    for (algo, expected, got) in checks {
+        if let Some(expected) = expected {
+            if !got.eq_ignore_ascii_case(expected) {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return Err(ChecksumMismatch { url: d.url.clone(), algo, expected: expected.clone(), got }.into());
+            }
         }
     }
     tokio::fs::rename(&tmp, &d.dest).await?;
@@ -140,4 +189,20 @@ where
         bail!("{} download(s) failed. First error: {}", errors.len(), errors[0]);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_checksum;
+
+    #[test]
+    fn parses_published_checksums() {
+        let hex = "6018abce95cc058768e365865fd7cf3bd31b5c553231daf885dc385fcd6d875a";
+        assert_eq!(parse_checksum(hex, 64).as_deref(), Some(hex));
+        assert_eq!(parse_checksum(&format!("sha256:{hex}"), 64).as_deref(), Some(hex));
+        assert_eq!(parse_checksum(&format!("{}  forge.jar\n", hex.to_uppercase()), 64).as_deref(), Some(hex));
+        assert_eq!(parse_checksum("0deb8e547a9e3f098a4c9f082903499703c52f5d", 64), None);
+        assert_eq!(parse_checksum("<html>404</html>", 40), None);
+        assert_eq!(parse_checksum("", 40), None);
+    }
 }

@@ -45,7 +45,7 @@ pub async fn ensure_vanilla_json(paths: &Paths, id: &str) -> Result<Value> {
     }
     let m = manifest(paths).await?;
     let entry = m.versions.iter().find(|v| v.id == id).ok_or_else(|| anyhow!("Minecraft {id} is not in Mojang's version list"))?;
-    net::download(&net::Download { url: entry.url.clone(), dest: p.clone(), sha1: entry.sha1.clone(), size: None }).await?;
+    net::download(&net::Download { url: entry.url.clone(), dest: p.clone(), sha1: entry.sha1.clone(), sha256: None, size: None }).await?;
     crate::util::read_json(&p)
 }
 

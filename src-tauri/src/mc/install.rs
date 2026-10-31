@@ -46,6 +46,7 @@ pub async fn install_version(paths: &Paths, id: &str, instance_dir: &Path, task:
             url: c["url"].as_str().unwrap_or_default().to_string(),
             dest: paths.version_jar(&jar_id),
             sha1: c.get("sha1").and_then(|v| v.as_str()).map(String::from),
+            sha256: None,
             size: c.get("size").and_then(|v| v.as_u64()),
         });
     }
@@ -62,7 +63,7 @@ pub async fn install_version(paths: &Paths, id: &str, instance_dir: &Path, task:
         if let Some(a) = main_artifact(lib) {
             let dest = paths.libraries().join(&a.path);
             if !a.url.is_empty() {
-                downloads.push(Download { url: a.url.clone(), dest: dest.clone(), sha1: a.sha1.clone(), size: a.size });
+                downloads.push(Download { url: a.url.clone(), dest: dest.clone(), sha1: a.sha1.clone(), sha256: None, size: a.size });
             }
             let name = lib.get("name").and_then(|n| n.as_str()).unwrap_or_default();
             if classifier(name).map(|c| c.starts_with("natives-")).unwrap_or(false) {
@@ -71,7 +72,7 @@ pub async fn install_version(paths: &Paths, id: &str, instance_dir: &Path, task:
         }
         if let Some(n) = native_artifact(lib, os, arch_bits) {
             let dest = paths.libraries().join(&n.path);
-            downloads.push(Download { url: n.url, dest: dest.clone(), sha1: n.sha1, size: n.size });
+            downloads.push(Download { url: n.url, dest: dest.clone(), sha1: n.sha1, sha256: None, size: n.size });
             native_jars.push((dest, lib.clone()));
         }
     }
@@ -82,6 +83,7 @@ pub async fn install_version(paths: &Paths, id: &str, instance_dir: &Path, task:
                 url: url.into(),
                 dest: paths.assets().join("log_configs").join(fid),
                 sha1: log.get("sha1").and_then(|v| v.as_str()).map(String::from),
+                sha256: None,
                 size: None,
             });
         }
@@ -140,6 +142,7 @@ async fn install_assets(paths: &Paths, v: &Value, instance_dir: &Path, task: &Ta
         url: idx["url"].as_str().unwrap_or_default().to_string(),
         dest: index_path.clone(),
         sha1: idx.get("sha1").and_then(|x| x.as_str()).map(String::from),
+        sha256: None,
         size: None,
     })
     .await?;
@@ -155,6 +158,7 @@ async fn install_assets(paths: &Paths, v: &Value, instance_dir: &Path, task: &Ta
             url: format!("https://resources.download.minecraft.net/{}/{}", &hash[..2], hash),
             dest: paths.assets().join("objects").join(&hash[..2]).join(hash),
             sha1: Some(hash.to_string()),
+            sha256: None,
             size: obj.get("size").and_then(|s| s.as_u64()),
         });
     }
