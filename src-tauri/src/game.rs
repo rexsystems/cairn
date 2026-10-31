@@ -241,7 +241,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
                 let _ = std::fs::remove_dir_all(&sp);
                 let _ = std::fs::rename(&shader_stash, &sp);
             }
-            crate::discord::clear();
+            crate::discord::clear(&id);
             games.cancels.lock().unwrap().remove(&id);
             games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
             return Err(e);
@@ -267,9 +267,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
             "mc_version": inst.mc_version,
         }),
     );
-    if settings.discord_rpc {
-        crate::discord::set_playing(&inst.name, &inst.mc_version, &inst.loader);
-    }
+    crate::discord::set_playing(crate::discord::Session::new(&id, &inst.name, &inst.mc_version, &inst.loader, inst.loader_version.as_deref()));
 
     if settings.hide_on_launch {
         if let Some(w) = app.get_webview_window("main") {
@@ -322,7 +320,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
             let _ = std::fs::remove_dir_all(&sp);
             let _ = std::fs::rename(&shader_stash, &sp);
         }
-        crate::discord::clear();
+        crate::discord::clear(&id);
         games.push_log(&app2, &id, format!("[Cairn] Game exited with code {}", code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())), "launcher");
         games.set(&app2, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started, exit_code: code });
         if let Some(w) = app2.get_webview_window("main") {
@@ -490,7 +488,7 @@ async fn launch_horizon(
     let mut child = match cmd.spawn().context("starting Horizon") {
         Ok(c) => c,
         Err(e) => {
-            crate::discord::clear();
+            crate::discord::clear(&id);
             games.cancels.lock().unwrap().remove(&id);
             games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
             return Err(e);
@@ -517,9 +515,7 @@ async fn launch_horizon(
             "mc_version": inst.mc_version,
         }),
     );
-    if settings.discord_rpc {
-        crate::discord::set_playing(&inst.name, &inst.mc_version, "horizon");
-    }
+    crate::discord::set_playing(crate::discord::Session::new(&id, &inst.name, &inst.mc_version, "horizon", None));
     if settings.hide_on_launch {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.hide();
@@ -569,7 +565,7 @@ async fn launch_horizon(
             i.play_seconds += secs;
             let _ = instance::save(&paths, &i);
         }
-        crate::discord::clear();
+        crate::discord::clear(&id);
         games.push_log(
             &app2,
             &id,

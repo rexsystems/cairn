@@ -37,8 +37,13 @@ pub struct Settings {
     pub isolate_game_env: bool,
     /// Extra KEY → value for the game process. Empty value removes that key.
     pub game_env: HashMap<String, String>,
-    /// Show Discord Rich Presence while Minecraft is running (needs CAIRN_DISCORD_APP_ID).
+    /// Show Discord Rich Presence while Minecraft is running.
     pub discord_rpc: bool,
+    /// Put the instance name in the presence; off shows "Playing Minecraft".
+    pub discord_show_instance: bool,
+    /// Override for the Discord application id (CAIRN_DISCORD_APP_ID wins over this).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub discord_app_id: String,
     /// Move focus with a gamepad in the launcher UI.
     pub gamepad_nav: bool,
     /// Anonymous usage events (Umami). Only sent once the user has answered the privacy prompt.
@@ -69,6 +74,8 @@ impl Default for Settings {
             isolate_game_env: true,
             game_env: HashMap::new(),
             discord_rpc: true,
+            discord_show_instance: true,
+            discord_app_id: String::new(),
             gamepad_nav: true,
             telemetry_enabled: false,
             crash_reports_enabled: false,

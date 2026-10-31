@@ -98,6 +98,7 @@ fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
     s.default_memory_mb = s.default_memory_mb.clamp(512, 65536);
     s.save(&state.paths.settings_file()).map_err(ea)?;
     crash::set_allowed(s.crash_reports_allowed());
+    discord::configure(discord::Options::from_settings(&s));
     Ok(s)
 }
 
@@ -876,6 +877,7 @@ pub fn run() {
         .setup(move |app| {
             // Only Cairn's own data folder (screenshots, icons, world thumbnails) is readable by the webview.
             app.asset_protocol_scope().allow_directory(&data_root, true)?;
+            discord::configure(discord::Options::from_settings(&Settings::load(&settings_file)));
             tauri::async_runtime::spawn(async move {
                 telemetry::track_app_open(&settings_file).await;
             });

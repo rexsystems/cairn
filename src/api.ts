@@ -56,6 +56,8 @@ export interface Settings {
   isolateGameEnv: boolean;
   gameEnv: Record<string, string>;
   discordRpc: boolean;
+  discordShowInstance: boolean;
+  discordAppId?: string;
   gamepadNav: boolean;
   telemetryEnabled: boolean;
   crashReportsEnabled: boolean;

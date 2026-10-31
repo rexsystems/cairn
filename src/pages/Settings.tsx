@@ -61,6 +61,7 @@ export function SettingsPage() {
     || formWithEnv.reduceMotion !== settings.reduceMotion
     || formWithEnv.isolateGameEnv !== settings.isolateGameEnv
     || formWithEnv.discordRpc !== settings.discordRpc
+    || formWithEnv.discordShowInstance !== settings.discordShowInstance
     || formWithEnv.gamepadNav !== settings.gamepadNav
     || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
     || formWithEnv.crashReportsEnabled !== settings.crashReportsEnabled
@@ -124,7 +125,8 @@ export function SettingsPage() {
           <Switch checked={form.hideOnLaunch} onChange={(v) => set("hideOnLaunch", v)} label="Hide Cairn while the game runs" />
           <Switch checked={form.gamepadNav} onChange={(v) => instant("gamepadNav", v)} label="Gamepad navigation in the launcher" />
           <Switch checked={form.discordRpc} onChange={(v) => set("discordRpc", v)} label="Discord Rich Presence while playing" />
-          <small className="muted">Presence needs a Discord app id in the CAIRN_DISCORD_APP_ID environment variable.</small>
+          <Switch checked={form.discordShowInstance} disabled={!form.discordRpc} onChange={(v) => set("discordShowInstance", v)} label="Show the instance name in Discord" />
+          <small className="muted">Shows the Minecraft version, loader and play time. Updates as soon as you save, even mid-game.</small>
           <Switch
             checked={form.privacyPromptAnswered && form.telemetryEnabled}
             onChange={(v) => setForm({ ...form, telemetryEnabled: v, privacyPromptAnswered: true })}
