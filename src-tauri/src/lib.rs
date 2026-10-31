@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod app_update;
 pub mod backup;
+pub mod compat;
 pub mod content;
 pub mod crash;
 pub mod msa_client;
@@ -15,6 +16,7 @@ pub mod loaders;
 pub mod logparse;
 pub mod mc;
 pub mod mclogs;
+pub mod modmeta;
 pub mod modrinth;
 pub mod modrinth_app;
 pub mod net;
@@ -26,6 +28,7 @@ pub mod shortcuts;
 pub mod tasks;
 pub mod telemetry;
 pub mod util;
+pub mod versioning;
 pub mod version_art;
 
 use accounts::AccountsFile;
