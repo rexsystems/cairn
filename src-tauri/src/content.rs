@@ -20,6 +20,9 @@ pub struct ContentMeta {
     pub sha1: Option<String>,
     pub sha512: Option<String>,
     pub size: Option<u64>,
+    /// "modrinth" or "curseforge"; missing means Modrinth (older indexes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

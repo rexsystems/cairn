@@ -6,6 +6,7 @@ pub mod content;
 pub mod crash;
 pub mod msa_client;
 pub mod curseforge;
+pub mod deps;
 pub mod discord;
 pub mod game;
 pub mod horizon;

@@ -95,6 +95,88 @@ fn primary_file(v: &Value) -> Option<&Value> {
     files.iter().find(|f| f["primary"].as_bool() == Some(true)).or(files.first())
 }
 
+/// Modrinth as a dependency source for the resolver.
+pub struct Repo;
+
+fn info_from(p: &Value) -> crate::deps::ProjectInfo {
+    let slug = p["slug"].as_str().unwrap_or_default().to_string();
+    let ptype = p["project_type"].as_str().unwrap_or("mod").to_string();
+    crate::deps::ProjectInfo {
+        id: p["id"].as_str().unwrap_or_default().into(),
+        page_url: Some(format!("https://modrinth.com/{ptype}/{slug}")),
+        slug,
+        title: p["title"].as_str().unwrap_or_default().into(),
+        project_type: ptype,
+        icon: p["icon_url"].as_str().map(String::from),
+    }
+}
+
+/// Builds a resolver candidate from a Modrinth version object.
+pub fn candidate(p: &crate::deps::ProjectInfo, v: &Value) -> Option<crate::deps::Candidate> {
+    use crate::deps::{Candidate, Rel, Source, VDep};
+    let file = primary_file(v)?;
+    let strs = |x: &Value| x.as_array().map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect()).unwrap_or_default();
+    let deps = v["dependencies"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|d| {
+                    let rel = match d["dependency_type"].as_str()? {
+                        "required" => Rel::Required,
+                        "optional" => Rel::Optional,
+                        "incompatible" => Rel::Incompatible,
+                        _ => Rel::Embedded,
+                    };
+                    Some(VDep { project_id: d["project_id"].as_str().map(String::from), version_id: d["version_id"].as_str().map(String::from), rel })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(Candidate {
+        source: Source::Modrinth,
+        project: p.clone(),
+        version_id: v["id"].as_str()?.into(),
+        version_number: v["version_number"].as_str().unwrap_or_default().into(),
+        file_name: file["filename"].as_str()?.into(),
+        url: file["url"].as_str().map(String::from),
+        download_page: p.page_url.clone(),
+        sha1: file.pointer("/hashes/sha1").and_then(|h| h.as_str()).map(String::from),
+        sha512: file.pointer("/hashes/sha512").and_then(|h| h.as_str()).map(String::from),
+        size: file["size"].as_u64(),
+        fingerprint: None,
+        deps,
+        loaders: strs(&v["loaders"]),
+        game_versions: strs(&v["game_versions"]),
+    })
+}
+
+/// Newest release if there is one, otherwise the newest version. Modrinth lists newest first.
+pub fn prefer_release(vs: &[Value]) -> Option<&Value> {
+    vs.iter().find(|v| v["version_type"].as_str() == Some("release")).or(vs.first())
+}
+
+impl crate::deps::Repo for Repo {
+    fn source(&self) -> crate::deps::Source {
+        crate::deps::Source::Modrinth
+    }
+    async fn project(&self, id: &str) -> Result<crate::deps::ProjectInfo> {
+        Ok(info_from(&project(id).await?))
+    }
+    async fn pick(&self, p: &crate::deps::ProjectInfo, t: &crate::deps::Target) -> Result<Option<crate::deps::Candidate>> {
+        let vs = versions(&p.id, &loader_filter(&p.project_type, &t.loader), &[t.mc_version.clone()]).await?;
+        let ok: Vec<Value> = vs.into_iter().filter(|v| candidate(p, v).map(|c| t.accepts(&c)).unwrap_or(false)).collect();
+        Ok(prefer_release(&ok).and_then(|v| candidate(p, v)))
+    }
+    async fn exact(&self, p: &crate::deps::ProjectInfo, version_id: &str) -> Result<crate::deps::Candidate> {
+        let v = version(version_id).await?;
+        candidate(p, &v).ok_or_else(|| anyhow!("{} has no downloadable file", p.title))
+    }
+    async fn project_of_version(&self, version_id: &str) -> Result<String> {
+        let v = version(version_id).await?;
+        v["project_id"].as_str().map(String::from).ok_or_else(|| anyhow!("version {version_id} has no project"))
+    }
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Installed {
@@ -254,6 +336,7 @@ fn install_rec<'a>(
                 sha1: file.pointer("/hashes/sha1").and_then(|h| h.as_str()).map(String::from),
                 sha512: file.pointer("/hashes/sha512").and_then(|h| h.as_str()).map(String::from),
                 size: file["size"].as_u64(),
+                source: Some("modrinth".into()),
             },
         );
         index.save(&dir)?;
@@ -355,6 +438,7 @@ pub async fn identify(dir: &Path) -> Result<()> {
                     sha1: Some(hash.clone()),
                     sha512: file.and_then(|f| f.pointer("/hashes/sha512")).and_then(|x| x.as_str()).map(String::from),
                     size: file.and_then(|f| f["size"].as_u64()),
+                    source: Some("modrinth".into()),
                 },
             );
             changed = true;
