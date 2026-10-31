@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+import { externalHref, renderProjectBody } from "../lib/markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, type InstanceView, type SearchHit, type SearchResult } from "../api";
 import { useStore } from "../store";
@@ -395,10 +394,7 @@ function ProjectModal({ id, target, eligible, installed, onTarget, onClose, onIn
     }).catch(() => setVersions([]));
   }, [project, target, isPack]);
 
-  const body = useMemo(() => {
-    if (!project?.body) return "";
-    return DOMPurify.sanitize(marked.parse(project.body, { async: false }) as string);
-  }, [project]);
+  const body = useMemo(() => renderProjectBody(project?.body), [project]);
 
   const install = async (versionId?: string) => {
     if (isPack) {
@@ -501,7 +497,10 @@ function ProjectModal({ id, target, eligible, installed, onTarget, onClose, onIn
           {tab === "about" && (
             <div className="prose" onClick={(e) => {
               const a = (e.target as HTMLElement).closest("a");
-              if (a?.href) { e.preventDefault(); openUrl(a.href); }
+              if (!a) return;
+              e.preventDefault();
+              const href = externalHref(a.href);
+              if (href) openUrl(href);
             }} dangerouslySetInnerHTML={{ __html: body || "<p>No description.</p>" }} />
           )}
           {tab === "versions" && (
