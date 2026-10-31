@@ -12,6 +12,10 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - Opt-in usage stats and crash reports, asked once on first launch.
 - Discord Rich Presence shows the version, loader and play time, and follows settings mid-game.
 - Frontend tests (Vitest + Testing Library).
+- Share a log to mclo.gs from the Logs tab.
+- Desktop shortcuts that start one instance (Windows and Linux). Opening Cairn twice focuses the running window.
+- Import instances from Prism Launcher, PolyMC and MultiMC.
+- A Flatpak manifest, plus CI builds for Fedora (.rpm) and Flatpak.
 
 ### Changed
 - Mod descriptions are sanitized with DOMPurify, and the app ships a Content Security Policy.
