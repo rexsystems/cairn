@@ -74,7 +74,7 @@ describe("HostTab", () => {
     render(<HostTab inst={inst} />);
     expect(await screen.findByText(/only listens on this computer/)).toBeTruthy();
     expect(screen.queryByText(/192\.168\.1\.20/)).toBeNull();
-    expect(screen.getByText("Link playit.gg")).toBeTruthy();
+    expect(await screen.findByText("Link playit.gg")).toBeTruthy();
     expect(api.playitLink).not.toHaveBeenCalled();
   });
 });
