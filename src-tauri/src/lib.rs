@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod backup;
 pub mod content;
 pub mod crash;
+pub mod msa_client;
 pub mod curseforge;
 pub mod discord;
 pub mod game;
@@ -69,19 +70,13 @@ struct AppInfo {
 
 #[tauri::command]
 fn app_info(state: State<AppState>) -> AppInfo {
-    let s = Settings::load(&state.paths.settings_file());
-    let id = s.effective_client_id();
-    let source = if std::env::var("CAIRN_MSA_CLIENT_ID").map(|v| !v.trim().is_empty()).unwrap_or(false) {
-        "environment"
-    } else {
-        "default"
-    };
+    let client = accounts::MsaClient::resolve();
     AppInfo {
         version: env!("CARGO_PKG_VERSION").into(),
         data_dir: state.paths.root.to_string_lossy().into(),
-        auth_flow: accounts::flow_for(&id).into(),
-        client_id: id,
-        client_id_source: source.into(),
+        auth_flow: client.flow.into(),
+        client_id: client.id,
+        client_id_source: client.source.into(),
         os: mc::rules::os_name().into(),
     }
 }
@@ -753,9 +748,8 @@ async fn add_offline_account(state: State<'_, AppState>, name: String) -> R<Vec<
 async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<accounts::AccountView>>> {
     use tauri::{UserAttentionType, WebviewUrl, WebviewWindowBuilder};
 
-    let s = Settings::load(&state.paths.settings_file());
-    let client_id = s.effective_client_id();
-    let auth_url = accounts::authorize_url(&client_id).map_err(ea)?;
+    let client = accounts::MsaClient::resolve();
+    let auth_url = client.authorize_url();
 
     if let Some(w) = app.get_webview_window("signin") {
         let _ = w.close();
@@ -787,7 +781,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
         }
         if let Ok(url) = window.url() {
             let s = url.as_str();
-            if s.starts_with(accounts::AUTH_REDIRECT) {
+            if s.starts_with(client.redirect()) {
                 let pairs: Vec<_> = url.query_pairs().map(|(k, v)| (k.to_string(), v.to_string())).collect();
                 if let Some((_, err)) = pairs.iter().find(|(k, _)| k == "error") {
                     let _ = window.close();
@@ -805,9 +799,9 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     };
 
     state.sign_ins.lock().unwrap().remove("signin");
-    let (access, refresh) = accounts::exchange_auth_code(&client_id, &code).await.map_err(ea)?;
-    let (token, expires, profile) = accounts::minecraft_login(&access, "live").await.map_err(ea)?;
-    let acc = accounts::account_from_login("live", &client_id, refresh, token, expires, &profile);
+    let (access, refresh) = accounts::exchange_auth_code(&client, &code).await.map_err(ea)?;
+    let (token, expires, profile) = accounts::minecraft_login(&access, client.flow).await.map_err(ea)?;
+    let acc = accounts::account_from_login(client.flow, &client.id, refresh, token, expires, &profile);
     let _lock = state.accounts_lock.lock().await;
     let mut f = AccountsFile::load(&state.paths);
     f.upsert(acc);

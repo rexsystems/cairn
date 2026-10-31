@@ -250,40 +250,20 @@ pub fn add_offline(file: &mut AccountsFile, name: &str) -> Result<Account> {
     Ok(acc)
 }
 
-// Microsoft sign-in
-// Browser window uses the classic Live OAuth code flow (same client ID / redirect as the Minecraft launcher and Modrinth App).
+// Microsoft sign-in. Client ID, endpoints and scopes come from `msa_client`.
 
-pub fn flow_for(client_id: &str) -> &'static str {
-    // Azure app registrations use GUID client IDs; Windows Live IDs are 16 hex digits.
-    if client_id.len() == 36 && client_id.chars().filter(|c| *c == '-').count() == 4 { "msal" } else { "live" }
-}
+pub use crate::msa_client::{flow_for, MsaClient};
+use crate::msa_client::{scope_for, token_url};
 
-const LIVE_SCOPE: &str = "service::user.auth.xboxlive.com::MBI_SSL";
-const MSAL_SCOPE: &str = "XboxLive.signin offline_access";
-pub const AUTH_REDIRECT: &str = "https://login.live.com/oauth20_desktop.srf";
-
-/// URL opened in the sign-in webview. Only the Live (Minecraft launcher) client ID supports this redirect.
-pub fn authorize_url(client_id: &str) -> Result<String> {
-    if flow_for(client_id) != "live" {
-        bail!("Window sign-in needs the built-in Minecraft launcher client ID. Unset CAIRN_MSA_CLIENT_ID.");
-    }
-    Ok(format!(
-        "https://login.live.com/oauth20_authorize.srf?client_id={}&response_type=code&redirect_uri={}&scope={}&prompt=select_account",
-        urlencoding::encode(client_id),
-        urlencoding::encode(AUTH_REDIRECT),
-        urlencoding::encode(LIVE_SCOPE),
-    ))
-}
-
-pub async fn exchange_auth_code(client_id: &str, code: &str) -> Result<(String, String)> {
+pub async fn exchange_auth_code(client: &MsaClient, code: &str) -> Result<(String, String)> {
     let r = CLIENT
-        .post(token_url("live"))
+        .post(client.token_url())
         .form(&[
-            ("client_id", client_id),
+            ("client_id", client.id.as_str()),
             ("code", code),
             ("grant_type", "authorization_code"),
-            ("redirect_uri", AUTH_REDIRECT),
-            ("scope", LIVE_SCOPE),
+            ("redirect_uri", client.redirect()),
+            ("scope", client.scope()),
         ])
         .send()
         .await
@@ -311,14 +291,11 @@ pub struct DeviceCode {
     pub client_id: String,
 }
 
-pub async fn begin_device_code(client_id: &str) -> Result<DeviceCode> {
-    let flow = flow_for(client_id);
-    let (url, scope) = if flow == "live" {
-        ("https://login.live.com/oauth20_connect.srf", LIVE_SCOPE)
-    } else {
-        ("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", MSAL_SCOPE)
-    };
-    let mut form = vec![("client_id", client_id), ("scope", scope)];
+pub async fn begin_device_code(client: &MsaClient) -> Result<DeviceCode> {
+    let flow = client.flow;
+    let client_id = client.id.as_str();
+    let url = client.device_code_url();
+    let mut form = vec![("client_id", client_id), ("scope", client.scope())];
     if flow == "live" {
         form.push(("response_type", "device_code"));
     }
@@ -337,10 +314,6 @@ pub async fn begin_device_code(client_id: &str) -> Result<DeviceCode> {
         flow: flow.into(),
         client_id: client_id.into(),
     })
-}
-
-fn token_url(flow: &str) -> &'static str {
-    if flow == "live" { "https://login.live.com/oauth20_token.srf" } else { "https://login.microsoftonline.com/consumers/oauth2/v2.0/token" }
 }
 
 pub enum Poll {
@@ -374,7 +347,7 @@ pub async fn poll_device_code(dc: &DeviceCode) -> Result<Poll> {
 }
 
 async fn refresh_ms(flow: &str, client_id: &str, refresh: &str) -> Result<(String, String)> {
-    let scope = if flow == "live" { LIVE_SCOPE } else { MSAL_SCOPE };
+    let scope = scope_for(flow);
     let r = CLIENT
         .post(token_url(flow))
         .form(&[("client_id", client_id), ("refresh_token", refresh), ("grant_type", "refresh_token"), ("scope", scope)])

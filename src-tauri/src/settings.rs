@@ -4,7 +4,6 @@ use std::ffi::OsString;
 use std::path::Path;
 
 /// Client ID of the official Minecraft launcher on the Windows Live (login.live.com) endpoint.
-pub const LIVE_DEFAULT_CLIENT_ID: &str = "00000000402b5328";
 
 /// Vars the launcher may set for its own GTK/WebKit window. Minecraft must not inherit them.
 const LAUNCHER_ENV_STRIP: &[&str] = &[
@@ -27,7 +26,7 @@ pub struct Settings {
     pub default_height: u32,
     pub java_overrides: HashMap<String, String>,
     pub auto_install_java: bool,
-    /// Kept for older settings.json files; sign-in uses the built-in Live client ID unless CAIRN_MSA_CLIENT_ID is set.
+    /// Kept for older settings.json files; ignored; see msa_client.rs.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub msa_client_id: String,
     pub concurrent_downloads: usize,
@@ -105,16 +104,6 @@ impl Settings {
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         crate::util::write_json_atomic(path, self)
     }
-    /// Env var wins; otherwise the built-in Live client ID (no Azure app required).
-    pub fn effective_client_id(&self) -> String {
-        if let Ok(v) = std::env::var("CAIRN_MSA_CLIENT_ID") {
-            if !v.trim().is_empty() {
-                return v.trim().to_string();
-            }
-        }
-        LIVE_DEFAULT_CLIENT_ID.to_string()
-    }
-
     /// Environment for the Minecraft Java process.
     pub fn game_process_env(&self) -> Vec<(OsString, OsString)> {
         let strip: HashSet<&str> = LAUNCHER_ENV_STRIP.iter().copied().collect();
@@ -164,6 +153,5 @@ mod tests {
         assert!(LAUNCHER_ENV_STRIP.contains(&"WEBKIT_DISABLE_DMABUF_RENDERER"));
         let s = Settings::default();
         assert!(s.isolate_game_env);
-        assert_eq!(s.effective_client_id(), LIVE_DEFAULT_CLIENT_ID);
     }
 }
