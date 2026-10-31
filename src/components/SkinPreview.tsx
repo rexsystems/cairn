@@ -10,6 +10,7 @@ import {
   loadModel,
   loadSkinTexture,
 } from "../lib/skin-rendering";
+import { textureSrc } from "../lib/textures";
 import { Icon } from "./Icon";
 import { useStore } from "../store";
 
@@ -314,22 +315,23 @@ export function SkinPreview({
           state.actions[clip.name] = action;
         }
 
-        if (skinUrl) {
-          const tex = await loadSkinTexture(skinUrl);
-          if (cancelled || !api.current) return;
-          applySkinTexture(player, tex);
-        }
         applyCapeTexture(player, null, state.transparent);
         state.frameCamera();
-
         if (!reducedMotion && state.actions[BASE]) {
           state.play(BASE);
           if (!pausedRef.current) state.scheduleRandom();
         }
-
+        // Draw the model before the skin arrives, so a slow or missing skin never leaves the canvas empty.
         state.invalidate();
+        if (skinUrl) {
+          const tex = await loadSkinTexture(await textureSrc(skinUrl));
+          if (cancelled || !api.current) return;
+          applySkinTexture(player, tex);
+          state.invalidate();
+        }
         if (!cancelled) setReady(true);
       } catch {
+        api.current?.invalidate();
         if (!cancelled) setReady(true);
       }
     })();
@@ -344,7 +346,7 @@ export function SkinPreview({
     (async () => {
       try {
         if (capeUrl) {
-          const cape = await loadSkinTexture(capeUrl);
+          const cape = await loadSkinTexture(await textureSrc(capeUrl));
           if (cancelled || !api.current?.scene) return;
           applyCapeTexture(api.current.scene, cape, api.current.transparent);
         } else {

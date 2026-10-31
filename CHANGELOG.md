@@ -36,6 +36,9 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - A crashed background task no longer takes every later lock down with it.
 - File and network commands run off the main thread, progress events are throttled and live logs are batched, so the window stays responsive during installs and while the game runs (most noticeable on Windows).
 
+### Fixed
+- Skins, capes and account heads load again. Mojang serves them over http, which the Content Security Policy blocked; Cairn now downloads them itself and caches them.
+
 ## [0.1.0] - 2026-10-11
 
 - First public builds.

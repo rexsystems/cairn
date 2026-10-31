@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 import { fileSrc, type Account } from "../api";
+import { useTexture } from "../lib/textures";
 
 export function Modal({ title, onClose, children, footer, wide, labelledBy }: {
   title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; labelledBy?: string;
@@ -84,10 +85,11 @@ export function InstanceIcon({ name, src, large, small }: { name: string; src?: 
 /** Face from the player's real skin texture (8x8 face + hat layer); initials for offline accounts. */
 export function Avatar({ account, small }: { account?: Account | null; small?: boolean }) {
   const size = small ? 32 : 48;
+  const { src } = useTexture(account?.skinUrl);
   if (account?.skinUrl) {
     const scale = size / 8;
     const style = (x: number) => ({
-      backgroundImage: `url(${account.skinUrl})`,
+      backgroundImage: src ? `url("${src}")` : undefined,
       backgroundSize: `${64 * scale}px auto`,
       backgroundPosition: `-${x * scale}px -${8 * scale}px`,
     });

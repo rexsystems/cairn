@@ -309,6 +309,7 @@ export const api = {
   gameLog: (id: string) => invoke<string[]>("game_log", { id }),
   /** Uploads to mclo.gs; returns the public link. */
   shareLog: (content: string) => invoke<string>("share_log", { content }),
+  texture: (url: string) => invoke<string>("texture", { url }),
   createShortcut: (id: string) => invoke<string>("create_shortcut", { id }),
   takeLaunchRequest: () => invoke<string | null>("take_launch_request"),
   installInstance: (id: string) => invoke<void>("install_instance", { id }),
