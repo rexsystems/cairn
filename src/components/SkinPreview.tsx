@@ -11,11 +11,14 @@ import {
   loadSkinTexture,
 } from "../lib/skin-rendering";
 import { Icon } from "./Icon";
+import { useStore } from "../store";
 
 const BASE = "idle";
 const RANDOM = ["idle_sub_1", "idle_sub_2", "idle_sub_3"] as const;
 const FADE = 0.2;
 const RANDOM_MS = 8000;
+/** Frame interval with lighter graphics on. */
+const LOW_FRAME_MS = 1000 / 30;
 
 export function SkinPreview({
   skinUrl,
@@ -40,6 +43,7 @@ export function SkinPreview({
   const pausedRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [paused, setPaused] = useState(false);
+  const low = !!useStore().settings?.reduceEffects;
 
   const api = useRef<{
     mixer: THREE.AnimationMixer | null;
@@ -54,6 +58,7 @@ export function SkinPreview({
     play: (name: string) => void;
     scheduleRandom: () => void;
     clearTimer: () => void;
+    invalidate: () => void;
   } | null>(null);
 
   useEffect(() => {
@@ -61,10 +66,10 @@ export function SkinPreview({
     const canvas = canvasRef.current;
     if (!view || !canvas) return;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: !low, powerPreference: low ? "low-power" : "default" });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
     const large = size === "lg";
@@ -85,6 +90,14 @@ export function SkinPreview({
     const clock = new THREE.Clock();
     let raf = 0;
     let disposed = false;
+    let onScreen = true;
+    let lastFrame = 0;
+    const visible = () => onScreen && !document.hidden;
+    // The idle animation needs every frame; otherwise draw only when something changed.
+    const animating = () => !!state.mixer && !pausedRef.current && !reducedMotion;
+    const invalidate = () => {
+      if (!raf && !disposed && visible()) raf = requestAnimationFrame(tick);
+    };
 
     const frameCamera = () => {
       if (!root.children.length) return;
@@ -121,6 +134,7 @@ export function SkinPreview({
       scene: null as THREE.Object3D | null,
       transparent,
       frameCamera,
+      invalidate: () => invalidate(),
       play(name: string) {
         const action = state.actions[name];
         if (!state.mixer || !action) return;
@@ -183,6 +197,7 @@ export function SkinPreview({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       frameCamera();
+      invalidate();
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -203,6 +218,7 @@ export function SkinPreview({
       root.rotation.y += (e.clientX - prevX) * 0.01;
       prevX = e.clientX;
       dragged = true;
+      invalidate();
     };
     const onUp = (e: PointerEvent) => {
       dragging = false;
@@ -215,6 +231,7 @@ export function SkinPreview({
       }
       if (state.actions.interact) state.play("interact");
       dragged = false;
+      invalidate();
     };
 
     canvas.addEventListener("pointerdown", onDown);
@@ -223,21 +240,38 @@ export function SkinPreview({
     canvas.addEventListener("pointerleave", onUp);
     canvas.addEventListener("click", onClick);
 
-    const tick = () => {
-      if (disposed) return;
-      const dt = clock.getDelta();
+    function tick(now: number) {
+      raf = 0;
+      if (disposed || !visible()) return;
+      if (low && animating() && now - lastFrame < LOW_FRAME_MS) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      lastFrame = now;
+      // Clamp so the animation does not jump after the view was hidden.
+      const dt = Math.min(clock.getDelta(), 0.1);
       if (state.mixer && !pausedRef.current) state.mixer.update(dt);
       camera.lookAt(lookAt);
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
+      if (animating()) raf = requestAnimationFrame(tick);
+    }
+    const io = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      clock.getDelta();
+      invalidate();
+    });
+    io.observe(view);
+    const onVisibility = () => { clock.getDelta(); invalidate(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    invalidate();
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
       state.clearTimer();
       ro.disconnect();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
@@ -248,7 +282,7 @@ export function SkinPreview({
       transparent.dispose();
       api.current = null;
     };
-  }, [reducedMotion, size]);
+  }, [reducedMotion, size, low]);
 
   useEffect(() => {
     const state = api.current;
@@ -293,6 +327,7 @@ export function SkinPreview({
           if (!pausedRef.current) state.scheduleRandom();
         }
 
+        state.invalidate();
         if (!cancelled) setReady(true);
       } catch {
         if (!cancelled) setReady(true);
@@ -300,7 +335,7 @@ export function SkinPreview({
     })();
 
     return () => { cancelled = true; };
-  }, [skinUrl, model, reducedMotion]);
+  }, [skinUrl, model, reducedMotion, low]);
 
   useEffect(() => {
     const state = api.current;
@@ -316,6 +351,7 @@ export function SkinPreview({
           applyCapeTexture(state.scene!, null, state.transparent);
         }
         api.current?.frameCamera();
+        api.current?.invalidate();
       } catch { /* */ }
     })();
     return () => { cancelled = true; };
@@ -325,6 +361,7 @@ export function SkinPreview({
     pausedRef.current = paused;
     const state = api.current;
     if (!state) return;
+    state.invalidate();
     if (paused) {
       state.clearTimer();
       return;
@@ -345,6 +382,7 @@ export function SkinPreview({
     const tick = (t: number) => {
       const p = Math.min(1, (t - start) / 520);
       state.root!.rotation.y = from + extra * (1 - Math.pow(1 - p, 3));
+      state.invalidate();
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
