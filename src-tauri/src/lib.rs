@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod backup;
 pub mod content;
+pub mod crash;
 pub mod curseforge;
 pub mod discord;
 pub mod game;
@@ -96,6 +97,7 @@ fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
     s.concurrent_downloads = s.concurrent_downloads.clamp(1, 64);
     s.default_memory_mb = s.default_memory_mb.clamp(512, 65536);
     s.save(&state.paths.settings_file()).map_err(ea)?;
+    crash::set_allowed(s.crash_reports_allowed());
     Ok(s)
 }
 

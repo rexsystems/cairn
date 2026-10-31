@@ -58,6 +58,8 @@ export interface Settings {
   discordRpc: boolean;
   gamepadNav: boolean;
   telemetryEnabled: boolean;
+  crashReportsEnabled: boolean;
+  privacyPromptAnswered: boolean;
   curseforgeApiKey?: string;
 }
 

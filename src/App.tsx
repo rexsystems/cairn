@@ -11,6 +11,7 @@ import { Accounts } from "./pages/Accounts";
 import { SettingsPage } from "./pages/Settings";
 import { CreateInstance } from "./pages/CreateInstance";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { PrivacyPrompt } from "./components/PrivacyPrompt";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { CairnMark } from "./assets/CairnMark";
 
@@ -179,6 +180,7 @@ function Shell() {
       </div>
       <TaskTray />
       <Toasts />
+      <PrivacyPrompt />
     </div>
   );
 }

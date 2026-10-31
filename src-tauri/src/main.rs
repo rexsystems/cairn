@@ -8,21 +8,7 @@ fn main() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    // Keep _guard alive for the whole process so events flush on exit.
-    // sentry 0.49: ClientOptions is non-exhaustive — use the builder.
-    let _guard = sentry::init(
-        sentry::ClientOptions::new()
-            .dsn("https://bad5c2806df24b6d846b5ddff0effd62@error.mythical.systems/6")
-            .release(format!(
-                "{}@{}",
-                env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION")
-            ))
-            .traces_sample_rate(0.01),
-    );
-
-    #[cfg(debug_assertions)]
-    sentry::capture_message("Test GlitchTip error", sentry::Level::Error);
+    let _guard = cairn_lib::crash::init(&cairn_lib::paths::Paths::new().settings_file());
 
     cairn_lib::run()
 }

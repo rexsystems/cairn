@@ -63,6 +63,7 @@ export function SettingsPage() {
     || formWithEnv.discordRpc !== settings.discordRpc
     || formWithEnv.gamepadNav !== settings.gamepadNav
     || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
+    || formWithEnv.crashReportsEnabled !== settings.crashReportsEnabled
     || (formWithEnv.curseforgeApiKey ?? "") !== (settings.curseforgeApiKey ?? "")
     || JSON.stringify(formWithEnv.gameEnv) !== JSON.stringify(settings.gameEnv ?? {})
   );
@@ -125,11 +126,16 @@ export function SettingsPage() {
           <Switch checked={form.discordRpc} onChange={(v) => set("discordRpc", v)} label="Discord Rich Presence while playing" />
           <small className="muted">Presence needs a Discord app id in the CAIRN_DISCORD_APP_ID environment variable.</small>
           <Switch
-            checked={form.telemetryEnabled !== false}
-            onChange={(v) => set("telemetryEnabled", v)}
+            checked={form.privacyPromptAnswered && form.telemetryEnabled}
+            onChange={(v) => setForm({ ...form, telemetryEnabled: v, privacyPromptAnswered: true })}
             label="Share anonymous usage (opens, launches, installs)"
           />
-          <small className="muted">No account names or worlds. Crash reports use GlitchTip separately.</small>
+          <Switch
+            checked={form.privacyPromptAnswered && form.crashReportsEnabled}
+            onChange={(v) => setForm({ ...form, crashReportsEnabled: v, privacyPromptAnswered: true })}
+            label="Send crash and error reports"
+          />
+          <small className="muted">Both are off unless you turn them on. No account names, worlds or files are sent.</small>
           <label className="field">
             <span>CurseForge API key</span>
             <input

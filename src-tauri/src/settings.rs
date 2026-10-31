@@ -41,8 +41,12 @@ pub struct Settings {
     pub discord_rpc: bool,
     /// Move focus with a gamepad in the launcher UI.
     pub gamepad_nav: bool,
-    /// Anonymous usage events (Umami). Errors still go to GlitchTip when enabled separately.
+    /// Anonymous usage events (Umami). Only sent once the user has answered the privacy prompt.
     pub telemetry_enabled: bool,
+    /// Crash and error reports (GlitchTip). Same consent rule as telemetry.
+    pub crash_reports_enabled: bool,
+    /// The user has seen and answered the first-run privacy prompt.
+    pub privacy_prompt_answered: bool,
     /// CurseForge Core API key for importing CF modpack zips (Settings → or CAIRN_CURSEFORGE_API_KEY).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub curseforge_api_key: String,
@@ -66,13 +70,25 @@ impl Default for Settings {
             game_env: HashMap::new(),
             discord_rpc: true,
             gamepad_nav: true,
-            telemetry_enabled: true,
+            telemetry_enabled: false,
+            crash_reports_enabled: false,
+            privacy_prompt_answered: false,
             curseforge_api_key: String::new(),
         }
     }
 }
 
 impl Settings {
+    /// Usage events may be sent. Older files saved `telemetryEnabled: true` before consent existed,
+    /// so the opt-in only counts after the prompt was answered.
+    pub fn usage_stats_allowed(&self) -> bool {
+        self.privacy_prompt_answered && self.telemetry_enabled
+    }
+
+    pub fn crash_reports_allowed(&self) -> bool {
+        self.privacy_prompt_answered && self.crash_reports_enabled
+    }
+
     pub fn load(path: &Path) -> Self {
         std::fs::read_to_string(path)
             .ok()
@@ -121,6 +137,18 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn telemetry_needs_answered_prompt() {
+        assert!(!Settings::default().usage_stats_allowed());
+        assert!(!Settings::default().crash_reports_allowed());
+        let legacy: Settings = serde_json::from_str(r#"{"telemetryEnabled":true}"#).unwrap();
+        assert!(!legacy.usage_stats_allowed());
+        let opted_in: Settings =
+            serde_json::from_str(r#"{"telemetryEnabled":true,"crashReportsEnabled":true,"privacyPromptAnswered":true}"#).unwrap();
+        assert!(opted_in.usage_stats_allowed());
+        assert!(opted_in.crash_reports_allowed());
+    }
 
     #[test]
     fn strips_gdk_when_isolated() {
