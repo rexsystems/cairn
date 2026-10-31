@@ -15,6 +15,7 @@
   },
   "private": true,
   "scripts": {
+    "bump": "node scripts/bump-version.mjs",
     "dev:web": "vite",
     "dev": "tauri dev",
     "build:web": "tsc --noEmit -p tsconfig.json && vite build",

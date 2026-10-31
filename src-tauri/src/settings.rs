@@ -43,6 +43,8 @@ pub struct Settings {
     /// Override for the Discord application id (CAIRN_DISCORD_APP_ID wins over this).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub discord_app_id: String,
+    /// Launcher update channel: "stable" or "beta".
+    pub update_channel: String,
     /// Move focus with a gamepad in the launcher UI.
     pub gamepad_nav: bool,
     /// Anonymous usage events (Umami). Only sent once the user has answered the privacy prompt.
@@ -75,6 +77,7 @@ impl Default for Settings {
             discord_rpc: true,
             discord_show_instance: true,
             discord_app_id: String::new(),
+            update_channel: "stable".into(),
             gamepad_nav: true,
             telemetry_enabled: false,
             crash_reports_enabled: false,

@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod app_update;
 pub mod backup;
 pub mod content;
 pub mod crash;
@@ -43,6 +44,7 @@ pub struct AppState {
     games: Arc<game::Games>,
     sign_ins: Mutex<HashMap<String, Arc<AtomicBool>>>,
     accounts_lock: tokio::sync::Mutex<()>,
+    pending_update: app_update::Pending,
 }
 
 type R<T> = Result<T, String>;
@@ -810,6 +812,19 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     Ok(Some(f.views()))
 }
 
+// Launcher updates
+
+#[tauri::command]
+async fn app_update_check(app: AppHandle, state: State<'_, AppState>) -> R<Option<app_update::AppUpdate>> {
+    let channel = Settings::load(&state.paths.settings_file()).update_channel;
+    app_update::check(&app, &state.pending_update, &channel).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn app_update_install(state: State<'_, AppState>) -> R<()> {
+    app_update::install(&state.pending_update).await.map_err(ea)
+}
+
 #[tauri::command]
 fn msa_cancel(app: AppHandle, state: State<AppState>) {
     if let Some(c) = state.sign_ins.locked().remove("signin") {
@@ -862,6 +877,7 @@ pub fn run() {
         games: Arc::new(game::Games::default()),
         sign_ins: Mutex::new(HashMap::new()),
         accounts_lock: tokio::sync::Mutex::new(()),
+        pending_update: app_update::Pending::default(),
     };
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -892,6 +908,7 @@ pub fn run() {
             mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
+            app_update_check, app_update_install,
             list_java, install_java, open_data_path
         ])
         .run(tauri::generate_context!())

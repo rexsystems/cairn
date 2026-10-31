@@ -1,6 +1,5 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge";
@@ -58,6 +57,7 @@ export interface Settings {
   discordRpc: boolean;
   discordShowInstance: boolean;
   discordAppId?: string;
+  updateChannel: UpdateChannel;
   gamepadNav: boolean;
   telemetryEnabled: boolean;
   crashReportsEnabled: boolean;
@@ -65,6 +65,8 @@ export interface Settings {
   curseforgeApiKey?: string;
 }
 
+export interface AppUpdate { version: string; currentVersion: string; notes: string | null; channel: string }
+export type UpdateChannel = "stable" | "beta";
 export interface AppInfo { version: string; dataDir: string; clientId: string; clientIdSource: string; authFlow: string; os: string }
 
 export type ContentKind = "mods" | "resourcepacks" | "shaderpacks" | "datapacks";
@@ -244,9 +246,11 @@ export const api = {
   installJava: (major: number) => invoke<JavaInstall>("install_java", { major }),
   openDataPath: (path: string) => invoke<void>("open_data_path", { path }),
 
-  checkForUpdate: async () => {
+  /** Checks the channel chosen in Settings. Null when up to date or the check failed. */
+  checkForUpdate: async (): Promise<(AppUpdate & { downloadAndInstall: () => Promise<void> }) | null> => {
     try {
-      return await check();
+      const u = await invoke<AppUpdate | null>("app_update_check");
+      return u && { ...u, downloadAndInstall: () => invoke<void>("app_update_install") };
     } catch {
       return null;
     }

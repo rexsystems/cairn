@@ -238,6 +238,15 @@ export function SettingsPage() {
               <dt>Data folder</dt><dd className="mono">{info.dataDir}</dd>
             </dl>
           )}
+          <div className="field">
+            <span>Update channel</span>
+            <div className="segmented" role="group" aria-label="Update channel">
+              {(["stable", "beta"] as const).map((c) => (
+                <button key={c} aria-pressed={(form.updateChannel ?? "stable") === c} onClick={() => instant("updateChannel", c)}>{c === "stable" ? "Stable" : "Beta"}</button>
+              ))}
+            </div>
+            <small className="muted">Beta gets every new build first and may have bugs.</small>
+          </div>
           <div className="row">
             {info && <button className="btn btn-sm" onClick={() => api.openDataPath(info.dataDir).catch((e) => toast(String(e), true))}><Icon name="folder" size={14} />Open data folder</button>}
             <button
