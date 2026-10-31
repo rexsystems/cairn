@@ -1,0 +1,48 @@
+# Wraps the .deb that `tauri build --bundles deb` produces into a Flatpak.
+# Not on Flathub yet; CI builds a .flatpak bundle you can install by hand:
+#
+#   npx tauri build --bundles deb
+#   cp src-tauri/target/release/bundle/deb/*.deb flatpak/cairn.deb
+#   flatpak-builder --user --install --force-clean build-flatpak flatpak/app.cairn.launcher.yml
+#   flatpak run app.cairn.launcher
+id: app.cairn.launcher
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: cairn
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  # Minecraft (GLFW) still needs X11 even on Wayland desktops.
+  - --socket=x11
+  - --socket=pulseaudio
+  # GPU for the game, plus controllers for gamepad navigation.
+  - --device=all
+  # Discord Rich Presence, for both the native and the Flatpak Discord.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - name: cairn
+    buildsystem: simple
+    sources:
+      - type: file
+        path: cairn.deb
+      - type: file
+        path: app.cairn.launcher.desktop
+      - type: file
+        path: app.cairn.launcher.metainfo.xml
+    build-commands:
+      - ar -x cairn.deb
+      - tar -xf data.tar.gz
+      - install -Dm755 usr/bin/cairn /app/bin/cairn
+      - install -Dm644 app.cairn.launcher.desktop /app/share/applications/app.cairn.launcher.desktop
+      - install -Dm644 app.cairn.launcher.metainfo.xml /app/share/metainfo/app.cairn.launcher.metainfo.xml
+      - |
+        for dir in usr/share/icons/hicolor/*/apps; do
+          size=$(basename "$(dirname "$dir")")
+          for icon in "$dir"/*.png; do
+            install -Dm644 "$icon" "/app/share/icons/hicolor/$size/apps/app.cairn.launcher.png"
+          done
+        done

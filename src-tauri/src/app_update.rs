@@ -29,6 +29,10 @@ pub struct AppUpdate {
 }
 
 pub async fn check(app: &AppHandle, pending: &Pending, channel: &str) -> Result<Option<AppUpdate>> {
+    // Flatpak installs update through `flatpak update`; the bundled files can't be replaced.
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        return Ok(None);
+    }
     let url = endpoint(channel).parse().context("update endpoint")?;
     let found = app.updater_builder().endpoints(vec![url])?.build()?.check().await?;
     let view = found.as_ref().map(|u| AppUpdate {
