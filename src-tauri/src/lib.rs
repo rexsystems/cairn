@@ -9,12 +9,16 @@ pub mod msa_client;
 pub mod curseforge;
 pub mod deps;
 pub mod discord;
+pub mod discord_ipc;
+pub mod discord_register;
 pub mod fixes;
+pub mod friends;
 pub mod game;
 pub mod horizon;
 pub mod horizon_mods;
 pub mod hosting;
 pub mod instance;
+pub mod invite;
 pub mod java;
 pub mod loaders;
 pub mod logparse;
@@ -25,6 +29,7 @@ pub mod modmeta;
 pub mod modrinth;
 pub mod modrinth_app;
 pub mod net;
+pub mod party;
 pub mod paths;
 pub mod perf;
 pub mod playit;
@@ -245,9 +250,20 @@ fn share_code(state: State<AppState>, id: String) -> R<share::Shared> {
     Ok(share::Shared { code: share::encode(&m).map_err(ea)?, items: m.items.len(), left_out })
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharePreview {
+    #[serde(flatten)]
+    manifest: share::Manifest,
+    /// Present when the code is an invite: the server to join after setting up.
+    address: Option<String>,
+}
+
+/// Reads a share code, or an invite code (a share code followed by @address).
 #[tauri::command(async)]
-fn read_share_code(code: String) -> R<share::Manifest> {
-    share::decode(&code).map_err(ea)
+fn read_share_code(code: String) -> R<SharePreview> {
+    let (manifest, address) = invite::parse_code(&code).map_err(ea)?;
+    Ok(SharePreview { manifest, address })
 }
 
 #[derive(serde::Serialize)]
@@ -263,7 +279,7 @@ struct SharedImport {
 /// Builds a new instance from a share code and downloads the listed versions.
 #[tauri::command]
 async fn import_share_code(app: AppHandle, state: State<'_, AppState>, code: String) -> R<SharedImport> {
-    let m = share::decode(&code).map_err(ea)?;
+    let (m, _) = invite::parse_code(&code).map_err(ea)?;
     let inst = instance::create(
         &state.paths,
         Instance { name: m.name.clone(), mc_version: m.mc.clone(), loader: m.loader.clone(), loader_version: m.lv.clone(), ..Default::default() },
@@ -1266,6 +1282,170 @@ async fn playit_tunnels(state: State<'_, AppState>) -> R<Vec<playit::Tunnel>> {
     playit::tunnels(&state.paths).await.map_err(ea)
 }
 
+// Invites and friends
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InviteTarget {
+    kind: &'static str,
+    label: String,
+    address: String,
+    /// Party size Discord shows; 0 when unknown.
+    max: u32,
+}
+
+/// Addresses friends could use to reach this instance's session right now.
+#[tauri::command]
+async fn invite_targets(state: State<'_, AppState>, id: String) -> R<Vec<InviteTarget>> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let mut out = vec![];
+    if hosting::is_running(&id) {
+        let info = hosting::info(&state.paths, &inst);
+        let max = info.config.max_players;
+        if playit::status(&state.paths).running {
+            for t in playit::tunnels(&state.paths).await.unwrap_or_default() {
+                if t.problem.is_none() && invite::valid_address(&t.address) {
+                    out.push(InviteTarget { kind: "playit", label: format!("playit.gg tunnel \"{}\"", t.name), address: t.address, max });
+                }
+            }
+        }
+        if let (true, Some(ip)) = (info.config.lan, info.lan_address) {
+            out.push(InviteTarget { kind: "lan", label: "Your local network".into(), address: format!("{ip}:{}", info.config.port), max });
+        }
+    }
+    let seen = party::seen(&id);
+    if let Some(addr) = seen.server.filter(|a| invite::valid_address(a)) {
+        // The real cap isn't visible from the client; 20 is the vanilla default.
+        out.push(InviteTarget { kind: "server", label: "The server you're playing on".into(), address: addr, max: 20 });
+    }
+    if let (Some(port), Some(ip)) = (seen.lan_port, hosting::lan_address()) {
+        out.push(InviteTarget { kind: "lanWorld", label: "Your world, opened to LAN".into(), address: format!("{ip}:{port}"), max: 8 });
+    }
+    let mut seen_addr = std::collections::HashSet::new();
+    out.retain(|t| seen_addr.insert(t.address.clone()));
+    Ok(out)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InviteInfo {
+    /// Copyable invite for people without Discord: share code plus address.
+    code: String,
+    notes: Vec<String>,
+}
+
+/// Builds the invite code and, when `discord` is set, makes the session joinable on Discord.
+#[tauri::command(async)]
+fn invite_enable(state: State<AppState>, id: String, address: String, max: u32, discord: bool) -> R<InviteInfo> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let (m, left_out) = share::manifest(&inst.dir(&state.paths), &inst);
+    let inv = invite::for_instance(&address, &m, inst.pack.as_ref()).map_err(ea)?;
+    let code = invite::code(&share::encode(&m).map_err(ea)?, &address).map_err(ea)?;
+    let mut notes = vec![];
+    if !left_out.is_empty() {
+        notes.push(format!("{} files have no Modrinth or CurseForge source, so friends won't get them.", left_out.len()));
+    }
+    if discord {
+        let secret = invite::encode(&inv).map_err(ea)?;
+        let sent = invite::parse(&secret).map_err(ea)?;
+        if sent.fp.is_some() && sent.pack.is_none() {
+            notes.push("Friends who don't have this exact instance will need the invite code; Discord's invite is too small to list your mods.".into());
+        }
+        discord::set_join(&id, Some(discord::Join { party_id: uuid::Uuid::new_v4().to_string(), secret, max: max.min(1000) }));
+    }
+    Ok(InviteInfo { code, notes })
+}
+
+#[tauri::command(async)]
+fn invite_disable(id: String) {
+    discord::set_join(&id, None);
+}
+
+#[tauri::command(async)]
+fn discord_status() -> discord::Status {
+    discord::status()
+}
+
+/// A Join click that arrived before the window was ready to hear about it.
+#[tauri::command(async)]
+fn discord_take_join() -> Option<String> {
+    discord::take_pending_join()
+}
+
+/// Accepts or declines an ask-to-join request. Accepted people go on the Friends list.
+#[tauri::command(async)]
+fn discord_reply(state: State<AppState>, user_id: String, accept: bool, username: String, avatar_url: Option<String>) -> R<Vec<friends::Friend>> {
+    discord::reply(&user_id, accept)?;
+    if !accept {
+        return Ok(friends::list(&state.paths));
+    }
+    let instance_id = discord::status().joinable.into_iter().next().unwrap_or_default();
+    let instance_name = instance::get(&state.paths, &instance_id).map(|i| i.name).unwrap_or_default();
+    let avatar_url = avatar_url.filter(|u| u.starts_with("https://cdn.discordapp.com/avatars/") && u.len() < 200);
+    let name: String = username.chars().filter(|c| !c.is_control()).take(64).collect();
+    friends::record(&state.paths, friends::Friend { kind: "joinedYou".into(), name, user_id: Some(user_id), avatar_url, instance_id, instance_name, ..Default::default() })
+        .map_err(ea)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JoinPlan {
+    invite: invite::Invite,
+    step: invite::Step,
+    /// Instance name from an invite code; Discord secrets don't carry one.
+    name: Option<String>,
+}
+
+/// Works out how to join from a Discord secret or a pasted invite code.
+#[tauri::command(async)]
+fn join_plan(state: State<AppState>, secret: Option<String>, code: Option<String>) -> R<JoinPlan> {
+    let (inv, name, have_manifest) = match (secret, code) {
+        (Some(s), _) => (invite::parse(&s).map_err(ea)?, None, false),
+        (None, Some(c)) => {
+            let (m, address) = invite::parse_code(&c).map_err(ea)?;
+            let address = address.ok_or("This share code has no server address. Use Paste share code to copy the instance.")?;
+            (invite::for_instance(&address, &m, None).map_err(ea)?, Some(m.name), true)
+        }
+        (None, None) => return Err("Nothing to join".into()),
+    };
+    let locals: Vec<invite::Local> = instance::list(&state.paths)
+        .into_iter()
+        .filter(|i| !i.use_horizon)
+        .map(|i| {
+            let (m, _) = share::manifest(&i.dir(&state.paths), &i);
+            invite::Local { fp: invite::fingerprint(&m.items), id: i.id, name: i.name, mc: i.mc_version, loader: i.loader, lv: i.loader_version, last_played: i.last_played.unwrap_or(i.created) }
+        })
+        .collect();
+    Ok(JoinPlan { step: invite::plan(&inv, &locals, have_manifest), invite: inv, name })
+}
+
+/// Remembers a session you joined so it shows under Friends with "Join again".
+#[tauri::command(async)]
+fn join_record(state: State<AppState>, secret: Option<String>, code: Option<String>, instance_id: String) -> R<Vec<friends::Friend>> {
+    let inst = instance::get(&state.paths, &instance_id).map_err(ea)?;
+    let secret = secret.filter(|s| invite::parse(s).is_ok());
+    let code = code.filter(|c| invite::parse_code(c).is_ok_and(|(_, a)| a.is_some()));
+    if secret.is_none() && code.is_none() {
+        return Err("Nothing to remember".into());
+    }
+    let how = if secret.is_some() { "Discord" } else { "invite code" };
+    friends::record(
+        &state.paths,
+        friends::Friend { kind: "youJoined".into(), name: format!("{} (via {how})", inst.name), instance_id, instance_name: inst.name, secret, code, ..Default::default() },
+    )
+    .map_err(ea)
+}
+
+#[tauri::command(async)]
+fn friends_list(state: State<AppState>) -> Vec<friends::Friend> {
+    friends::list(&state.paths)
+}
+
+#[tauri::command(async)]
+fn friends_forget(state: State<AppState>, id: String) -> R<Vec<friends::Friend>> {
+    friends::forget(&state.paths, &id).map_err(ea)
+}
+
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 /// Lets running servers save their worlds before Cairn exits instead of killing them mid-write.
@@ -1329,7 +1509,21 @@ pub fn run() {
         .setup(move |app| {
             // Only Cairn's own data folder (screenshots, icons, world thumbnails) is readable by the webview.
             app.asset_protocol_scope().allow_directory(&data_root, true)?;
-            discord::configure(discord::Options::from_settings(&Settings::load(&settings_file)));
+            let handle = app.handle().clone();
+            discord::on_event(move |ev| {
+                let _ = handle.emit("discord-event", ev);
+            });
+            let settings = Settings::load(&settings_file);
+            let discord_opts = discord::Options::from_settings(&settings);
+            if discord_opts.enabled {
+                let app_id = discord_opts.app_id.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = discord_register::register(&app_id) {
+                        eprintln!("[cairn] couldn't register with Discord: {e:#}");
+                    }
+                });
+            }
+            discord::configure(discord_opts);
             tauri::async_runtime::spawn(async move {
                 telemetry::track_app_open(&settings_file).await;
             });
@@ -1355,7 +1549,8 @@ pub fn run() {
             app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,
             list_java, install_java, open_data_path,
             server_info, server_prepare, server_accept_eula, server_save_config, server_start, server_stop, server_command, server_log,
-            playit_status, playit_link, playit_cancel_link, playit_start, playit_stop, playit_unlink, playit_tunnels
+            playit_status, playit_link, playit_cancel_link, playit_start, playit_stop, playit_unlink, playit_tunnels,
+            invite_targets, invite_enable, invite_disable, discord_status, discord_take_join, discord_reply, join_plan, join_record, friends_list, friends_forget
         ])
         .build(tauri::generate_context!())
         .expect("error while building Cairn")

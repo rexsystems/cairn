@@ -60,6 +60,9 @@ impl Games {
                 q.pop_front();
             }
         }
+        if crate::party::observe_game_line(id, &line) {
+            let _ = app.emit("party-changed", id);
+        }
         let _ = app.emit("game-log", LogLine { instance_id: id.into(), line, stream: stream.into() });
     }
 }
@@ -322,6 +325,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
             let _ = std::fs::rename(&shader_stash, &sp);
         }
         crate::discord::clear(&id);
+        crate::party::forget(&id);
         games.push_log(&app2, &id, format!("[Cairn] Game exited with code {}", code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())), "launcher");
         games.set(&app2, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started, exit_code: code, crashed });
         if let Some(w) = app2.get_webview_window("main") {
@@ -565,6 +569,7 @@ async fn launch_horizon(
         games.killers.locked().remove(&id);
         let crashed = finish_session(paths.clone(), id.clone(), started, code, stopped, String::new()).await;
         crate::discord::clear(&id);
+        crate::party::forget(&id);
         games.push_log(
             &app2,
             &id,

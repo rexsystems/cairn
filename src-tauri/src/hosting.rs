@@ -166,7 +166,7 @@ fn launch_file(dir: &Path, l: &Launch) -> PathBuf {
 
 /// The address other devices on the network would use. Connecting a UDP socket sends no packets;
 /// it only asks the OS which interface would route outward.
-fn lan_address() -> Option<String> {
+pub fn lan_address() -> Option<String> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.0.2.1:9").ok()?;
     let ip = s.local_addr().ok()?.ip();
@@ -558,6 +558,7 @@ pub async fn start(app: &AppHandle, paths: &Paths, inst: &Instance) -> Result<()
         p.kill = Some(kill_tx);
     }
     emit_state(app, &id, "starting", None);
+    crate::discord::set_hosting(crate::discord::Session::new(&id, &inst.name, &inst.mc_version, &inst.loader, inst.loader_version.as_deref()));
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     if let Some(out) = child.stdout.take() {
@@ -583,6 +584,7 @@ pub async fn start(app: &AppHandle, paths: &Paths, inst: &Instance) -> Result<()
     // Batch log lines so a chatty modded startup doesn't flood the UI with one event per line.
     let (app2, id2) = (app.clone(), id.clone());
     let pump = tauri::async_runtime::spawn(async move {
+        let mut online = 0u32;
         while let Some(first) = rx.recv().await {
             let mut batch = vec![first];
             while batch.len() < 500 {
@@ -592,6 +594,11 @@ pub async fn start(app: &AppHandle, paths: &Paths, inst: &Instance) -> Result<()
                 }
             }
             push_lines(&id2, &batch);
+            let now_online = batch.iter().fold(online, |n, l| crate::party::players_after(l, n));
+            if now_online != online {
+                online = now_online;
+                crate::discord::set_players(&id2, online);
+            }
             if state_of(&id2) == "starting" && batch.iter().any(|l| is_ready_line(l)) {
                 emit_state(&app2, &id2, "running", None);
             }
@@ -614,6 +621,7 @@ pub async fn start(app: &AppHandle, paths: &Paths, inst: &Instance) -> Result<()
             p.stdin = None;
             p.kill = None;
         }
+        crate::discord::clear_hosting(&id);
         emit_state(&app3, &id, "stopped", status.and_then(|s| s.code()));
     });
     Ok(())
