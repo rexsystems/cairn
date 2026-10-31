@@ -4,6 +4,7 @@ pub mod backup;
 pub mod compat;
 pub mod content;
 pub mod crash;
+pub mod crashlog;
 pub mod msa_client;
 pub mod curseforge;
 pub mod deps;
@@ -28,6 +29,7 @@ pub mod perf;
 pub mod prism;
 pub mod servers;
 pub mod settings;
+pub mod stats;
 pub mod shortcuts;
 pub mod tasks;
 pub mod telemetry;
@@ -685,6 +687,58 @@ async fn check_compat(state: State<'_, AppState>, id: String) -> R<fixes::Report
     tokio::task::spawn_blocking(move || fixes::check(&paths, &inst)).await.map_err(e)
 }
 
+#[tauri::command(async)]
+fn instance_stats(state: State<AppState>, id: String) -> R<stats::Stats> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let midnight = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|t| t.and_local_timezone(chrono::Local).earliest())
+        .map(|t| t.timestamp_millis())
+        .unwrap_or_else(util::now_ms);
+    Ok(stats::summarize(&stats::load(&inst.dir(&state.paths)), inst.play_seconds, util::now_ms(), midnight))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CrashAnalysis {
+    /// The log or crash report that was read, relative to the instance folder.
+    source: Option<String>,
+    issues: Vec<compat::Issue>,
+}
+
+/// Explains a crash from `log` (a path inside the instance), or from the last crashed
+/// session, the newest crash report, or the newest session log.
+#[tauri::command(async)]
+fn analyze_crash(state: State<AppState>, id: String, log: Option<String>) -> R<CrashAnalysis> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths);
+    let rel = |p: &std::path::Path| p.strip_prefix(&dir).ok().map(|r| r.to_string_lossy().replace('\\', "/"));
+    let source = match log {
+        Some(l) if std::path::Path::new(&l).is_absolute() => Some(rel(std::path::Path::new(&l)).ok_or("That log isn't in this instance.")?),
+        Some(l) => Some(l),
+        None => stats::load(&dir)
+            .iter()
+            .rev()
+            .find(|s| s.crashed)
+            .and_then(|s| s.log.clone())
+            .or_else(|| stats::crash_report_since(&dir, 0))
+            .or_else(|| {
+                let logs = content::files_in(&dir.join(".cairn").join("logs"), &[".log"]);
+                logs.into_iter().max_by_key(|f| f.modified).and_then(|f| rel(std::path::Path::new(&f.path)))
+            }),
+    };
+    let Some(source) = source else { return Ok(CrashAnalysis { source: None, issues: vec![] }) };
+    let mut issues = game::diagnose_file(&state.paths, &inst, &source);
+    if crashlog::about_mods(&issues) {
+        // The log names the problem; the live check knows which jars to fix.
+        let live = fixes::check(&state.paths, &inst);
+        let known: std::collections::HashSet<String> = issues.iter().map(|i| i.key.clone()).collect();
+        issues.extend(live.issues.into_iter().filter(|i| i.severity == compat::Severity::Error && !known.contains(&i.key)));
+    }
+    Ok(CrashAnalysis { source: Some(source), issues })
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PerformanceAdvice {
@@ -1092,7 +1146,7 @@ pub fn run() {
             launch_instance, kill_instance, game_states, game_log, install_instance,
             mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install_modpack, modrinth_version_deps,
-            plan_install, install_content, check_compat, performance_advice, apply_fix, pending_downloads, open_manual_download, import_manual_download,
+            plan_install, install_content, check_compat, performance_advice, apply_fix, instance_stats, analyze_crash, pending_downloads, open_manual_download, import_manual_download,
             dismiss_manual_download, curseforge_available, curseforge_search, curseforge_project, curseforge_files, curseforge_install_modpack,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
             app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,

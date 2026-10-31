@@ -30,6 +30,8 @@ pub struct GameState {
     pub pid: Option<u32>,
     pub started: i64,
     pub exit_code: Option<i32>,
+    /// Exited on its own with an error or a crash report (not stopped from Cairn).
+    pub crashed: bool,
 }
 
 #[derive(Default)]
@@ -116,7 +118,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         .and_then(|pid| inst.launch_profiles.iter().find(|p| p.id == pid).cloned());
     let mut accs = AccountsFile::load(&paths);
     let active_id = accs.active.clone().ok_or_else(|| anyhow!("Add an account in Accounts before playing."))?;
-    games.set(&app, GameState { instance_id: id.clone(), state: "preparing".into(), pid: None, started: crate::util::now_ms(), exit_code: None });
+    games.set(&app, GameState { instance_id: id.clone(), state: "preparing".into(), pid: None, started: crate::util::now_ms(), exit_code: None, crashed: false });
     games.logs.locked().insert(id.clone(), VecDeque::new());
 
     let cancel = Arc::new(AtomicBool::new(false));
@@ -141,7 +143,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         games.killers.locked().remove(&id);
         games.cancels.locked().remove(&id);
         games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
-        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
     };
     let (mut java_path, installed, acc) = tokio::select! {
         r = prep => match r {
@@ -153,7 +155,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
                 task.fail(&e);
                 games.killers.locked().remove(&id);
                 games.cancels.locked().remove(&id);
-                games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+                games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
                 return Err(e);
             }
         },
@@ -244,7 +246,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
             }
             crate::discord::clear(&id);
             games.cancels.locked().remove(&id);
-            games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+            games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
             return Err(e);
         }
     };
@@ -253,11 +255,11 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         let _ = child.kill().await;
         let _ = child.wait().await;
         games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
-        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
         return Ok(());
     }
     let started = crate::util::now_ms();
-    games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None });
+    games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None, crashed: false });
     inst.last_played = Some(started);
     instance::save(&paths, &inst)?;
     crate::telemetry::spawn(
@@ -278,7 +280,9 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
 
     let log_dir = dir.join(".cairn").join("logs");
     std::fs::create_dir_all(&log_dir)?;
-    let log_file = Arc::new(Mutex::new(std::fs::File::create(log_dir.join(format!("launch-{}.log", chrono::Local::now().format("%Y-%m-%d_%H-%M-%S"))))?));
+    let log_name = format!("launch-{}.log", chrono::Local::now().format("%Y-%m-%d_%H-%M-%S"));
+    let session_log = format!(".cairn/logs/{log_name}");
+    let log_file = Arc::new(Mutex::new(std::fs::File::create(log_dir.join(&log_name))?));
     for (stream, reader) in [
         ("stdout", Box::new(child.stdout.take().unwrap()) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
         ("stderr", Box::new(child.stderr.take().unwrap())),
@@ -306,16 +310,12 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
     games.killers.locked().insert(id.clone(), tx);
     let app2 = app.clone();
     tokio::spawn(async move {
-        let code = tokio::select! {
-            r = child.wait() => r.ok().and_then(|s| s.code()),
-            _ = rx => { let _ = child.kill().await; child.wait().await.ok().and_then(|s| s.code()) }
+        let (code, stopped) = tokio::select! {
+            r = child.wait() => (r.ok().and_then(|s| s.code()), false),
+            _ = rx => { let _ = child.kill().await; (child.wait().await.ok().and_then(|s| s.code()), true) }
         };
         games.killers.locked().remove(&id);
-        let secs = ((crate::util::now_ms() - started) / 1000).max(0) as u64;
-        if let Ok(mut i) = instance::get(&paths, &id) {
-            i.play_seconds += secs;
-            let _ = instance::save(&paths, &i);
-        }
+        let crashed = finish_session(paths.clone(), id.clone(), started, code, stopped, session_log).await;
         if shader_stash.exists() {
             let sp = dir.join("shaderpacks");
             let _ = std::fs::remove_dir_all(&sp);
@@ -323,7 +323,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         }
         crate::discord::clear(&id);
         games.push_log(&app2, &id, format!("[Cairn] Game exited with code {}", code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())), "launcher");
-        games.set(&app2, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started, exit_code: code });
+        games.set(&app2, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started, exit_code: code, crashed });
         if let Some(w) = app2.get_webview_window("main") {
             let _ = w.show();
         }
@@ -354,6 +354,7 @@ async fn launch_horizon(
             pid: None,
             started: crate::util::now_ms(),
             exit_code: None,
+            crashed: false,
         },
     );
     games.logs.locked().insert(id.clone(), VecDeque::new());
@@ -413,6 +414,7 @@ async fn launch_horizon(
                 pid: None,
                 started: 0,
                 exit_code: None,
+                crashed: false,
             },
         );
     };
@@ -426,7 +428,7 @@ async fn launch_horizon(
                 task.fail(&e);
                 games.killers.locked().remove(&id);
                 games.cancels.locked().remove(&id);
-                games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+                games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
                 return Err(e);
             }
         },
@@ -491,7 +493,7 @@ async fn launch_horizon(
         Err(e) => {
             crate::discord::clear(&id);
             games.cancels.locked().remove(&id);
-            games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+            games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
             return Err(e);
         }
     };
@@ -500,12 +502,12 @@ async fn launch_horizon(
         let _ = child.kill().await;
         let _ = child.wait().await;
         games.push_log(&app, &id, "[Cairn] Launch cancelled".into(), "launcher");
-        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None });
+        games.set(&app, GameState { instance_id: id.clone(), state: "exited".into(), pid: None, started: 0, exit_code: None, crashed: false });
         return Ok(());
     }
 
     let started = crate::util::now_ms();
-    games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None });
+    games.set(&app, GameState { instance_id: id.clone(), state: "running".into(), pid: child.id(), started, exit_code: None, crashed: false });
     inst.last_played = Some(started);
     instance::save(&paths, &inst)?;
     crate::telemetry::spawn(
@@ -556,16 +558,12 @@ async fn launch_horizon(
     games.killers.locked().insert(id.clone(), tx);
     let app2 = app.clone();
     tokio::spawn(async move {
-        let code = tokio::select! {
-            r = child.wait() => r.ok().and_then(|s| s.code()),
-            _ = rx => { let _ = child.kill().await; child.wait().await.ok().and_then(|s| s.code()) }
+        let (code, stopped) = tokio::select! {
+            r = child.wait() => (r.ok().and_then(|s| s.code()), false),
+            _ = rx => { let _ = child.kill().await; (child.wait().await.ok().and_then(|s| s.code()), true) }
         };
         games.killers.locked().remove(&id);
-        let secs = ((crate::util::now_ms() - started) / 1000).max(0) as u64;
-        if let Ok(mut i) = instance::get(&paths, &id) {
-            i.play_seconds += secs;
-            let _ = instance::save(&paths, &i);
-        }
+        let crashed = finish_session(paths.clone(), id.clone(), started, code, stopped, String::new()).await;
         crate::discord::clear(&id);
         games.push_log(
             &app2,
@@ -584,6 +582,7 @@ async fn launch_horizon(
                 pid: None,
                 started,
                 exit_code: code,
+                crashed,
             },
         );
         if let Some(w) = app2.get_webview_window("main") {
@@ -591,6 +590,56 @@ async fn launch_horizon(
         }
     });
     Ok(())
+}
+
+/// Adds the playtime, records the session and works out whether it crashed. `log` is the
+/// session log relative to the instance folder (empty when it lives elsewhere).
+/// Reads mod jars when it crashed, so it runs on the blocking pool.
+async fn finish_session(paths: Paths, id: String, started: i64, code: Option<i32>, stopped: bool, log: String) -> bool {
+    tokio::task::spawn_blocking(move || record_session(&paths, &id, started, code, stopped, &log)).await.unwrap_or(false)
+}
+
+fn record_session(paths: &Paths, id: &str, started: i64, code: Option<i32>, stopped: bool, log: &str) -> bool {
+    let ended = crate::util::now_ms();
+    let seconds = ((ended - started) / 1000).max(0) as u64;
+    let Ok(mut inst) = instance::get(paths, id) else { return false };
+    inst.play_seconds += seconds;
+    let _ = instance::save(paths, &inst);
+    let dir = inst.dir(paths);
+    let report = crate::stats::crash_report_since(&dir, started);
+    let crashed = crate::stats::is_crash(code, stopped, report.is_some());
+    let log = report.or_else(|| (!log.is_empty()).then(|| log.to_string()));
+    let reason = if crashed { log.as_deref().and_then(|l| crate::crashlog::summary(&diagnose_file(paths, &inst, l))) } else { None };
+    let _ = crate::stats::record(&dir, crate::stats::Session { started, ended, seconds, exit_code: code, crashed, reason, log });
+    crashed
+}
+
+/// Diagnoses one log or crash report inside the instance folder.
+pub fn diagnose_file(paths: &Paths, inst: &Instance, rel: &str) -> Vec<crate::compat::Issue> {
+    let dir = inst.dir(paths);
+    let Some(text) = read_log(&dir, rel) else { return vec![] };
+    let mods = crate::modmeta::scan(&dir);
+    let memory_mb = inst.memory_mb.unwrap_or_else(|| Settings::load(&paths.settings_file()).default_memory_mb);
+    let advice = crate::perf::advise(crate::perf::system_memory_mb(), inst.loader != "vanilla", mods.len());
+    crate::crashlog::diagnose(&text, &crate::crashlog::Ctx { mods: &mods, memory_mb, max_safe_mb: advice.max_safe_mb })
+}
+
+/// Reads a log (plain or .gz) that must sit inside the instance folder.
+pub fn read_log(dir: &std::path::Path, rel: &str) -> Option<String> {
+    use std::io::Read;
+    let path = dir.join(rel);
+    let real = path.canonicalize().ok()?;
+    if !real.starts_with(dir.canonicalize().ok()?) {
+        return None;
+    }
+    let bytes = std::fs::read(&real).ok()?;
+    let mut text = String::new();
+    if rel.ends_with(".gz") {
+        flate2::read::GzDecoder::new(&bytes[..]).read_to_string(&mut text).ok()?;
+    } else {
+        text = String::from_utf8_lossy(&bytes).into_owned();
+    }
+    Some(text)
 }
 
 pub fn kill(games: &Games, id: &str) -> bool {
