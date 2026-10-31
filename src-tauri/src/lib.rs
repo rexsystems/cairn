@@ -21,6 +21,7 @@ pub mod net;
 pub mod paths;
 pub mod servers;
 pub mod settings;
+pub mod shortcuts;
 pub mod tasks;
 pub mod telemetry;
 pub mod util;
@@ -38,7 +39,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tasks::Task;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct AppState {
     paths: Paths,
@@ -46,6 +47,8 @@ pub struct AppState {
     sign_ins: Mutex<HashMap<String, Arc<AtomicBool>>>,
     accounts_lock: tokio::sync::Mutex<()>,
     pending_update: app_update::Pending,
+    /// Instance from `--launch <id>` on a cold start, until the UI picks it up.
+    launch_request: Mutex<Option<String>>,
 }
 
 type R<T> = Result<T, String>;
@@ -819,6 +822,21 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     Ok(Some(f.views()))
 }
 
+// Shortcuts
+
+#[tauri::command]
+fn create_shortcut(state: State<AppState>, id: String) -> R<String> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let icon = inst.icon_path(&state.paths);
+    let path = shortcuts::create(&inst.id, &inst.name, icon.as_deref()).map_err(ea)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn take_launch_request(state: State<AppState>) -> Option<String> {
+    state.launch_request.locked().take()
+}
+
 // Launcher updates
 
 #[tauri::command]
@@ -885,8 +903,20 @@ pub fn run() {
         sign_ins: Mutex::new(HashMap::new()),
         accounts_lock: tokio::sync::Mutex::new(()),
         pending_update: app_update::Pending::default(),
+        launch_request: Mutex::new(shortcuts::launch_arg(std::env::args())),
     };
     tauri::Builder::default()
+        // Must be first: a second launch hands its arguments to this one and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            if let Some(id) = shortcuts::launch_arg(argv) {
+                let _ = app.emit("launch-request", id);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -915,7 +945,7 @@ pub fn run() {
             mc_versions, mc_version_art, loader_versions,
             modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
-            app_update_check, app_update_install, share_log,
+            app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,
             list_java, install_java, open_data_path
         ])
         .run(tauri::generate_context!())

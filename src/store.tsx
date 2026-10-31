@@ -146,6 +146,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
+  // Desktop shortcuts start Cairn with `--launch <id>`; a running Cairn gets it as an event instead.
+  useEffect(() => {
+    const launch = (id: string) => {
+      go({ name: "instance", id });
+      play(id);
+    };
+    api.takeLaunchRequest().then((id) => id && launch(id)).catch(() => {});
+    const sub = on<string>("launch-request", launch);
+    return () => { sub.then((u) => u()); };
+  }, [go, play]);
+
   useEffect(() => {
     return startGamepadNav(() => !!settings?.gamepadNav);
   }, [settings?.gamepadNav]);

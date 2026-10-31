@@ -103,6 +103,7 @@ export function InstancePage({ id, initialTab }: { id: string; initialTab?: stri
               try { await api.backupInstance(inst.id, dest as string); toast("Backup saved"); } catch (e) { toast(String(e), true); }
             }}><Icon name="download" />Backup instance</button>
             <button role="menuitem" className="menu-item" onClick={async () => { setMenu(false); try { await api.installInstance(inst.id); toast("Game files are up to date"); } catch (e) { toast(String(e), true); } }}><Icon name="update" />Repair game files</button>
+            <button role="menuitem" className="menu-item" onClick={async () => { setMenu(false); try { await api.createShortcut(inst.id); toast("Shortcut added to your desktop"); } catch (e) { toast(String(e), true); } }}><Icon name="external" />Create desktop shortcut</button>
             <hr className="divider" style={{ margin: "6px 0" }} />
             <button role="menuitem" className="menu-item" style={{ color: "var(--ember)" }} onClick={() => { setMenu(false); setConfirmDelete(true); }}><Icon name="trash" />Delete instance</button>
           </PopoverMenu>
