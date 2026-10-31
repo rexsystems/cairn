@@ -25,6 +25,8 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - Desktop shortcuts on macOS and in the Flatpak build.
 - A **Host** tab runs a local server from an instance: client-only mods are left out, the EULA must be accepted first, LAN is opt-in, and an optional playit.gg tunnel lets friends join without opening router ports.
 - A **Lighter graphics** setting for slow GPUs or software rendering.
+- **Invite friends** from the Host tab or an instance: friends join through Discord (Join or Ask to join on your profile), and Cairn builds the matching instance before starting the game on your server. A copyable invite code works without Discord.
+- A **Friends** page lists the people you played with, with Invite again and Join again.
 
 ### Changed
 - Mod descriptions are sanitized with DOMPurify, and the app ships a Content Security Policy.
