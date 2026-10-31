@@ -897,7 +897,7 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 
 /* Task tray: the one glass surface, because it floats over any page. */
 .tray { position: fixed; right: 20px; bottom: 20px; z-index: 45; width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; }
-.task { background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--line-strong); border-radius: var(--r-card); padding: 12px 14px; box-shadow: var(--pop-shadow); animation: pop-in 160ms var(--ease); }
+.task { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-card); padding: 12px 14px; box-shadow: var(--pop-shadow); animation: pop-in 160ms var(--ease); }
 .task-title { font-weight: 700; font-size: 14px; display: flex; gap: 8px; align-items: center; }
 .task-stage { color: var(--muted); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
 .task.error { border-color: var(--ember); }
@@ -999,3 +999,9 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 [data-theme="light"] .inst-banner .inst-head-main h1, [data-theme="light"] .inst-banner .stat-line { color: var(--text); }
 [data-theme="light"] .inst-banner .stat-line b { color: var(--text); }
 @media (max-width: 720px) { .inst-banner { padding: var(--space-4); } }
+
+/* Lighter graphics: no shadows or blur for slow GPUs and software-rendered WebView2. */
+[data-effects="reduced"] *, [data-effects="reduced"] *::before, [data-effects="reduced"] *::after { box-shadow: none !important; text-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* Long logs: skip layout and paint for lines that are off screen. */
+.log-line { content-visibility: auto; contain-intrinsic-size: auto 19px; }

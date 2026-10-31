@@ -146,7 +146,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const apply = () => {
       const dark = settings.theme === "dark" || (settings.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
-      document.documentElement.dataset.motion = settings.reduceMotion ? "reduced" : "full";
+      document.documentElement.dataset.motion = settings.reduceMotion || settings.reduceEffects ? "reduced" : "full";
+      document.documentElement.dataset.effects = settings.reduceEffects ? "reduced" : "full";
     };
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");

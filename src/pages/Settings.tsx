@@ -59,6 +59,7 @@ export function SettingsPage() {
     || formWithEnv.concurrentDownloads !== settings.concurrentDownloads
     || formWithEnv.hideOnLaunch !== settings.hideOnLaunch
     || formWithEnv.reduceMotion !== settings.reduceMotion
+    || formWithEnv.reduceEffects !== settings.reduceEffects
     || formWithEnv.isolateGameEnv !== settings.isolateGameEnv
     || formWithEnv.discordRpc !== settings.discordRpc
     || formWithEnv.discordShowInstance !== settings.discordShowInstance
@@ -122,6 +123,8 @@ export function SettingsPage() {
             </div>
           </div>
           <Switch checked={form.reduceMotion} onChange={(v) => instant("reduceMotion", v)} label="Reduce motion" />
+          <Switch checked={form.reduceEffects} onChange={(v) => instant("reduceEffects", v)} label="Lighter graphics" />
+          <small className="muted">Turns off shadows and animations and draws the 3D skin at lower quality. Try it if Cairn feels slow.</small>
           <Switch checked={form.hideOnLaunch} onChange={(v) => set("hideOnLaunch", v)} label="Hide Cairn while the game runs" />
           <Switch checked={form.gamepadNav} onChange={(v) => instant("gamepadNav", v)} label="Gamepad navigation in the launcher" />
           <Switch checked={form.discordRpc} onChange={(v) => set("discordRpc", v)} label="Discord Rich Presence while playing" />

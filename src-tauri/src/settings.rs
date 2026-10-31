@@ -30,6 +30,8 @@ pub struct Settings {
     pub concurrent_downloads: usize,
     pub hide_on_launch: bool,
     pub reduce_motion: bool,
+    /// No blur, shadows or animations, and a cheaper 3D skin view, for slow GPUs and WebView2.
+    pub reduce_effects: bool,
     /// Drop launcher-only env vars (GDK_BACKEND, WebKit flags, …) before starting the game.
     pub isolate_game_env: bool,
     /// Extra KEY → value for the game process. Empty value removes that key.
@@ -70,6 +72,7 @@ impl Default for Settings {
             concurrent_downloads: 16,
             hide_on_launch: false,
             reduce_motion: false,
+            reduce_effects: false,
             isolate_game_env: true,
             game_env: HashMap::new(),
             discord_rpc: true,

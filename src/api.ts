@@ -52,6 +52,7 @@ export interface Settings {
   concurrentDownloads: number;
   hideOnLaunch: boolean;
   reduceMotion: boolean;
+  reduceEffects: boolean;
   isolateGameEnv: boolean;
   gameEnv: Record<string, string>;
   discordRpc: boolean;
