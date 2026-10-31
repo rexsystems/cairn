@@ -3,6 +3,7 @@
 //! A single worker thread owns the IPC connection. It reconnects when Discord starts
 //! later or restarts, and shows the most recently started game when several run at once.
 
+use crate::util::LockExt;
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Mutex, OnceLock};
@@ -85,7 +86,7 @@ fn worker() -> &'static Mutex<Sender<Msg>> {
 }
 
 fn send(msg: Msg) {
-    let tx = worker().lock().unwrap_or_else(|p| p.into_inner());
+    let tx = worker().locked();
     let _ = tx.send(msg);
 }
 

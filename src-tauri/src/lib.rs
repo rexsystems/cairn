@@ -30,6 +30,7 @@ use paths::Paths;
 use serde::Serialize;
 use serde_json::{json, Value};
 use settings::Settings;
+use util::LockExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -547,12 +548,12 @@ fn kill_instance(state: State<AppState>, id: String) -> bool {
 
 #[tauri::command]
 fn game_states(state: State<AppState>) -> Vec<game::GameState> {
-    state.games.states.lock().unwrap().values().cloned().collect()
+    state.games.states.locked().values().cloned().collect()
 }
 
 #[tauri::command]
 fn game_log(state: State<AppState>, id: String) -> Vec<String> {
-    state.games.logs.lock().unwrap().get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
+    state.games.logs.locked().get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -757,7 +758,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     }
 
     let cancel = Arc::new(AtomicBool::new(false));
-    state.sign_ins.lock().unwrap().insert("signin".into(), cancel.clone());
+    state.sign_ins.locked().insert("signin".into(), cancel.clone());
 
     let window = WebviewWindowBuilder::new(&app, "signin", WebviewUrl::External(auth_url.parse().map_err(e)?))
         .title("Sign in with Microsoft")
@@ -772,11 +773,11 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     let code = loop {
         if cancel.load(Ordering::SeqCst) || util::now_ms() > deadline {
             let _ = window.close();
-            state.sign_ins.lock().unwrap().remove("signin");
+            state.sign_ins.locked().remove("signin");
             return Ok(None);
         }
         if window.title().is_err() {
-            state.sign_ins.lock().unwrap().remove("signin");
+            state.sign_ins.locked().remove("signin");
             return Ok(None);
         }
         if let Ok(url) = window.url() {
@@ -785,7 +786,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
                 let pairs: Vec<_> = url.query_pairs().map(|(k, v)| (k.to_string(), v.to_string())).collect();
                 if let Some((_, err)) = pairs.iter().find(|(k, _)| k == "error") {
                     let _ = window.close();
-                    state.sign_ins.lock().unwrap().remove("signin");
+                    state.sign_ins.locked().remove("signin");
                     let desc = pairs.iter().find(|(k, _)| k == "error_description").map(|(_, v)| v.as_str()).unwrap_or(err.as_str());
                     return Err(format!("Microsoft sign-in failed: {desc}").into());
                 }
@@ -798,7 +799,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     };
 
-    state.sign_ins.lock().unwrap().remove("signin");
+    state.sign_ins.locked().remove("signin");
     let (access, refresh) = accounts::exchange_auth_code(&client, &code).await.map_err(ea)?;
     let (token, expires, profile) = accounts::minecraft_login(&access, client.flow).await.map_err(ea)?;
     let acc = accounts::account_from_login(client.flow, &client.id, refresh, token, expires, &profile);
@@ -811,7 +812,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
 
 #[tauri::command]
 fn msa_cancel(app: AppHandle, state: State<AppState>) {
-    if let Some(c) = state.sign_ins.lock().unwrap().remove("signin") {
+    if let Some(c) = state.sign_ins.locked().remove("signin") {
         c.store(true, Ordering::SeqCst);
     }
     if let Some(w) = app.get_webview_window("signin") {

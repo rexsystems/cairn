@@ -128,3 +128,15 @@ mod tests {
         assert_eq!(slugify("???"), "instance");
     }
 }
+
+/// `Mutex::lock` that survives poisoning. The guarded data here is plain maps and
+/// flags, so a panic in another thread should not take the whole launcher down.
+pub trait LockExt<T> {
+    fn locked(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for std::sync::Mutex<T> {
+    fn locked(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
