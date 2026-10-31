@@ -49,6 +49,9 @@ sentry = "0.49.3"
 tauri-plugin-single-instance = "2"
 sysinfo = { version = "0.35", default-features = false, features = ["system"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "dynamic_launcher"] }
+
 [profile.release]
 codegen-units = 4
 lto = "thin"

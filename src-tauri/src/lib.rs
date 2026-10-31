@@ -973,11 +973,11 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
 // Shortcuts
 
 #[tauri::command(async)]
-fn create_shortcut(state: State<AppState>, id: String) -> R<String> {
+async fn create_shortcut(state: State<'_, AppState>, id: String) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let icon = inst.icon_path(&state.paths);
-    let path = shortcuts::create(&inst.id, &inst.name, icon.as_deref()).map_err(ea)?;
-    Ok(path.to_string_lossy().to_string())
+    let path = shortcuts::create(&inst.id, &inst.name, icon.as_deref()).await.map_err(ea)?;
+    Ok(shortcuts::placed_message(path.as_deref()))
 }
 
 #[tauri::command]
