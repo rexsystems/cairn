@@ -63,14 +63,14 @@ export function ImportFromApp({ onClose }: { onClose: () => void }) {
       }
     >
       <p className="muted" style={{ marginTop: 0 }}>
-        Copies an instance from Modrinth App or RexLauncher on this computer. Your original stays where it is.
+        Copies an instance from Modrinth App, RexLauncher, Prism Launcher, PolyMC or MultiMC on this computer. Your original stays where it is.
       </p>
 
       {error && <ErrorState title="Could not read those launchers" error={error} onRetry={load} />}
       {profiles === null && !error && <Loading label="Looking for instances" />}
       {profiles && profiles.length === 0 && (
         <EmptyState icon="library" title="Nothing to import">
-          Install Modrinth App or RexLauncher first, or point them at a folder that has instances.
+          Install one of those launchers first, or point it at a folder that has instances.
         </EmptyState>
       )}
       {profiles && profiles.length > 0 && (

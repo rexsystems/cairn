@@ -19,6 +19,7 @@ pub mod modrinth;
 pub mod modrinth_app;
 pub mod net;
 pub mod paths;
+pub mod prism;
 pub mod servers;
 pub mod settings;
 pub mod shortcuts;
@@ -231,7 +232,7 @@ fn list_modrinth_app_profiles() -> R<Vec<modrinth_app::ModrinthAppProfile>> {
 
 #[tauri::command]
 async fn import_modrinth_app_profile(app: AppHandle, state: State<'_, AppState>, key: String) -> R<instance::InstanceView> {
-    let task = Task::new(&app, "Importing from Modrinth App");
+    let task = Task::new(&app, "Importing an instance");
     let t2 = task.clone();
     let paths = state.paths.clone();
     let paths2 = paths.clone();

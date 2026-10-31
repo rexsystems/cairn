@@ -130,7 +130,7 @@ export function Library() {
             <button className="btn btn-play" style={{ minHeight: 40, fontSize: 15 }} onClick={() => setShowCreate(true)}>Create an instance</button>
           </div>
         }>
-          Create one from a Minecraft version and loader, install a modpack from Discover, import an .mrpack, or pull an instance from Modrinth App or RexLauncher.
+          Create one from a Minecraft version and loader, install a modpack from Discover, import an .mrpack, or pull an instance from Modrinth App, RexLauncher or Prism Launcher.
         </EmptyState>
       )}
       {instances && instances.length > 0 && list.length === 0 && (
