@@ -59,10 +59,13 @@ export function SettingsPage() {
     || formWithEnv.concurrentDownloads !== settings.concurrentDownloads
     || formWithEnv.hideOnLaunch !== settings.hideOnLaunch
     || formWithEnv.reduceMotion !== settings.reduceMotion
+    || formWithEnv.reduceEffects !== settings.reduceEffects
     || formWithEnv.isolateGameEnv !== settings.isolateGameEnv
     || formWithEnv.discordRpc !== settings.discordRpc
+    || formWithEnv.discordShowInstance !== settings.discordShowInstance
     || formWithEnv.gamepadNav !== settings.gamepadNav
     || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
+    || formWithEnv.crashReportsEnabled !== settings.crashReportsEnabled
     || (formWithEnv.curseforgeApiKey ?? "") !== (settings.curseforgeApiKey ?? "")
     || JSON.stringify(formWithEnv.gameEnv) !== JSON.stringify(settings.gameEnv ?? {})
   );
@@ -120,16 +123,24 @@ export function SettingsPage() {
             </div>
           </div>
           <Switch checked={form.reduceMotion} onChange={(v) => instant("reduceMotion", v)} label="Reduce motion" />
+          <Switch checked={form.reduceEffects} onChange={(v) => instant("reduceEffects", v)} label="Lighter graphics" />
+          <small className="muted">Turns off shadows and animations and draws the 3D skin at lower quality. Try it if Cairn feels slow.</small>
           <Switch checked={form.hideOnLaunch} onChange={(v) => set("hideOnLaunch", v)} label="Hide Cairn while the game runs" />
           <Switch checked={form.gamepadNav} onChange={(v) => instant("gamepadNav", v)} label="Gamepad navigation in the launcher" />
           <Switch checked={form.discordRpc} onChange={(v) => set("discordRpc", v)} label="Discord Rich Presence while playing" />
-          <small className="muted">Presence needs a Discord app id in the CAIRN_DISCORD_APP_ID environment variable.</small>
+          <Switch checked={form.discordShowInstance} disabled={!form.discordRpc} onChange={(v) => set("discordShowInstance", v)} label="Show the instance name in Discord" />
+          <small className="muted">Shows the Minecraft version, loader and play time. Updates as soon as you save, even mid-game.</small>
           <Switch
-            checked={form.telemetryEnabled !== false}
-            onChange={(v) => set("telemetryEnabled", v)}
+            checked={form.privacyPromptAnswered && form.telemetryEnabled}
+            onChange={(v) => setForm({ ...form, telemetryEnabled: v, privacyPromptAnswered: true })}
             label="Share anonymous usage (opens, launches, installs)"
           />
-          <small className="muted">No account names or worlds. Crash reports use GlitchTip separately.</small>
+          <Switch
+            checked={form.privacyPromptAnswered && form.crashReportsEnabled}
+            onChange={(v) => setForm({ ...form, crashReportsEnabled: v, privacyPromptAnswered: true })}
+            label="Send crash and error reports"
+          />
+          <small className="muted">Both are off unless you turn them on. No account names, worlds or files are sent.</small>
           <label className="field">
             <span>CurseForge API key</span>
             <input
@@ -148,7 +159,7 @@ export function SettingsPage() {
               }}
             />
           </label>
-          <small className="muted">Needed to import CurseForge modpack zips. Get a key at console.curseforge.com.</small>
+          <small className="muted">Used to import CurseForge modpack zips. Official builds include a key; one set here takes priority. Get your own at console.curseforge.com.</small>
         </section>
 
         <section className="panel settings-section" aria-labelledby="s-game">
@@ -230,6 +241,15 @@ export function SettingsPage() {
               <dt>Data folder</dt><dd className="mono">{info.dataDir}</dd>
             </dl>
           )}
+          <div className="field">
+            <span>Update channel</span>
+            <div className="segmented" role="group" aria-label="Update channel">
+              {(["stable", "beta"] as const).map((c) => (
+                <button key={c} aria-pressed={(form.updateChannel ?? "stable") === c} onClick={() => instant("updateChannel", c)}>{c === "stable" ? "Stable" : "Beta"}</button>
+              ))}
+            </div>
+            <small className="muted">Beta gets every new build first and may have bugs.</small>
+          </div>
           <div className="row">
             {info && <button className="btn btn-sm" onClick={() => api.openDataPath(info.dataDir).catch((e) => toast(String(e), true))}><Icon name="folder" size={14} />Open data folder</button>}
             <button

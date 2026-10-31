@@ -43,6 +43,12 @@ impl Paths {
     pub fn accounts_file(&self) -> PathBuf { self.root.join("accounts.json") }
 }
 
+impl Default for Paths {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Joins a relative path from untrusted input (modpack index, zip entry) onto a base,
 /// refusing absolute paths and `..` components.
 pub fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {

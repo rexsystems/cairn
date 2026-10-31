@@ -2,6 +2,10 @@
 name = "cairn"
 version = "0.1.0"
 description = "Cairn Minecraft launcher"
+authors = ["rexsystems"]
+repository = "https://github.com/rexsystems/cairn"
+homepage = "https://github.com/rexsystems/cairn"
+license = "AGPL-3.0-or-later"
 edition = "2021"
 default-run = "cairn"
 
@@ -32,6 +36,7 @@ hex = "0.4"
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 flate2 = "1"
+base64 = "0.22"
 tar = "0.4"
 toml = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
@@ -42,6 +47,11 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 fastnbt = "2"
 discord-rich-presence = "0.2"
 sentry = "0.49.3"
+tauri-plugin-single-instance = "2"
+sysinfo = { version = "0.35", default-features = false, features = ["system"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "dynamic_launcher"] }
 
 [profile.release]
 codegen-units = 4

@@ -1,4 +1,5 @@
-//! Import instances from Modrinth App / Theseus / RexLauncher (same schema, different data dirs).
+//! Import instances from Modrinth App / Theseus / RexLauncher (same schema, different data dirs),
+//! plus Prism Launcher, PolyMC and MultiMC instances found by `crate::prism`.
 use crate::instance::{self, Instance, PackSource};
 use crate::paths::Paths;
 use crate::tasks::Task;
@@ -284,14 +285,15 @@ fn profiles_from_settings_dir(label: &str, settings_dir: &Path) -> Vec<ModrinthA
 pub fn list_profiles() -> Result<Vec<ModrinthAppProfile>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for (label, root) in candidate_settings_dirs() {
-        for p in profiles_from_settings_dir(&label, &root) {
-            if seen.insert(p.key.clone()) {
-                out.push(p);
-            }
+    let modrinth = candidate_settings_dirs()
+        .into_iter()
+        .flat_map(|(label, root)| profiles_from_settings_dir(&label, &root));
+    for p in modrinth.chain(crate::prism::list()) {
+        if seen.insert(p.key.clone()) {
+            out.push(p);
         }
     }
-    out.sort_by(|a, b| b.last_played.unwrap_or(b.created).cmp(&a.last_played.unwrap_or(a.created)));
+    out.sort_by_key(|a| std::cmp::Reverse(a.last_played.unwrap_or(a.created)));
     Ok(out)
 }
 

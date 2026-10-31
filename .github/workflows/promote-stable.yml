@@ -1,0 +1,91 @@
+name: Promote to stable
+
+# Moves a build that is already on the beta channel to the stable channel and
+# publishes a GitHub release with its CHANGELOG notes.
+#
+# Only matters when the repo variable CAIRN_STABLE_FROM_TAGS is 'true'. Otherwise
+# release.yml already puts every main build on stable.
+#
+#   npm run bump -- 0.2.0   (commit, push to main, wait for the build, try it on beta)
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Secrets: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to promote, X.Y.Z (the vX.Y.Z tag is created if missing)"
+        required: true
+      build_tag:
+        description: "Exact build, e.g. v0.2.0-build.3. Empty means the current beta."
+        required: false
+
+concurrency:
+  group: release-desktop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  UPDATER_DOWNLOAD_BASE_URL: https://pub-f68c946cc3b343619b3faea90c762d28.r2.dev
+  R2_BUCKET: cairn-updates
+  R2_ENDPOINT: https://f92074baafe52a6a6b5b47c82488090d.r2.cloudflarestorage.com
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - name: Resolve version
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then VERSION="${INPUT_VERSION#v}"; else VERSION="${GITHUB_REF_NAME#v}"; fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Not an X.Y.Z version: $VERSION"; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Pick the build
+        env:
+          RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_TAG: ${{ inputs.build_tag }}
+        run: node .github/promote-stable.mjs stable-latest.json
+
+      - name: Release notes
+        run: node .github/changelog-section.mjs "${{ steps.meta.outputs.version }}" > notes.md
+
+      - name: Publish stable manifest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets missing"; exit 1
+          fi
+          aws s3 cp stable-latest.json "s3://${R2_BUCKET}/latest.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type application/json \
+            --cache-control "public, max-age=60"
+          echo "Stable now serves $(node -p "require('./stable-latest.json').version")"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7 # v2.3.4
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          name: Cairn ${{ steps.meta.outputs.version }}
+          body_path: notes.md
+          make_latest: true
+          prerelease: false

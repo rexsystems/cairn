@@ -7,6 +7,7 @@ import { Icon } from "../components/Icon";
 import { EmptyState, ErrorState, Select } from "../components/ui";
 import { loaderLabel } from "../format";
 import { ImportFromApp } from "./ImportFromApp";
+import { PasteShareCode } from "./PasteShareCode";
 
 type Sort = "recent" | "name" | "created";
 
@@ -18,6 +19,7 @@ export function Library() {
   const [importing, setImporting] = useState(false);
   const [importApp, setImportApp] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [pasting, setPasting] = useState(false);
 
   const list = useMemo(() => {
     let l = [...(instances ?? [])];
@@ -80,12 +82,14 @@ export function Library() {
         <div className="row">
           <button className="btn" onClick={() => setImportApp(true)}><Icon name="download" />Import from app</button>
           <button className="btn" onClick={restoreBackup} disabled={restoring}><Icon name="upload" />{restoring ? "Restoring..." : "Restore backup"}</button>
+          <button className="btn" onClick={() => setPasting(true)}><Icon name="copy" />Paste share code</button>
           <button className="btn" onClick={importPack} disabled={importing}><Icon name="upload" />{importing ? "Importing..." : "Import pack"}</button>
           <button className="btn btn-play" style={{ minHeight: 40, fontSize: 15 }} onClick={() => setShowCreate(true)}><Icon name="plus" />New instance</button>
         </div>
       </div>
 
       {importApp && <ImportFromApp onClose={() => setImportApp(false)} />}
+      {pasting && <PasteShareCode onClose={() => setPasting(false)} />}
 
       {instances && instances.length > 0 && (
         <div className="row" style={{ gap: 12 }}>
@@ -130,7 +134,7 @@ export function Library() {
             <button className="btn btn-play" style={{ minHeight: 40, fontSize: 15 }} onClick={() => setShowCreate(true)}>Create an instance</button>
           </div>
         }>
-          Create one from a Minecraft version and loader, install a modpack from Discover, import an .mrpack, or pull an instance from Modrinth App or RexLauncher.
+          Create one from a Minecraft version and loader, install a modpack from Discover, import an .mrpack, or pull an instance from Modrinth App, RexLauncher or Prism Launcher.
         </EmptyState>
       )}
       {instances && instances.length > 0 && list.length === 0 && (

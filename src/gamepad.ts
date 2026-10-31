@@ -35,12 +35,16 @@ export function startGamepadNav(enabled: () => boolean): () => void {
     (best ?? list[(i + (dx || dy) + list.length) % list.length])?.focus();
   };
 
+  const connected = () => (navigator.getGamepads?.() ?? []).some((p) => p);
+
+  // Polls only while a pad is connected and the window is visible; an idle frame loop
+  // keeps WebView2 busy for nothing.
   const tick = () => {
-    raf = requestAnimationFrame(tick);
-    if (!enabled()) return;
-    const pads = navigator.getGamepads?.() ?? [];
-    const g = pads.find((p) => p);
+    raf = 0;
+    if (!enabled() || document.hidden) return;
+    const g = (navigator.getGamepads?.() ?? []).find((p) => p);
     if (!g) return;
+    raf = requestAnimationFrame(tick);
     const now = performance.now();
     if (now - last < cooldown) return;
     const lx = g.axes[0] ?? 0;
@@ -58,6 +62,15 @@ export function startGamepadNav(enabled: () => boolean): () => void {
     }
   };
 
-  raf = requestAnimationFrame(tick);
-  return () => cancelAnimationFrame(raf);
+  const wake = () => {
+    if (!raf && enabled() && !document.hidden && connected()) raf = requestAnimationFrame(tick);
+  };
+  window.addEventListener("gamepadconnected", wake);
+  document.addEventListener("visibilitychange", wake);
+  wake();
+  return () => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener("gamepadconnected", wake);
+    document.removeEventListener("visibilitychange", wake);
+  };
 }

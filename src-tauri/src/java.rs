@@ -22,7 +22,7 @@ fn java_bin_name() -> &'static str {
 
 /// "1.8.0_412" -> 8, "21.0.4" -> 21, "25" -> 25
 pub fn parse_major(version: &str) -> Option<u32> {
-    let mut it = version.split(|c: char| c == '.' || c == '_' || c == '-' || c == '+');
+    let mut it = version.split(['.', '_', '-', '+']);
     let first: u32 = it.next()?.parse().ok()?;
     if first == 1 {
         it.next()?.parse().ok()
@@ -109,7 +109,7 @@ pub fn detect(paths: &Paths) -> Vec<JavaInstall> {
             out.push(JavaInstall { path: p.to_string_lossy().to_string(), version, major, managed });
         }
     }
-    out.sort_by(|a, b| b.major.cmp(&a.major));
+    out.sort_by_key(|a| std::cmp::Reverse(a.major));
     out
 }
 
@@ -141,19 +141,15 @@ pub async fn install(paths: &Paths, major: u32, task: &Task) -> Result<JavaInsta
     let pkg = asset.pointer("/binary/package").ok_or_else(|| anyhow!("unexpected Adoptium response"))?;
     let link = pkg["link"].as_str().unwrap_or_default().to_string();
     let name = pkg["name"].as_str().unwrap_or("java.tar.gz").to_string();
-    let sha256 = pkg["checksum"].as_str().unwrap_or_default().to_lowercase();
+    let sha256 = pkg["checksum"].as_str().and_then(|c| net::parse_checksum(c, 64));
+    if sha256.is_none() {
+        bail!("Adoptium did not publish a checksum for Java {major}; refusing to install an unverified runtime");
+    }
     let archive = paths.cache.join(&name);
     task.stage(&format!("Downloading Java {major}"), 0, 1);
-    net::download(&Download { url: link, dest: archive.clone(), sha1: None, size: pkg.get("size").and_then(|s| s.as_u64()) }).await?;
-    if !sha256.is_empty() {
-        use sha2::Digest;
-        let bytes = std::fs::read(&archive)?;
-        let got = hex::encode(sha2::Sha256::digest(&bytes));
-        if got != sha256 {
-            let _ = std::fs::remove_file(&archive);
-            bail!("Java download failed its checksum check");
-        }
-    }
+    net::download(&Download { url: link, dest: archive.clone(), sha1: None, sha256, size: pkg.get("size").and_then(|s| s.as_u64()) })
+        .await
+        .with_context(|| format!("downloading Java {major}"))?;
     task.stage(&format!("Unpacking Java {major}"), 0, 0);
     let dest = paths.java.join(format!("temurin-{major}"));
     if dest.exists() {

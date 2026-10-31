@@ -3,9 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::Path;
 
-/// Client ID of the official Minecraft launcher on the Windows Live (login.live.com) endpoint.
-pub const LIVE_DEFAULT_CLIENT_ID: &str = "00000000402b5328";
-
 /// Vars the launcher may set for its own GTK/WebKit window. Minecraft must not inherit them.
 const LAUNCHER_ENV_STRIP: &[&str] = &[
     "GDK_BACKEND",
@@ -27,22 +24,35 @@ pub struct Settings {
     pub default_height: u32,
     pub java_overrides: HashMap<String, String>,
     pub auto_install_java: bool,
-    /// Kept for older settings.json files; sign-in uses the built-in Live client ID unless CAIRN_MSA_CLIENT_ID is set.
+    /// Kept for older settings.json files; ignored; see msa_client.rs.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub msa_client_id: String,
     pub concurrent_downloads: usize,
     pub hide_on_launch: bool,
     pub reduce_motion: bool,
+    /// No blur, shadows or animations, and a cheaper 3D skin view, for slow GPUs and WebView2.
+    pub reduce_effects: bool,
     /// Drop launcher-only env vars (GDK_BACKEND, WebKit flags, …) before starting the game.
     pub isolate_game_env: bool,
     /// Extra KEY → value for the game process. Empty value removes that key.
     pub game_env: HashMap<String, String>,
-    /// Show Discord Rich Presence while Minecraft is running (needs CAIRN_DISCORD_APP_ID).
+    /// Show Discord Rich Presence while Minecraft is running.
     pub discord_rpc: bool,
+    /// Put the instance name in the presence; off shows "Playing Minecraft".
+    pub discord_show_instance: bool,
+    /// Override for the Discord application id (CAIRN_DISCORD_APP_ID wins over this).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub discord_app_id: String,
+    /// Launcher update channel: "stable" or "beta".
+    pub update_channel: String,
     /// Move focus with a gamepad in the launcher UI.
     pub gamepad_nav: bool,
-    /// Anonymous usage events (Umami). Errors still go to GlitchTip when enabled separately.
+    /// Anonymous usage events (Umami). Only sent once the user has answered the privacy prompt.
     pub telemetry_enabled: bool,
+    /// Crash and error reports (GlitchTip). Same consent rule as telemetry.
+    pub crash_reports_enabled: bool,
+    /// The user has seen and answered the first-run privacy prompt.
+    pub privacy_prompt_answered: bool,
     /// CurseForge Core API key for importing CF modpack zips (Settings → or CAIRN_CURSEFORGE_API_KEY).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub curseforge_api_key: String,
@@ -62,17 +72,33 @@ impl Default for Settings {
             concurrent_downloads: 16,
             hide_on_launch: false,
             reduce_motion: false,
+            reduce_effects: false,
             isolate_game_env: true,
             game_env: HashMap::new(),
             discord_rpc: true,
+            discord_show_instance: true,
+            discord_app_id: String::new(),
+            update_channel: "stable".into(),
             gamepad_nav: true,
-            telemetry_enabled: true,
+            telemetry_enabled: false,
+            crash_reports_enabled: false,
+            privacy_prompt_answered: false,
             curseforge_api_key: String::new(),
         }
     }
 }
 
 impl Settings {
+    /// Usage events may be sent. Older files saved `telemetryEnabled: true` before consent existed,
+    /// so the opt-in only counts after the prompt was answered.
+    pub fn usage_stats_allowed(&self) -> bool {
+        self.privacy_prompt_answered && self.telemetry_enabled
+    }
+
+    pub fn crash_reports_allowed(&self) -> bool {
+        self.privacy_prompt_answered && self.crash_reports_enabled
+    }
+
     pub fn load(path: &Path) -> Self {
         std::fs::read_to_string(path)
             .ok()
@@ -82,16 +108,6 @@ impl Settings {
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         crate::util::write_json_atomic(path, self)
     }
-    /// Env var wins; otherwise the built-in Live client ID (no Azure app required).
-    pub fn effective_client_id(&self) -> String {
-        if let Ok(v) = std::env::var("CAIRN_MSA_CLIENT_ID") {
-            if !v.trim().is_empty() {
-                return v.trim().to_string();
-            }
-        }
-        LIVE_DEFAULT_CLIENT_ID.to_string()
-    }
-
     /// Environment for the Minecraft Java process.
     pub fn game_process_env(&self) -> Vec<(OsString, OsString)> {
         let strip: HashSet<&str> = LAUNCHER_ENV_STRIP.iter().copied().collect();
@@ -123,12 +139,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn telemetry_needs_answered_prompt() {
+        assert!(!Settings::default().usage_stats_allowed());
+        assert!(!Settings::default().crash_reports_allowed());
+        let legacy: Settings = serde_json::from_str(r#"{"telemetryEnabled":true}"#).unwrap();
+        assert!(!legacy.usage_stats_allowed());
+        let opted_in: Settings =
+            serde_json::from_str(r#"{"telemetryEnabled":true,"crashReportsEnabled":true,"privacyPromptAnswered":true}"#).unwrap();
+        assert!(opted_in.usage_stats_allowed());
+        assert!(opted_in.crash_reports_allowed());
+    }
+
+    #[test]
     fn strips_gdk_when_isolated() {
         // Cannot safely mutate process env in parallel tests; unit-check the strip list membership.
         assert!(LAUNCHER_ENV_STRIP.contains(&"GDK_BACKEND"));
         assert!(LAUNCHER_ENV_STRIP.contains(&"WEBKIT_DISABLE_DMABUF_RENDERER"));
         let s = Settings::default();
         assert!(s.isolate_game_env);
-        assert_eq!(s.effective_client_id(), LIVE_DEFAULT_CLIENT_ID);
     }
 }

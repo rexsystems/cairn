@@ -8,7 +8,7 @@ const WEBSITE_ID: &str = "71e332bf-5d32-4a56-bcb2-b2d68528097f";
 const HOSTNAME: &str = "app.cairn.launcher";
 
 fn enabled(settings_file: &Path) -> bool {
-    crate::settings::Settings::load(settings_file).telemetry_enabled
+    crate::settings::Settings::load(settings_file).usage_stats_allowed()
 }
 
 pub async fn track(settings_file: &Path, name: &str, data: Value) {

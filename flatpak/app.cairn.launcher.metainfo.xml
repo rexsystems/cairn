@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.cairn.launcher</id>
+  <name>Cairn</name>
+  <summary>Minecraft launcher for modded instances</summary>
+  <developer id="app.cairn">
+    <name>rexsystems</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      Cairn manages Minecraft instances with Fabric, Quilt, Forge and NeoForge,
+      and installs mods and other content from Modrinth.
+    </p>
+    <ul>
+      <li>Separate instances, each with its own mods, worlds and settings</li>
+      <li>Microsoft sign-in, with offline profiles for local play</li>
+      <li>Managed Java runtimes, downloaded on demand</li>
+      <li>Modpack import from Modrinth (.mrpack) and CurseForge (.zip)</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">app.cairn.launcher.desktop</launchable>
+  <url type="homepage">https://github.com/rexsystems/cairn</url>
+  <url type="bugtracker">https://github.com/rexsystems/cairn/issues</url>
+  <url type="vcs-browser">https://github.com/rexsystems/cairn</url>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="0.1.0" date="2026-10-11"/>
+  </releases>
+</component>

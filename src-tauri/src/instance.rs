@@ -108,7 +108,7 @@ pub fn list(paths: &Paths) -> Vec<Instance> {
             }
         }
     }
-    out.sort_by(|a, b| b.last_played.unwrap_or(b.created).cmp(&a.last_played.unwrap_or(a.created)));
+    out.sort_by_key(|a| std::cmp::Reverse(a.last_played.unwrap_or(a.created)));
     out
 }
 

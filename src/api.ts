@@ -1,6 +1,5 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge";
@@ -53,14 +52,22 @@ export interface Settings {
   concurrentDownloads: number;
   hideOnLaunch: boolean;
   reduceMotion: boolean;
+  reduceEffects: boolean;
   isolateGameEnv: boolean;
   gameEnv: Record<string, string>;
   discordRpc: boolean;
+  discordShowInstance: boolean;
+  discordAppId?: string;
+  updateChannel: UpdateChannel;
   gamepadNav: boolean;
   telemetryEnabled: boolean;
+  crashReportsEnabled: boolean;
+  privacyPromptAnswered: boolean;
   curseforgeApiKey?: string;
 }
 
+export interface AppUpdate { version: string; currentVersion: string; notes: string | null; channel: string }
+export type UpdateChannel = "stable" | "beta";
 export interface AppInfo { version: string; dataDir: string; clientId: string; clientIdSource: string; authFlow: string; os: string }
 
 export type ContentKind = "mods" | "resourcepacks" | "shaderpacks" | "datapacks";
@@ -91,11 +98,63 @@ export interface ContentHit {
 export interface UpdateInfo {
   kind: ContentKind; fileName: string; title: string; icon?: string | null; projectId: string;
   currentVersion: string; newVersion: string; newVersionId: string;
+  source: ContentSource;
 }
+
+export type ContentSource = "modrinth" | "curseforge";
+
+export interface InstallRoot { projectId: string; versionId?: string | null; soft?: boolean }
+export interface MemoryPreset { id: string; label: string; mb: number }
+export interface JvmPreset { id: string; label: string; detail: string; args: string }
+export interface PerformanceAdvice {
+  memory: { totalMb: number; maxSafeMb: number; recommendedMb: number; presets: MemoryPreset[] };
+  jvm: JvmPreset[];
+  currentJvm: string | null;
+  pack: InstallRoot[];
+}
+export interface PlanCandidate {
+  source: ContentSource;
+  project: { id: string; slug: string; title: string; projectType: string; icon?: string | null; pageUrl?: string | null };
+  versionId: string;
+  versionNumber: string;
+  fileName: string;
+  url?: string | null;
+  downloadPage?: string | null;
+  size?: number | null;
+}
+export type PlanReason = { type: "requested" } | { type: "update"; from: string } | { type: "dependencyOf"; title: string };
+export interface PlanItem { candidate: PlanCandidate; reason: PlanReason; replaces: string[]; optional: boolean }
+export interface PlanNote { title: string; message: string }
+export interface InstallPlan { items: PlanItem[]; skipped: PlanNote[]; problems: PlanNote[] }
+export interface PendingDownload {
+  projectId: string; fileId: string; title: string; versionNumber: string; fileName: string; folder: string;
+  downloadPage: string; size?: number | null; icon?: string | null; replaces: string[];
+}
+export interface InstallResult { installed: { title: string; fileName: string }[]; pending: PendingDownload[] }
+export interface PendingView { items: PendingDownload[]; watching: boolean; downloadsDir?: string | null }
+
+export type Fix =
+  | { type: "installMod"; modId: string; projectId?: string | null; source?: string | null }
+  | { type: "enableMod"; file: string }
+  | { type: "disableMod"; file: string }
+  | { type: "setMemory"; mb: number }
+  | { type: "useManagedJava" }
+  | { type: "searchMod"; query: string }
+  | { type: "manualDownloads" };
+export type FixAction = Fix & { label: string };
+export interface CompatIssue { key: string; severity: "error" | "warning"; title: string; detail: string; files: string[]; fixes: FixAction[] }
+export interface CompatReport { issues: CompatIssue[]; pending: PendingDownload[]; mods: number }
+export interface ManualPickup { instanceId: string; titles: string[]; remaining: number }
 export interface World { folder: string; icon?: string | null; lastPlayed: number; size: number }
 export interface ServerEntry { name: string; ip: string; icon?: string | null; acceptTextures?: number | null }
 export interface FileEntry { name: string; path: string; modified: number; size: number }
-export interface GameState { instanceId: string; state: "preparing" | "running" | "exited"; pid?: number | null; started: number; exitCode?: number | null }
+export interface GameState { instanceId: string; state: "preparing" | "running" | "exited"; pid?: number | null; started: number; exitCode?: number | null; crashed?: boolean }
+export interface PlaySession { started: number; ended: number; seconds: number; exitCode?: number | null; crashed: boolean; reason?: string | null; log?: string | null }
+export interface InstanceStats { totalSeconds: number; sessions: number; crashes: number; longestSeconds: number; weekSeconds: number; days: number[]; recent: PlaySession[] }
+export interface SharedCode { code: string; items: number; leftOut: string[] }
+export interface ShareManifest { name: string; mc: string; loader: string; lv?: string | null; items: { s: "m" | "c"; p: string; v: string }[] }
+export interface SharedImport { instance: InstanceView; installed: number; pending: PendingDownload[]; failed: string[] }
+export interface CrashAnalysis { source: string | null; issues: CompatIssue[] }
 export interface LogLine { instanceId: string; line: string; stream: string }
 export interface TaskEvent { id: string; title: string; stage: string; done: number; total: number; state: "running" | "done" | "error"; error?: string | null }
 export interface McVersion { id: string; type: string; url: string; releaseTime: string }
@@ -121,7 +180,10 @@ export interface SearchHit {
   project_id: string; slug: string; title: string; description: string; author: string; icon_url?: string | null;
   downloads: number; follows: number; project_type: string; categories: string[]; display_categories?: string[];
   versions: string[]; gallery?: string[]; featured_gallery?: string | null; date_modified: string; color?: number | null;
+  /** Set on CurseForge hits only. */
+  source?: ContentSource; page_url?: string | null; distribution?: boolean;
 }
+export interface CurseForgeSearch { query: string; projectType: string; gameVersion: string; loader: string; sort: string; offset: number; limit: number }
 export interface SearchResult { hits: SearchHit[]; total_hits: number; offset: number; limit: number }
 
 export interface ModrinthAppProfile {
@@ -169,6 +231,9 @@ export const api = {
   importMrpack: (path: string) => invoke<InstanceView>("import_mrpack", { path }),
   /** Modrinth `.mrpack` or CurseForge modpack `.zip` (format sniffed). */
   importModpack: (path: string) => invoke<InstanceView>("import_modpack", { path }),
+  shareCode: (id: string) => invoke<SharedCode>("share_code", { id }),
+  readShareCode: (code: string) => invoke<ShareManifest>("read_share_code", { code }),
+  importShareCode: (code: string) => invoke<SharedImport>("import_share_code", { code }),
   exportMrpack: (id: string, dest: string, extra: string[]) => invoke<string>("export_mrpack", { id, dest, extra }),
   listModrinthAppProfiles: () => invoke<ModrinthAppProfile[]>("list_modrinth_app_profiles"),
   importModrinthAppProfile: (key: string) => invoke<InstanceView>("import_modrinth_app_profile", { key }),
@@ -208,7 +273,14 @@ export const api = {
   },
   kill: (id: string) => invoke<boolean>("kill_instance", { id }),
   gameStates: () => invoke<GameState[]>("game_states"),
+  instanceStats: (id: string) => invoke<InstanceStats>("instance_stats", { id }),
+  /** `log` is a path inside the instance; without it the last crash is used. */
+  analyzeCrash: (id: string, log?: string) => invoke<CrashAnalysis>("analyze_crash", { id, log: log ?? null }),
   gameLog: (id: string) => invoke<string[]>("game_log", { id }),
+  /** Uploads to mclo.gs; returns the public link. */
+  shareLog: (content: string) => invoke<string>("share_log", { content }),
+  createShortcut: (id: string) => invoke<string>("create_shortcut", { id }),
+  takeLaunchRequest: () => invoke<string | null>("take_launch_request"),
   installInstance: (id: string) => invoke<void>("install_instance", { id }),
 
   mcVersions: () => invoke<McVersion[]>("mc_versions"),
@@ -220,10 +292,29 @@ export const api = {
   project: (id: string) => invoke<any>("modrinth_project", { id }),
   versions: (id: string, loaders: string[], gameVersions: string[]) => invoke<any[]>("modrinth_versions", { id, loaders, gameVersions }),
   tags: () => invoke<{ categories: any[]; loaders: any[]; gameVersions: any[] }>("modrinth_tags"),
-  install: (instanceId: string, projectId: string, versionId?: string | null, includeOptional = false) =>
-    invoke<{ title: string; fileName: string }[]>("modrinth_install", { instanceId, projectId, versionId: versionId ?? null, includeOptional }),
   versionDeps: (versionId: string) => invoke<DepInfo[]>("modrinth_version_deps", { versionId }),
   installModpack: (projectId: string, versionId?: string | null) => invoke<InstanceView>("modrinth_install_modpack", { projectId, versionId: versionId ?? null }),
+
+  /** Resolves required dependencies and conflicts without touching the instance. */
+  planInstall: (instanceId: string, source: ContentSource, roots: InstallRoot[], includeOptional = false) =>
+    invoke<InstallPlan>("plan_install", { instanceId, source, roots, includeOptional }),
+  installContent: (instanceId: string, source: ContentSource, roots: InstallRoot[], includeOptional = false, allowProblems = false) =>
+    invoke<InstallResult>("install_content", { instanceId, source, roots, includeOptional, allowProblems }),
+  performanceAdvice: (id: string) => invoke<PerformanceAdvice>("performance_advice", { id }),
+  checkCompat: (id: string) => invoke<CompatReport>("check_compat", { id }),
+  applyFix: (id: string, fix: Fix) => invoke<string>("apply_fix", { id, fix }),
+  pendingDownloads: (id: string) => invoke<PendingView>("pending_downloads", { id }),
+  openManualDownload: (id: string, fileId?: string | null) => invoke<void>("open_manual_download", { id, fileId: fileId ?? null }),
+  importManualDownload: (id: string, path: string) => invoke<string>("import_manual_download", { id, path }),
+  dismissManualDownload: (id: string, fileId: string) => invoke<void>("dismiss_manual_download", { id, fileId }),
+
+  curseforgeAvailable: () => invoke<boolean>("curseforge_available"),
+  curseforgeSearch: (params: CurseForgeSearch) => invoke<SearchResult>("curseforge_search", { params }),
+  curseforgeProject: (id: string) => invoke<any>("curseforge_project", { id }),
+  curseforgeFiles: (id: string, gameVersion?: string | null, loader?: string | null) =>
+    invoke<any[]>("curseforge_files", { id, gameVersion: gameVersion ?? null, loader: loader ?? null }),
+  curseforgeInstallModpack: (projectId: string, fileId?: string | null) =>
+    invoke<InstanceView>("curseforge_install_modpack", { projectId, fileId: fileId ?? null }),
 
   listAccounts: () => invoke<Account[]>("list_accounts"),
   setActiveAccount: (id: string) => invoke<Account[]>("set_active_account", { id }),
@@ -240,15 +331,52 @@ export const api = {
   installJava: (major: number) => invoke<JavaInstall>("install_java", { major }),
   openDataPath: (path: string) => invoke<void>("open_data_path", { path }),
 
-  checkForUpdate: async () => {
+  serverInfo: (id: string) => invoke<ServerInfo>("server_info", { id }),
+  serverPrepare: (id: string) => invoke<ServerSync>("server_prepare", { id }),
+  serverAcceptEula: (id: string) => invoke<void>("server_accept_eula", { id }),
+  serverSaveConfig: (id: string, config: ServerConfig) => invoke<ServerConfig>("server_save_config", { id, config }),
+  serverStart: (id: string) => invoke<void>("server_start", { id }),
+  serverStop: (id: string, force = false) => invoke<void>("server_stop", { id, force }),
+  serverCommand: (id: string, line: string) => invoke<void>("server_command", { id, line }),
+  serverLog: (id: string) => invoke<string[]>("server_log", { id }),
+  playitStatus: () => invoke<PlayitStatus>("playit_status"),
+  playitLink: () => invoke<PlayitStatus>("playit_link"),
+  playitCancelLink: () => invoke<void>("playit_cancel_link"),
+  playitStart: () => invoke<PlayitStatus>("playit_start"),
+  playitStop: () => invoke<PlayitStatus>("playit_stop"),
+  playitUnlink: () => invoke<PlayitStatus>("playit_unlink"),
+  playitTunnels: () => invoke<PlayitTunnel[]>("playit_tunnels"),
+
+  /** Checks the channel chosen in Settings. Null when up to date or the check failed. */
+  checkForUpdate: async (): Promise<(AppUpdate & { downloadAndInstall: () => Promise<void> }) | null> => {
     try {
-      return await check();
+      const u = await invoke<AppUpdate | null>("app_update_check");
+      return u && { ...u, downloadAndInstall: () => invoke<void>("app_update_install") };
     } catch {
       return null;
     }
   },
   relaunch,
 };
+
+export interface ServerConfig { port: number; memoryMb: number; maxPlayers: number; onlineMode: boolean; motd: string; lan: boolean }
+export type ServerState = "starting" | "running" | "stopping" | "stopped";
+export interface ServerInfo {
+  dir: string;
+  config: ServerConfig;
+  prepared: boolean;
+  /** Set up for a different Minecraft or loader version than the instance has now. */
+  outdated: boolean;
+  eula: boolean;
+  state: ServerState;
+  lanAddress?: string | null;
+  clientOnly: string[];
+}
+export interface ServerSync { copied: number; removed: number; clientOnly: string[] }
+export interface ServerStateEvent { instanceId: string; state: ServerState; exitCode?: number | null }
+export interface ServerLogEvent { instanceId: string; lines: string[] }
+export interface PlayitStatus { supported: boolean; installed: boolean; linked: boolean; running: boolean; claimUrl?: string | null }
+export interface PlayitTunnel { name: string; address: string; kind: string; problem?: string | null }
 
 export function on<T>(event: string, cb: (payload: T) => void): Promise<UnlistenFn> {
   return listen<T>(event, (e) => cb(e.payload));

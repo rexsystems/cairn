@@ -20,7 +20,21 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 
 pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let s = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    Ok(serde_json::from_slice(&s).with_context(|| format!("parsing {}", path.display()))?)
+    serde_json::from_slice(&s).with_context(|| format!("parsing {}", path.display()))
+}
+
+pub fn sha256_file(path: &Path) -> Result<String> {
+    let mut f = std::fs::File::open(path)?;
+    let mut h = sha2::Sha256::new();
+    let mut buf = vec![0u8; 1 << 16];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(hex::encode(h.finalize()))
 }
 
 pub fn sha1_file(path: &Path) -> Result<String> {
@@ -103,6 +117,18 @@ pub fn slugify(name: &str) -> String {
     }
     let s = s.trim_matches('-').to_string();
     if s.is_empty() { "instance".into() } else { s.chars().take(40).collect() }
+}
+
+/// `Mutex::lock` that survives poisoning. The guarded data here is plain maps and
+/// flags, so a panic in another thread should not take the whole launcher down.
+pub trait LockExt<T> {
+    fn locked(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for std::sync::Mutex<T> {
+    fn locked(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 #[cfg(test)]

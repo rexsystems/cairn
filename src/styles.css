@@ -711,11 +711,12 @@ html.reduce-motion .select-chevron { animation: none; transition: none; }
   cursor: pointer;
   transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
-.add-account-choice:hover {
+.add-account-choice:hover:not(:disabled) {
   border-color: var(--accent-edge);
   background: var(--raised);
   transform: translateY(-1px);
 }
+.add-account-choice:disabled { opacity: 0.55; cursor: not-allowed; }
 .add-account-choice:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .add-account-choice-icon {
   display: grid;
@@ -729,7 +730,7 @@ html.reduce-motion .select-chevron { animation: none; transition: none; }
 .add-account-choice-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .add-account-choice-copy strong { font-family: var(--font-display); font-weight: 800; font-size: 16px; }
 [data-motion="reduced"] .add-account-choice { transition: none; }
-[data-motion="reduced"] .add-account-choice:hover { transform: none; }
+[data-motion="reduced"] .add-account-choice:hover:not(:disabled) { transform: none; }
 
 .skin-shell {
   display: flex;
@@ -896,7 +897,7 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 
 /* Task tray: the one glass surface, because it floats over any page. */
 .tray { position: fixed; right: 20px; bottom: 20px; z-index: 45; width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; }
-.task { background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--line-strong); border-radius: var(--r-card); padding: 12px 14px; box-shadow: var(--pop-shadow); animation: pop-in 160ms var(--ease); }
+.task { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-card); padding: 12px 14px; box-shadow: var(--pop-shadow); animation: pop-in 160ms var(--ease); }
 .task-title { font-weight: 700; font-size: 14px; display: flex; gap: 8px; align-items: center; }
 .task-stage { color: var(--muted); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
 .task.error { border-color: var(--ember); }
@@ -998,3 +999,38 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 [data-theme="light"] .inst-banner .inst-head-main h1, [data-theme="light"] .inst-banner .stat-line { color: var(--text); }
 [data-theme="light"] .inst-banner .stat-line b { color: var(--text); }
 @media (max-width: 720px) { .inst-banner { padding: var(--space-4); } }
+
+/* Lighter graphics: no shadows or blur for slow GPUs and software-rendered WebView2. */
+[data-effects="reduced"] *, [data-effects="reduced"] *::before, [data-effects="reduced"] *::after { box-shadow: none !important; text-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* Long logs: skip layout and paint for lines that are off screen. */
+.log-line { content-visibility: auto; contain-intrinsic-size: auto 19px; }
+
+/* Activity tab */
+.activity-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); }
+.activity-tile { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+.activity-tile b { font-size: 20px; }
+.activity-chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding: 16px; }
+.activity-day { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; }
+.activity-bar { width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--accent); }
+.activity-day span { white-space: nowrap; font-size: 11px; }
+.activity-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.activity-list li { display: grid; grid-template-columns: 150px 90px 1fr auto; gap: 12px; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
+.activity-list li.crashed .activity-result { color: var(--ember); display: inline-flex; gap: 6px; align-items: center; }
+
+/* Share codes */
+.share-code { width: 100%; min-height: 96px; resize: vertical; word-break: break-all; font-size: 12px; }
+.share-left-out { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
+
+/* Host tab */
+.host-head { justify-content: space-between; align-items: flex-start; flex-wrap: nowrap; }
+.host-state { font-weight: 700; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.host-running { color: var(--moss); border-color: var(--moss); }
+.host-starting, .host-stopping { color: var(--accent); border-color: var(--accent); }
+.host-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.host-link { align-self: flex-start; }
+.host-log { height: min(40vh, 420px); }
+.host-cmd { flex: 1; min-width: 0; }
+.host-left-out { margin: var(--space-2) 0 0; padding-left: 20px; }
+.host-problem { color: var(--ember); }
+.playit-tunnels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }

@@ -20,6 +20,9 @@ pub struct ContentMeta {
     pub sha1: Option<String>,
     pub sha512: Option<String>,
     pub size: Option<u64>,
+    /// "modrinth" or "curseforge"; missing means Modrinth (older indexes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -114,7 +117,7 @@ pub fn list(paths: &Paths, dir: &Path, kind: &str) -> Result<Vec<ContentItem>> {
             enabled,
         });
     }
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|a| a.title.to_lowercase());
     Ok(out)
 }
 
@@ -229,7 +232,7 @@ pub fn worlds(dir: &Path) -> Vec<World> {
             });
         }
     }
-    out.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+    out.sort_by_key(|a| std::cmp::Reverse(a.last_played));
     out
 }
 
@@ -258,7 +261,7 @@ pub fn files_in(dir: &Path, exts: &[&str]) -> Vec<FileEntry> {
             });
         }
     }
-    out.sort_by(|a, b| b.modified.cmp(&a.modified));
+    out.sort_by_key(|a| std::cmp::Reverse(a.modified));
     out
 }
 

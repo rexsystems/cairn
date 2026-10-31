@@ -78,6 +78,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CAIRN_CURSEFORGE_API_KEY: ${{ secrets.CAIRN_CURSEFORGE_API_KEY }}
+          CAIRN_MSA_CLIENT_ID: ${{ vars.CAIRN_MSA_CLIENT_ID }}
         run: npm run build:ci
 
       - name: Read version
@@ -178,6 +179,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CAIRN_CURSEFORGE_API_KEY: ${{ secrets.CAIRN_CURSEFORGE_API_KEY }}
+          CAIRN_MSA_CLIENT_ID: ${{ vars.CAIRN_MSA_CLIENT_ID }}
         run: npm run build:linux:ci
 
       - name: Sign Linux package updaters
@@ -282,6 +284,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CAIRN_CURSEFORGE_API_KEY: ${{ secrets.CAIRN_CURSEFORGE_API_KEY }}
+          CAIRN_MSA_CLIENT_ID: ${{ vars.CAIRN_MSA_CLIENT_ID }}
         run: npm run build:macos:ci -- --target ${{ matrix.rust_target }}
 
       - name: Read version
@@ -371,6 +374,10 @@ jobs:
             -o -name '*.dmg' -o -name '*.app.tar.gz' -o -name '*.sig' \
           \) -exec cp -n {} "release-r2/${PREFIX}/" \;
           cp artifacts/latest.json release-r2/latest.json
+          mkdir -p release-r2/beta
+          cp artifacts/latest.json release-r2/beta/latest.json
+          # Kept next to the files so promote-stable.yml can re-publish this exact build.
+          cp artifacts/latest.json "release-r2/${PREFIX}/latest.json"
           cp -n "release-r2/${PREFIX}/"* release-gh/ 2>/dev/null || true
           cp release-r2/latest.json release-gh/latest.json
           echo "R2 layout:"
@@ -384,6 +391,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           LIVE_BUILD_PREFIX: builds/${{ needs.version.outputs.tag }}
+          # Unset or anything but 'true': every main build goes to both channels (the
+          # original behavior). 'true': main builds go to beta only, and stable moves
+          # when a vX.Y.Z tag runs promote-stable.yml.
+          STABLE_FROM_TAGS: ${{ vars.CAIRN_STABLE_FROM_TAGS }}
         run: |
           if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
             echo "R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets missing; skip R2 upload."
@@ -392,12 +403,21 @@ jobs:
           aws s3 sync "release-r2/${LIVE_BUILD_PREFIX}/" "s3://${R2_BUCKET}/${LIVE_BUILD_PREFIX}/" \
             --endpoint-url "$R2_ENDPOINT" \
             --only-show-errors
-          aws s3 cp release-r2/latest.json "s3://${R2_BUCKET}/latest.json" \
+          aws s3 cp release-r2/beta/latest.json "s3://${R2_BUCKET}/beta/latest.json" \
             --endpoint-url "$R2_ENDPOINT" \
             --content-type application/json \
             --cache-control "public, max-age=60"
+          echo "Published ${UPDATER_DOWNLOAD_BASE_URL}/beta/latest.json"
+          if [ "$STABLE_FROM_TAGS" = "true" ]; then
+            echo "Stable channel left as is; push a vX.Y.Z tag to promote this build."
+          else
+            aws s3 cp release-r2/latest.json "s3://${R2_BUCKET}/latest.json" \
+              --endpoint-url "$R2_ENDPOINT" \
+              --content-type application/json \
+              --cache-control "public, max-age=60"
+            echo "Published ${UPDATER_DOWNLOAD_BASE_URL}/latest.json"
+          fi
           node .github/cleanup-r2.mjs
-          echo "Published ${UPDATER_DOWNLOAD_BASE_URL}/latest.json"
           echo "Artifacts under ${UPDATER_DOWNLOAD_BASE_URL}/${LIVE_BUILD_PREFIX}/"
 
       - name: Publish GitHub Release
@@ -408,4 +428,4 @@ jobs:
           generate_release_notes: true
           files: release-gh/*
           draft: false
-          prerelease: false
+          prerelease: ${{ vars.CAIRN_STABLE_FROM_TAGS == 'true' }}

@@ -6,7 +6,9 @@
  *   latest.json                      ← bucket root (updater entrypoint)
  *   builds/v0.1.0-build.12/<file>    ← one folder per release
  *
- * Keeps latest.json + the live build folder. Optionally migrates leftover
+ *   beta/latest.json                 ← beta channel manifest
+ *
+ * Keeps both manifests + the build folders they point to. Optionally migrates leftover
  * flat root artifacts into that folder and rewrites latest.json URLs.
  *
  * Env:
@@ -29,6 +31,7 @@ const endpoint = process.env.R2_ENDPOINT;
 const baseUrl =
   process.env.UPDATER_DOWNLOAD_BASE_URL ||
   "https://pub-f68c946cc3b343619b3faea90c762d28.r2.dev";
+const BETA_MANIFEST = "beta/latest.json";
 const dryRun = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
 const migrate =
   process.env.MIGRATE !== "0" && process.env.MIGRATE !== "false";
@@ -234,29 +237,44 @@ if (needsMigrate) {
   objects = dryRun ? objects : listAllKeys();
 }
 
-// --- prune anything outside latest.json + live build folder ---
-const keep = new Set(["latest.json"]);
-for (const platform of Object.values(latest.platforms || {})) {
-  const key = keyFromUrl(platform?.url || "");
-  if (!key) continue;
-  keep.add(key);
-  keep.add(`${key}.sig`);
+// --- prune anything outside the channel manifests + their build folders ---
+const manifests = [latest];
+const keepPrefixes = [livePrefixSlash];
+if (objects.some((o) => o.key === BETA_MANIFEST)) {
+  const tmpBeta = join(tmpdir(), `cairn-beta-${process.pid}.json`);
+  aws(["s3", "cp", `s3://${bucket}/${BETA_MANIFEST}`, tmpBeta]);
+  const beta = JSON.parse(readFileSync(tmpBeta, "utf8"));
+  unlinkSync(tmpBeta);
+  const betaPrefix = buildPrefixFromVersion(String(beta.version || ""));
+  console.log(`Beta version: ${beta.version || "(unknown)"} in ${betaPrefix}/`);
+  manifests.push(beta);
+  keepPrefixes.push(`${betaPrefix}/`);
 }
+
+const keep = new Set(["latest.json", BETA_MANIFEST]);
+for (const manifest of manifests) {
+  for (const platform of Object.values(manifest.platforms || {})) {
+    const key = keyFromUrl(platform?.url || "");
+    if (!key) continue;
+    keep.add(key);
+    keep.add(`${key}.sig`);
+  }
+}
+const inKeptFolder = (key) => keepPrefixes.some((p) => key.startsWith(p));
 
 const toDelete = [];
 for (const { key, size } of objects) {
-  if (key === "latest.json") continue;
-  if (key.startsWith(livePrefixSlash)) {
+  if (keep.has(key)) continue;
+  if (inKeptFolder(key)) {
     keep.add(key);
     continue;
   }
-  if (keep.has(key)) continue;
   toDelete.push({ key, size });
 }
 
 const totalBytes = objects.reduce((n, o) => n + o.size, 0);
 const keepBytes = objects
-  .filter((o) => keep.has(o.key) || o.key.startsWith(livePrefixSlash) || o.key === "latest.json")
+  .filter((o) => keep.has(o.key))
   .reduce((n, o) => n + o.size, 0);
 const deleteBytes = toDelete.reduce((n, o) => n + o.size, 0);
 

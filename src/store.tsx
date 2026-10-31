@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, on, type Account, type AppInfo, type GameState, type InstanceView, type LaunchOpts, type Settings, type TaskEvent } from "./api";
+import { api, on, type Account, type AppInfo, type CompatReport, type GameState, type InstanceView, type LaunchOpts, type ManualPickup, type Settings, type TaskEvent } from "./api";
+import type { InstallRequest } from "./components/InstallDialog";
+import { blocksLaunch } from "./lib/install";
 import { startGamepadNav } from "./gamepad";
 
 export type Route =
   | { name: "home" }
   | { name: "library" }
   | { name: "instance"; id: string; tab?: string }
-  | { name: "discover"; instanceId?: string; projectType?: string; projectId?: string }
+  | { name: "discover"; instanceId?: string; projectType?: string; projectId?: string; query?: string }
   | { name: "accounts" }
   | { name: "settings" };
 
@@ -31,11 +33,19 @@ interface Store {
   toast: (text: string, error?: boolean) => void;
   toasts: Toast[];
   play: (id: string, opts?: LaunchOpts | string) => Promise<void>;
+  /** Skips the compatibility check (the "Launch anyway" path). */
+  launchNow: (id: string, opts?: LaunchOpts | string) => Promise<void>;
+  preLaunch: PreLaunch | null;
+  setPreLaunch: (p: PreLaunch | null) => void;
+  installRequest: InstallRequest | null;
+  requestInstall: (r: InstallRequest | null) => void;
   showCreate: boolean;
   setShowCreate: (v: boolean) => void;
   showSearch: boolean;
   setShowSearch: (v: boolean) => void;
 }
+
+export interface PreLaunch { id: string; opts?: LaunchOpts | string; report: CompatReport }
 
 const Ctx = createContext<Store>(null as unknown as Store);
 export const useStore = () => useContext(Ctx);
@@ -56,6 +66,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [preLaunch, setPreLaunch] = useState<PreLaunch | null>(null);
+  const [installRequest, requestInstall] = useState<InstallRequest | null>(null);
   const toastId = useRef(0);
   const instancesRef = useRef<InstanceView[] | null>(null);
   const gamesRef = useRef<Record<string, GameState>>({});
@@ -97,10 +109,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (g.state === "exited") {
           refreshInstances();
           const wasLive = prev && prev.state !== "exited";
-          const crashed = wasLive && g.exitCode != null && g.exitCode !== 0;
-          if (crashed) {
+          if (wasLive && g.crashed) {
             const name = instancesRef.current?.find((i) => i.id === g.instanceId)?.name ?? "Instance";
-            toast(`${name} crashed (exit ${g.exitCode}). Open Logs on that instance for the report.`, true);
+            toast(`${name} crashed. Its Logs tab can find the cause.`, true);
           }
         }
       }),
@@ -110,6 +121,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return [...others, t];
         });
         if (t.state === "done") setTimeout(() => setTasks((l) => l.filter((x) => x.id !== t.id)), 2500);
+      }),
+      on<ManualPickup>("manual-download", (p) => {
+        const name = p.titles.length === 1 ? p.titles[0] : `${p.titles.length} files`;
+        toast(p.remaining ? `Picked up ${name}. ${p.remaining} still to download.` : `Picked up ${name}. All manual downloads are in.`);
       }),
     ];
     return () => { subs.forEach((p) => p.then((u) => u())); };
@@ -130,7 +145,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const apply = () => {
       const dark = settings.theme === "dark" || (settings.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
-      document.documentElement.dataset.motion = settings.reduceMotion ? "reduced" : "full";
+      document.documentElement.dataset.motion = settings.reduceMotion || settings.reduceEffects ? "reduced" : "full";
+      document.documentElement.dataset.effects = settings.reduceEffects ? "reduced" : "full";
     };
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -138,13 +154,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", apply);
   }, [settings]);
 
-  const play = useCallback(async (id: string, opts?: LaunchOpts | string) => {
+  const launchNow = useCallback(async (id: string, opts?: LaunchOpts | string) => {
     try {
       await api.launch(id, opts);
     } catch (e) {
       toast(String(e), true);
     }
   }, [toast]);
+
+  // Catch missing dependencies and wrong-loader mods before Minecraft spends a minute loading to crash.
+  const play = useCallback(async (id: string, opts?: LaunchOpts | string) => {
+    const inst = instancesRef.current?.find((i) => i.id === id);
+    if (inst && inst.loader !== "vanilla" && !inst.useHorizon) {
+      try {
+        const report = await api.checkCompat(id);
+        if (blocksLaunch(report)) { setPreLaunch({ id, opts, report }); return; }
+      } catch {
+        // A failed check should never stop the game from starting.
+      }
+    }
+    await launchNow(id, opts);
+  }, [launchNow]);
+
+  // Desktop shortcuts start Cairn with `--launch <id>`; a running Cairn gets it as an event instead.
+  useEffect(() => {
+    const launch = (id: string) => {
+      go({ name: "instance", id });
+      play(id);
+    };
+    api.takeLaunchRequest().then((id) => id && launch(id)).catch(() => {});
+    const sub = on<string>("launch-request", launch);
+    return () => { sub.then((u) => u()); };
+  }, [go, play]);
 
   useEffect(() => {
     return startGamepadNav(() => !!settings?.gamepadNav);
@@ -165,9 +206,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Store>(() => ({
     route, go, back, instances, instancesError, refreshInstances, accounts, refreshAccounts, setAccounts,
-    settings, setSettings, info, games, tasks, dismissTask, toast, toasts, play, showCreate, setShowCreate,
-    showSearch, setShowSearch,
-  }), [route, go, back, instances, instancesError, refreshInstances, accounts, refreshAccounts, settings, info, games, tasks, dismissTask, toast, toasts, play, showCreate, showSearch]);
+    settings, setSettings, info, games, tasks, dismissTask, toast, toasts, play, launchNow, preLaunch, setPreLaunch,
+    installRequest, requestInstall, showCreate, setShowCreate, showSearch, setShowSearch,
+  }), [route, go, back, instances, instancesError, refreshInstances, accounts, refreshAccounts, settings, info, games, tasks, dismissTask, toast, toasts, play, launchNow, preLaunch, installRequest, showCreate, showSearch]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

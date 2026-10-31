@@ -1,25 +1,43 @@
 pub mod accounts;
+pub mod app_update;
 pub mod backup;
+pub mod compat;
 pub mod content;
+pub mod crash;
+pub mod crashlog;
+pub mod msa_client;
 pub mod curseforge;
+pub mod deps;
 pub mod discord;
+pub mod fixes;
 pub mod game;
 pub mod horizon;
 pub mod horizon_mods;
+pub mod hosting;
 pub mod instance;
 pub mod java;
 pub mod loaders;
 pub mod logparse;
+pub mod manual;
 pub mod mc;
+pub mod mclogs;
+pub mod modmeta;
 pub mod modrinth;
 pub mod modrinth_app;
 pub mod net;
 pub mod paths;
+pub mod perf;
+pub mod playit;
+pub mod prism;
 pub mod servers;
 pub mod settings;
+pub mod share;
+pub mod stats;
+pub mod shortcuts;
 pub mod tasks;
 pub mod telemetry;
 pub mod util;
+pub mod versioning;
 pub mod version_art;
 
 use accounts::AccountsFile;
@@ -28,18 +46,22 @@ use paths::Paths;
 use serde::Serialize;
 use serde_json::{json, Value};
 use settings::Settings;
+use util::LockExt;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tasks::Task;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct AppState {
     paths: Paths,
     games: Arc<game::Games>,
     sign_ins: Mutex<HashMap<String, Arc<AtomicBool>>>,
     accounts_lock: tokio::sync::Mutex<()>,
+    pending_update: app_update::Pending,
+    /// Instance from `--launch <id>` on a cold start, until the UI picks it up.
+    launch_request: Mutex<Option<String>>,
 }
 
 type R<T> = Result<T, String>;
@@ -68,50 +90,46 @@ struct AppInfo {
 
 #[tauri::command]
 fn app_info(state: State<AppState>) -> AppInfo {
-    let s = Settings::load(&state.paths.settings_file());
-    let id = s.effective_client_id();
-    let source = if std::env::var("CAIRN_MSA_CLIENT_ID").map(|v| !v.trim().is_empty()).unwrap_or(false) {
-        "environment"
-    } else {
-        "default"
-    };
+    let client = accounts::MsaClient::resolve();
     AppInfo {
         version: env!("CARGO_PKG_VERSION").into(),
         data_dir: state.paths.root.to_string_lossy().into(),
-        auth_flow: accounts::flow_for(&id).into(),
-        client_id: id,
-        client_id_source: source.into(),
+        auth_flow: client.flow.into(),
+        client_id: client.id,
+        client_id_source: client.source.into(),
         os: mc::rules::os_name().into(),
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_settings(state: State<AppState>) -> Settings {
     Settings::load(&state.paths.settings_file())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
     let mut s = settings;
     s.concurrent_downloads = s.concurrent_downloads.clamp(1, 64);
     s.default_memory_mb = s.default_memory_mb.clamp(512, 65536);
     s.save(&state.paths.settings_file()).map_err(ea)?;
+    crash::set_allowed(s.crash_reports_allowed());
+    discord::configure(discord::Options::from_settings(&s));
     Ok(s)
 }
 
 // Instances
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_instances(state: State<AppState>) -> Vec<instance::InstanceView> {
     instance::list(&state.paths).into_iter().map(|i| instance::view(&state.paths, i)).collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_instance(state: State<AppState>, id: String) -> R<instance::InstanceView> {
     Ok(instance::view(&state.paths, instance::get(&state.paths, &id).map_err(ea)?))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_instance(state: State<AppState>, inst: Instance) -> R<instance::InstanceView> {
     let created = instance::create(&state.paths, inst).map_err(ea)?;
     telemetry::spawn(
@@ -125,7 +143,7 @@ fn create_instance(state: State<AppState>, inst: Instance) -> R<instance::Instan
     Ok(instance::view(&state.paths, created))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn update_instance(state: State<AppState>, inst: Instance) -> R<instance::InstanceView> {
     let mut cur = instance::get(&state.paths, &inst.id).map_err(ea)?;
     if cur.mc_version != inst.mc_version || cur.loader != inst.loader || cur.loader_version != inst.loader_version {
@@ -155,17 +173,17 @@ fn update_instance(state: State<AppState>, inst: Instance) -> R<instance::Instan
     Ok(instance::view(&state.paths, cur))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_instance(state: State<AppState>, id: String) -> R<()> {
     instance::delete(&state.paths, &id).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn duplicate_instance(state: State<AppState>, id: String) -> R<instance::InstanceView> {
     Ok(instance::view(&state.paths, instance::duplicate(&state.paths, &id).map_err(ea)?))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_instance_icon(state: State<AppState>, id: String, path: Option<String>) -> R<instance::InstanceView> {
     let mut inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -219,14 +237,73 @@ async fn import_modpack(app: AppHandle, state: State<'_, AppState>, path: String
     Ok(instance::view(&state.paths, inst))
 }
 
+/// Share code for an instance: its version, loader and the exact content versions.
+#[tauri::command(async)]
+fn share_code(state: State<AppState>, id: String) -> R<share::Shared> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let (m, left_out) = share::manifest(&inst.dir(&state.paths), &inst);
+    Ok(share::Shared { code: share::encode(&m).map_err(ea)?, items: m.items.len(), left_out })
+}
+
+#[tauri::command(async)]
+fn read_share_code(code: String) -> R<share::Manifest> {
+    share::decode(&code).map_err(ea)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedImport {
+    instance: instance::InstanceView,
+    installed: usize,
+    pending: Vec<deps::PendingDownload>,
+    /// One line per source that could not be installed; the instance is kept either way.
+    failed: Vec<String>,
+}
+
+/// Builds a new instance from a share code and downloads the listed versions.
 #[tauri::command]
+async fn import_share_code(app: AppHandle, state: State<'_, AppState>, code: String) -> R<SharedImport> {
+    let m = share::decode(&code).map_err(ea)?;
+    let inst = instance::create(
+        &state.paths,
+        Instance { name: m.name.clone(), mc_version: m.mc.clone(), loader: m.loader.clone(), loader_version: m.lv.clone(), ..Default::default() },
+    )
+    .map_err(ea)?;
+    let task = Task::new(&app, format!("Setting up {}", inst.name));
+    let t2 = task.clone();
+    let mut out = SharedImport { instance: instance::view(&state.paths, inst.clone()), installed: 0, pending: vec![], failed: vec![] };
+    let work = async {
+        for (tag, source) in [("m", deps::Source::Modrinth), ("c", deps::Source::Curseforge)] {
+            let roots: Vec<deps::Root> =
+                m.items.iter().filter(|i| i.s == tag).map(|i| deps::Root { project_id: i.p.clone(), version_id: Some(i.v.clone()), soft: true }).collect();
+            if roots.is_empty() {
+                continue;
+            }
+            match deps::install(&state.paths, &inst, source, &roots, false, true, &t2).await {
+                Ok(a) => {
+                    out.installed += a.installed.len();
+                    out.pending.extend(a.pending);
+                }
+                Err(e) => out.failed.push(format!("{} files from {}: {e:#}", roots.len(), if tag == "m" { "Modrinth" } else { "CurseForge" })),
+            }
+        }
+        anyhow::Ok(())
+    };
+    task.run(work).await.map_err(ea)?;
+    if !out.pending.is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), inst.id.clone());
+    }
+    Ok(out)
+}
+
+#[tauri::command(async)]
 fn list_modrinth_app_profiles() -> R<Vec<modrinth_app::ModrinthAppProfile>> {
     modrinth_app::list_profiles().map_err(ea)
 }
 
 #[tauri::command]
 async fn import_modrinth_app_profile(app: AppHandle, state: State<'_, AppState>, key: String) -> R<instance::InstanceView> {
-    let task = Task::new(&app, "Importing from Modrinth App");
+    let task = Task::new(&app, "Importing an instance");
     let t2 = task.clone();
     let paths = state.paths.clone();
     let paths2 = paths.clone();
@@ -244,7 +321,7 @@ async fn import_modrinth_app_profile(app: AppHandle, state: State<'_, AppState>,
     Ok(instance::view(&state.paths, inst))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_mrpack(state: State<AppState>, id: String, dest: String, extra: Vec<String>) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let p = modrinth::export_mrpack(&state.paths, &inst, &PathBuf::from(dest), &extra).map_err(ea)?;
@@ -253,25 +330,25 @@ fn export_mrpack(state: State<AppState>, id: String, dest: String, extra: Vec<St
 
 // Content
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_content(state: State<AppState>, id: String, kind: String) -> R<Vec<content::ContentItem>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     content::list(&state.paths, &inst.dir(&state.paths), &kind).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn toggle_content(state: State<AppState>, id: String, kind: String, file: String) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     content::toggle(&inst.dir(&state.paths), &kind, &file).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_content(state: State<AppState>, id: String, kind: String, file: String) -> R<()> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     content::remove(&inst.dir(&state.paths), &kind, &file).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_content_files(state: State<AppState>, id: String, kind: String, files: Vec<String>) -> R<Vec<String>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -288,25 +365,25 @@ fn horizon_game_dir(state: &AppState, id: &str) -> Result<PathBuf, String> {
     Ok(inst.dir(&state.paths))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_horizon_mods(state: State<AppState>, id: String) -> R<Vec<horizon_mods::HorizonModItem>> {
     let dir = horizon_game_dir(&state, &id)?;
     horizon_mods::list(&dir).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn toggle_horizon_mod(state: State<AppState>, id: String, mod_id: String) -> R<bool> {
     let dir = horizon_game_dir(&state, &id)?;
     horizon_mods::toggle(&dir, &mod_id).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_horizon_mod(state: State<AppState>, id: String, file: String) -> R<()> {
     let dir = horizon_game_dir(&state, &id)?;
     horizon_mods::remove(&dir, &file).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_horizon_mod_files(state: State<AppState>, id: String, files: Vec<String>) -> R<Vec<horizon_mods::HorizonModItem>> {
     let dir = horizon_game_dir(&state, &id)?;
     files
@@ -315,12 +392,12 @@ fn add_horizon_mod_files(state: State<AppState>, id: String, files: Vec<String>)
         .collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_bundled_horizon_mods() -> Vec<horizon_mods::BundledHorizonMod> {
     horizon_mods::bundled_catalog()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn install_bundled_horizon_mod(state: State<AppState>, id: String, sample_id: String) -> R<horizon_mods::HorizonModItem> {
     let dir = horizon_game_dir(&state, &id)?;
     let sample = horizon_mods::bundled_catalog()
@@ -346,9 +423,16 @@ async fn installed_projects(state: State<'_, AppState>, id: String) -> R<Vec<Str
 #[tauri::command]
 async fn check_updates(state: State<'_, AppState>, id: String) -> R<Vec<modrinth::UpdateInfo>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
-    modrinth::check_updates(&state.paths, &inst).await.map_err(ea)
+    let (mr, cf) = tokio::join!(modrinth::check_updates(&state.paths, &inst), curseforge::check_updates(&state.paths, &inst));
+    let mut out = mr.map_err(ea)?;
+    // No CurseForge key or CurseForge down: still show Modrinth updates.
+    out.extend(cf.unwrap_or_default());
+    out.sort_by_key(|a| a.title.to_lowercase());
+    Ok(out)
 }
 
+/// Updates go through the resolver, so new required dependencies come along and
+/// disabled files stay disabled.
 #[tauri::command]
 async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, updates: Vec<Value>) -> R<u32> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
@@ -357,21 +441,17 @@ async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, u
     let t2 = task.clone();
     task.run(async move {
         let mut n = 0;
-        let total = updates.len() as u64;
-        for (i, u) in updates.into_iter().enumerate() {
-            let u = modrinth::UpdateInfo {
-                kind: u["kind"].as_str().unwrap_or_default().into(),
-                file_name: u["fileName"].as_str().unwrap_or_default().into(),
-                title: u["title"].as_str().unwrap_or_default().into(),
-                icon: None,
-                project_id: u["projectId"].as_str().unwrap_or_default().into(),
-                current_version: String::new(),
-                new_version: u["newVersion"].as_str().unwrap_or_default().into(),
-                new_version_id: u["newVersionId"].as_str().unwrap_or_default().into(),
-            };
-            t2.stage(&format!("Updating {}", u.title), i as u64, total);
-            modrinth::apply_update(&paths, &inst, &u, &t2).await?;
-            n += 1;
+        for src in [deps::Source::Modrinth, deps::Source::Curseforge] {
+            let roots: Vec<deps::Root> = updates
+                .iter()
+                .filter(|u| deps::Source::parse(u["source"].as_str()) == src)
+                .filter_map(|u| Some(deps::Root { project_id: u["projectId"].as_str()?.into(), version_id: u["newVersionId"].as_str().map(String::from), soft: false }))
+                .collect();
+            if roots.is_empty() {
+                continue;
+            }
+            let applied = deps::install(&paths, &inst, src, &roots, false, false, &t2).await?;
+            n += (applied.installed.len() + applied.pending.len()) as u32;
         }
         Ok(n)
     })
@@ -379,19 +459,19 @@ async fn apply_updates(app: AppHandle, state: State<'_, AppState>, id: String, u
     .map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_worlds(state: State<AppState>, id: String) -> R<Vec<content::World>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     Ok(content::worlds(&inst.dir(&state.paths)))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_screenshots(state: State<AppState>, id: String) -> R<Vec<content::FileEntry>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     Ok(content::files_in(&inst.dir(&state.paths).join("screenshots"), &[".png", ".jpg"]))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_log_files(state: State<AppState>, id: String) -> R<Vec<content::FileEntry>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = inst.dir(&state.paths);
@@ -404,11 +484,11 @@ fn list_log_files(state: State<AppState>, id: String) -> R<Vec<content::FileEntr
     let mut v = label(content::files_in(&dir.join(".cairn").join("logs"), &[".log"]), "Cairn session: ");
     v.extend(label(content::files_in(&dir.join("logs"), &[".log", ".log.gz"]), "Game log: "));
     v.extend(label(content::files_in(&dir.join("crash-reports"), &[".txt"]), "Crash report: "));
-    v.sort_by(|a, b| b.modified.cmp(&a.modified));
+    v.sort_by_key(|a| std::cmp::Reverse(a.modified));
     Ok(v)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn read_instance_file(state: State<AppState>, id: String, path: String) -> R<String> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     let dir = std::fs::canonicalize(inst.dir(&state.paths)).map_err(e)?;
@@ -486,13 +566,13 @@ async fn launch_instance(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_servers(state: State<AppState>, id: String) -> R<Vec<servers::ServerEntry>> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     servers::list(&inst.dir(&state.paths)).map_err(ea)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_servers(state: State<AppState>, id: String, servers_list: Vec<servers::ServerEntry>) -> R<()> {
     let inst = instance::get(&state.paths, &id).map_err(ea)?;
     servers::save(&inst.dir(&state.paths), &servers_list).map_err(ea)
@@ -532,7 +612,7 @@ async fn restore_instance_backup(app: AppHandle, state: State<'_, AppState>, pat
     Ok(instance::view(&state.paths, inst))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn search_library_content(state: State<AppState>, query: String) -> R<Vec<content::ContentHit>> {
     content::search_all(&state.paths, &query).map_err(ea)
 }
@@ -549,12 +629,18 @@ fn kill_instance(state: State<AppState>, id: String) -> bool {
 
 #[tauri::command]
 fn game_states(state: State<AppState>) -> Vec<game::GameState> {
-    state.games.states.lock().unwrap().values().cloned().collect()
+    state.games.states.locked().values().cloned().collect()
 }
 
 #[tauri::command]
 fn game_log(state: State<AppState>, id: String) -> Vec<String> {
-    state.games.logs.lock().unwrap().get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
+    state.games.logs.locked().get(&id).map(|q| q.iter().cloned().collect()).unwrap_or_default()
+}
+
+/// Uploads a log to mclo.gs and returns the share link.
+#[tauri::command]
+async fn share_log(content: String) -> R<String> {
+    mclogs::upload(&content).await.map_err(ea)
 }
 
 #[tauri::command]
@@ -616,39 +702,228 @@ async fn modrinth_tags(state: State<'_, AppState>) -> R<Value> {
 }
 
 #[tauri::command]
-async fn modrinth_install(
+async fn plan_install(state: State<'_, AppState>, instance_id: String, source: Option<String>, roots: Vec<deps::Root>, include_optional: Option<bool>) -> R<deps::Plan> {
+    let inst = instance::get(&state.paths, &instance_id).map_err(ea)?;
+    deps::preview(&state.paths, &inst, deps::Source::parse(source.as_deref()), &roots, include_optional.unwrap_or(false)).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn install_content(
     app: AppHandle,
     state: State<'_, AppState>,
     instance_id: String,
-    project_id: String,
-    version_id: Option<String>,
+    source: Option<String>,
+    roots: Vec<deps::Root>,
     include_optional: Option<bool>,
-) -> R<Vec<modrinth::Installed>> {
+    allow_problems: Option<bool>,
+) -> R<deps::Applied> {
     let inst = instance::get(&state.paths, &instance_id).map_err(ea)?;
     let task = Task::new(&app, format!("Installing into {}", inst.name));
     let t2 = task.clone();
     let settings_file = state.paths.settings_file();
-    let installed = task
-        .run(modrinth::install_project(
-            &state.paths,
-            &inst,
-            &project_id,
-            version_id.as_deref(),
-            include_optional.unwrap_or(false),
-            &t2,
-        ))
+    let src = deps::Source::parse(source.as_deref());
+    let applied = task
+        .run(deps::install(&state.paths, &inst, src, &roots, include_optional.unwrap_or(false), allow_problems.unwrap_or(false), &t2))
         .await
         .map_err(ea)?;
+    if !applied.pending.is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), instance_id.clone());
+    }
     telemetry::spawn(
         settings_file,
         "mod_install",
         json!({
             "loader": inst.loader,
             "mc_version": inst.mc_version,
-            "count": installed.len(),
+            "count": applied.installed.len(),
+            "source": src.as_str(),
         }),
     );
-    Ok(installed)
+    Ok(applied)
+}
+
+#[tauri::command]
+async fn check_compat(state: State<'_, AppState>, id: String) -> R<fixes::Report> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let paths = state.paths.clone();
+    tokio::task::spawn_blocking(move || fixes::check(&paths, &inst)).await.map_err(e)
+}
+
+#[tauri::command(async)]
+fn instance_stats(state: State<AppState>, id: String) -> R<stats::Stats> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let midnight = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|t| t.and_local_timezone(chrono::Local).earliest())
+        .map(|t| t.timestamp_millis())
+        .unwrap_or_else(util::now_ms);
+    Ok(stats::summarize(&stats::load(&inst.dir(&state.paths)), inst.play_seconds, util::now_ms(), midnight))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CrashAnalysis {
+    /// The log or crash report that was read, relative to the instance folder.
+    source: Option<String>,
+    issues: Vec<compat::Issue>,
+}
+
+/// Explains a crash from `log` (a path inside the instance), or from the last crashed
+/// session, the newest crash report, or the newest session log.
+#[tauri::command(async)]
+fn analyze_crash(state: State<AppState>, id: String, log: Option<String>) -> R<CrashAnalysis> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths);
+    let rel = |p: &std::path::Path| p.strip_prefix(&dir).ok().map(|r| r.to_string_lossy().replace('\\', "/"));
+    let source = match log {
+        Some(l) if std::path::Path::new(&l).is_absolute() => Some(rel(std::path::Path::new(&l)).ok_or("That log isn't in this instance.")?),
+        Some(l) => Some(l),
+        None => stats::load(&dir)
+            .iter()
+            .rev()
+            .find(|s| s.crashed)
+            .and_then(|s| s.log.clone())
+            .or_else(|| stats::crash_report_since(&dir, 0))
+            .or_else(|| {
+                let logs = content::files_in(&dir.join(".cairn").join("logs"), &[".log"]);
+                logs.into_iter().max_by_key(|f| f.modified).and_then(|f| rel(std::path::Path::new(&f.path)))
+            }),
+    };
+    let Some(source) = source else { return Ok(CrashAnalysis { source: None, issues: vec![] }) };
+    let mut issues = game::diagnose_file(&state.paths, &inst, &source);
+    if crashlog::about_mods(&issues) {
+        // The log names the problem; the live check knows which jars to fix.
+        let live = fixes::check(&state.paths, &inst);
+        let known: std::collections::HashSet<String> = issues.iter().map(|i| i.key.clone()).collect();
+        issues.extend(live.issues.into_iter().filter(|i| i.severity == compat::Severity::Error && !known.contains(&i.key)));
+    }
+    Ok(CrashAnalysis { source: Some(source), issues })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PerformanceAdvice {
+    memory: perf::MemoryAdvice,
+    jvm: Vec<perf::JvmPreset>,
+    current_jvm: Option<&'static str>,
+    pack: Vec<deps::Root>,
+}
+
+#[tauri::command]
+async fn performance_advice(state: State<'_, AppState>, id: String) -> R<PerformanceAdvice> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths).join("mods");
+    tokio::task::spawn_blocking(move || {
+        let mods = std::fs::read_dir(&dir).map(|rd| rd.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".jar")).count()).unwrap_or(0);
+        let modded = inst.loader != "vanilla" && !inst.use_horizon;
+        PerformanceAdvice {
+            memory: perf::advise(perf::system_memory_mb(), modded, mods),
+            jvm: perf::jvm_presets(),
+            current_jvm: perf::jvm_preset_of(&inst.jvm_args),
+            pack: perf::pack(&inst.loader, &inst.mc_version),
+        }
+    })
+    .await
+    .map_err(e)
+}
+
+#[tauri::command]
+async fn apply_fix(app: AppHandle, state: State<'_, AppState>, id: String, fix: compat::Fix) -> R<String> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let task = Task::new(&app, format!("Fixing {}", inst.name));
+    let t2 = task.clone();
+    let msg = task.run(fixes::apply(&state.paths, &inst, &fix, &t2)).await.map_err(ea)?;
+    if !deps::load_pending(&inst.dir(&state.paths)).is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), id);
+    }
+    Ok(msg)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingView {
+    items: Vec<deps::PendingDownload>,
+    watching: bool,
+    downloads_dir: Option<String>,
+}
+
+#[tauri::command(async)]
+fn pending_downloads(state: State<AppState>, id: String) -> R<PendingView> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    Ok(PendingView {
+        items: deps::load_pending(&inst.dir(&state.paths)),
+        watching: manual::is_watching(&id),
+        downloads_dir: manual::downloads_dir().map(|d| d.to_string_lossy().into()),
+    })
+}
+
+/// Opens the CurseForge page for one pending file (or all of them) and starts watching Downloads.
+#[tauri::command(async)]
+fn open_manual_download(app: AppHandle, state: State<AppState>, id: String, file_id: Option<String>) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let list = deps::load_pending(&inst.dir(&state.paths));
+    for p in list.iter().filter(|p| file_id.as_ref().map(|f| f == &p.file_id).unwrap_or(true)) {
+        if manual::safe_page(&p.download_page) {
+            app.opener().open_url(&p.download_page, None::<&str>).map_err(e)?;
+        }
+    }
+    manual::watch(app.clone(), state.paths.clone(), id).map_err(ea)
+}
+
+#[tauri::command]
+async fn import_manual_download(state: State<'_, AppState>, id: String, path: String) -> R<String> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths);
+    tokio::task::spawn_blocking(move || manual::import_file(&dir, Path::new(&path))).await.map_err(e)?.map_err(ea)
+}
+
+#[tauri::command(async)]
+fn dismiss_manual_download(state: State<AppState>, id: String, file_id: String) -> R<()> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let dir = inst.dir(&state.paths);
+    let mut list = deps::load_pending(&dir);
+    list.retain(|p| p.file_id != file_id);
+    deps::save_pending(&dir, &list).map_err(ea)
+}
+
+// CurseForge
+
+#[tauri::command]
+fn curseforge_available() -> bool {
+    curseforge::api_key().is_ok()
+}
+
+#[tauri::command]
+async fn curseforge_search(params: curseforge::SearchParams) -> R<Value> {
+    curseforge::search(&params).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn curseforge_project(id: String) -> R<Value> {
+    curseforge::project(&id).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn curseforge_files(id: String, game_version: Option<String>, loader: Option<String>) -> R<Vec<Value>> {
+    curseforge::files(&id, game_version.as_deref().unwrap_or(""), loader.as_deref().unwrap_or("")).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn curseforge_install_modpack(app: AppHandle, state: State<'_, AppState>, project_id: String, file_id: Option<String>) -> R<instance::InstanceView> {
+    let s = Settings::load(&state.paths.settings_file());
+    let task = Task::new(&app, "Installing modpack");
+    let t2 = task.clone();
+    let inst = task
+        .run(curseforge::install_modpack_project(&state.paths, &project_id, file_id.as_deref(), s.concurrent_downloads.max(1), &t2))
+        .await
+        .map_err(ea)?;
+    if !deps::load_pending(&inst.dir(&state.paths)).is_empty() {
+        let _ = manual::watch(app.clone(), state.paths.clone(), inst.id.clone());
+    }
+    telemetry::spawn(state.paths.settings_file(), "instance_create", json!({ "loader": inst.loader, "mc_version": inst.mc_version, "source": "curseforge-modpack" }));
+    Ok(instance::view(&state.paths, inst))
 }
 
 #[tauri::command]
@@ -681,7 +956,7 @@ async fn modrinth_install_modpack(app: AppHandle, state: State<'_, AppState>, pr
 
 // Accounts
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_accounts(state: State<AppState>) -> Vec<accounts::AccountView> {
     AccountsFile::load(&state.paths).views()
 }
@@ -750,9 +1025,8 @@ async fn add_offline_account(state: State<'_, AppState>, name: String) -> R<Vec<
 async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<accounts::AccountView>>> {
     use tauri::{UserAttentionType, WebviewUrl, WebviewWindowBuilder};
 
-    let s = Settings::load(&state.paths.settings_file());
-    let client_id = s.effective_client_id();
-    let auth_url = accounts::authorize_url(&client_id).map_err(ea)?;
+    let client = accounts::MsaClient::resolve();
+    let auth_url = client.authorize_url();
 
     if let Some(w) = app.get_webview_window("signin") {
         let _ = w.close();
@@ -760,7 +1034,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     }
 
     let cancel = Arc::new(AtomicBool::new(false));
-    state.sign_ins.lock().unwrap().insert("signin".into(), cancel.clone());
+    state.sign_ins.locked().insert("signin".into(), cancel.clone());
 
     let window = WebviewWindowBuilder::new(&app, "signin", WebviewUrl::External(auth_url.parse().map_err(e)?))
         .title("Sign in with Microsoft")
@@ -775,22 +1049,22 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     let code = loop {
         if cancel.load(Ordering::SeqCst) || util::now_ms() > deadline {
             let _ = window.close();
-            state.sign_ins.lock().unwrap().remove("signin");
+            state.sign_ins.locked().remove("signin");
             return Ok(None);
         }
         if window.title().is_err() {
-            state.sign_ins.lock().unwrap().remove("signin");
+            state.sign_ins.locked().remove("signin");
             return Ok(None);
         }
         if let Ok(url) = window.url() {
             let s = url.as_str();
-            if s.starts_with(accounts::AUTH_REDIRECT) {
+            if s.starts_with(client.redirect()) {
                 let pairs: Vec<_> = url.query_pairs().map(|(k, v)| (k.to_string(), v.to_string())).collect();
                 if let Some((_, err)) = pairs.iter().find(|(k, _)| k == "error") {
                     let _ = window.close();
-                    state.sign_ins.lock().unwrap().remove("signin");
+                    state.sign_ins.locked().remove("signin");
                     let desc = pairs.iter().find(|(k, _)| k == "error_description").map(|(_, v)| v.as_str()).unwrap_or(err.as_str());
-                    return Err(format!("Microsoft sign-in failed: {desc}").into());
+                    return Err(format!("Microsoft sign-in failed: {desc}"));
                 }
                 if let Some((_, code)) = pairs.iter().find(|(k, _)| k == "code") {
                     let _ = window.close();
@@ -801,10 +1075,10 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     };
 
-    state.sign_ins.lock().unwrap().remove("signin");
-    let (access, refresh) = accounts::exchange_auth_code(&client_id, &code).await.map_err(ea)?;
-    let (token, expires, profile) = accounts::minecraft_login(&access, "live").await.map_err(ea)?;
-    let acc = accounts::account_from_login("live", &client_id, refresh, token, expires, &profile);
+    state.sign_ins.locked().remove("signin");
+    let (access, refresh) = accounts::exchange_auth_code(&client, &code).await.map_err(ea)?;
+    let (token, expires, profile) = accounts::minecraft_login(&access, client.flow).await.map_err(ea)?;
+    let acc = accounts::account_from_login(client.flow, &client.id, refresh, token, expires, &profile);
     let _lock = state.accounts_lock.lock().await;
     let mut f = AccountsFile::load(&state.paths);
     f.upsert(acc);
@@ -812,9 +1086,37 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
     Ok(Some(f.views()))
 }
 
+// Shortcuts
+
+#[tauri::command(async)]
+async fn create_shortcut(state: State<'_, AppState>, id: String) -> R<String> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let icon = inst.icon_path(&state.paths);
+    let path = shortcuts::create(&inst.id, &inst.name, icon.as_deref()).await.map_err(ea)?;
+    Ok(shortcuts::placed_message(path.as_deref()))
+}
+
+#[tauri::command]
+fn take_launch_request(state: State<AppState>) -> Option<String> {
+    state.launch_request.locked().take()
+}
+
+// Launcher updates
+
+#[tauri::command]
+async fn app_update_check(app: AppHandle, state: State<'_, AppState>) -> R<Option<app_update::AppUpdate>> {
+    let channel = Settings::load(&state.paths.settings_file()).update_channel;
+    app_update::check(&app, &state.pending_update, &channel).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn app_update_install(state: State<'_, AppState>) -> R<()> {
+    app_update::install(&state.pending_update).await.map_err(ea)
+}
+
 #[tauri::command]
 fn msa_cancel(app: AppHandle, state: State<AppState>) {
-    if let Some(c) = state.sign_ins.lock().unwrap().remove("signin") {
+    if let Some(c) = state.sign_ins.locked().remove("signin") {
         c.store(true, Ordering::SeqCst);
     }
     if let Some(w) = app.get_webview_window("signin") {
@@ -838,20 +1140,160 @@ async fn install_java(app: AppHandle, state: State<'_, AppState>, major: u32) ->
 }
 
 /// Open a folder/file in the OS file manager. Only paths inside Cairn's data dir are allowed.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_data_path(app: AppHandle, state: State<AppState>, path: String) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     let requested = PathBuf::from(&path);
     let target = if requested.exists() {
         std::fs::canonicalize(&requested).map_err(e)?
     } else {
-        return Err(format!("That path does not exist: {path}").into());
+        return Err(format!("That path does not exist: {path}"));
     };
     let root = std::fs::canonicalize(&state.paths.root).map_err(e)?;
     if !target.starts_with(&root) {
         return Err("Can only open folders inside Cairn's data directory.".into());
     }
     app.opener().open_path(target.to_string_lossy(), None::<&str>).map_err(e)
+}
+
+#[tauri::command(async)]
+fn server_info(state: State<AppState>, id: String) -> R<hosting::ServerInfo> {
+    Ok(hosting::info(
+        &state.paths,
+        &instance::get(&state.paths, &id).map_err(ea)?,
+    ))
+}
+
+#[tauri::command]
+async fn server_prepare(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> R<hosting::SyncReport> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let settings = Settings::load(&state.paths.settings_file());
+    let task = Task::new(&app, format!("Setting up the {} server", inst.name));
+    let t2 = task.clone();
+    task.run(async { hosting::prepare(&state.paths, &settings, &inst, &t2).await })
+        .await
+        .map_err(ea)
+}
+
+/// Writes eula.txt. Only the EULA checkbox in the Host tab calls this.
+#[tauri::command(async)]
+fn server_accept_eula(state: State<AppState>, id: String) -> R<()> {
+    hosting::accept_eula(&hosting::server_dir(&state.paths, &id)).map_err(ea)
+}
+
+#[tauri::command(async)]
+fn server_save_config(
+    state: State<AppState>,
+    id: String,
+    config: hosting::ServerConfig,
+) -> R<hosting::ServerConfig> {
+    hosting::save_config(&state.paths, &id, config).map_err(ea)
+}
+
+#[tauri::command]
+async fn server_start(app: AppHandle, state: State<'_, AppState>, id: String) -> R<()> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    hosting::start(&app, &state.paths, &inst).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn server_stop(app: AppHandle, id: String, force: Option<bool>) -> R<()> {
+    hosting::stop(&app, &id, force.unwrap_or(false))
+        .await
+        .map_err(ea)
+}
+
+#[tauri::command]
+async fn server_command(id: String, line: String) -> R<()> {
+    hosting::command(&id, &line).await.map_err(ea)
+}
+
+#[tauri::command(async)]
+fn server_log(id: String) -> Vec<String> {
+    hosting::log(&id)
+}
+
+#[tauri::command(async)]
+fn playit_status(state: State<AppState>) -> playit::Status {
+    playit::status(&state.paths)
+}
+
+/// Downloads the agent if needed, opens playit.gg's approval page and waits for the player to approve.
+#[tauri::command]
+async fn playit_link(app: AppHandle, state: State<'_, AppState>) -> R<playit::Status> {
+    use tauri_plugin_opener::OpenerExt;
+    let task = Task::new(&app, "Setting up playit.gg");
+    let t2 = task.clone();
+    task.run(async { playit::install(&state.paths, &t2).await })
+        .await
+        .map_err(ea)?;
+    let url = playit::begin_claim();
+    let _ = app.emit("playit-claim", &url);
+    app.opener().open_url(&url, None::<&str>).map_err(e)?;
+    playit::finish_claim(&state.paths).await.map_err(ea)?;
+    Ok(playit::status(&state.paths))
+}
+
+#[tauri::command(async)]
+fn playit_cancel_link() {
+    playit::cancel_claim();
+}
+
+#[tauri::command(async)]
+fn playit_start(app: AppHandle, state: State<AppState>) -> R<playit::Status> {
+    playit::start(&app, &state.paths).map_err(ea)?;
+    Ok(playit::status(&state.paths))
+}
+
+#[tauri::command(async)]
+fn playit_stop(state: State<AppState>) -> playit::Status {
+    playit::stop();
+    playit::status(&state.paths)
+}
+
+#[tauri::command(async)]
+fn playit_unlink(state: State<AppState>) -> R<playit::Status> {
+    playit::unlink(&state.paths).map_err(ea)?;
+    Ok(playit::status(&state.paths))
+}
+
+#[tauri::command]
+async fn playit_tunnels(state: State<'_, AppState>) -> R<Vec<playit::Tunnel>> {
+    playit::tunnels(&state.paths).await.map_err(ea)
+}
+
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Lets running servers save their worlds before Cairn exits instead of killing them mid-write.
+fn shut_down_servers(app: &AppHandle) -> bool {
+    let ids = hosting::running_ids();
+    if SHUTTING_DOWN.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    playit::stop();
+    if ids.is_empty() {
+        return false;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for id in &ids {
+            let _ = hosting::stop(&app, id, false).await;
+        }
+        for _ in 0..100 {
+            if hosting::running_ids().is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        hosting::kill_all();
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        app.exit(0);
+    });
+    true
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -864,8 +1306,21 @@ pub fn run() {
         games: Arc::new(game::Games::default()),
         sign_ins: Mutex::new(HashMap::new()),
         accounts_lock: tokio::sync::Mutex::new(()),
+        pending_update: app_update::Pending::default(),
+        launch_request: Mutex::new(shortcuts::launch_arg(std::env::args())),
     };
     tauri::Builder::default()
+        // Must be first: a second launch hands its arguments to this one and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            if let Some(id) = shortcuts::launch_arg(argv) {
+                let _ = app.emit("launch-request", id);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -874,6 +1329,7 @@ pub fn run() {
         .setup(move |app| {
             // Only Cairn's own data folder (screenshots, icons, world thumbnails) is readable by the webview.
             app.asset_protocol_scope().allow_directory(&data_root, true)?;
+            discord::configure(discord::Options::from_settings(&Settings::load(&settings_file)));
             tauri::async_runtime::spawn(async move {
                 telemetry::track_app_open(&settings_file).await;
             });
@@ -883,6 +1339,7 @@ pub fn run() {
             app_info, get_settings, save_settings,
             list_instances, get_instance, create_instance, update_instance, delete_instance, duplicate_instance, set_instance_icon,
             import_mrpack, import_modpack, export_mrpack,
+            share_code, read_share_code, import_share_code,
             list_modrinth_app_profiles, import_modrinth_app_profile,
             list_content, toggle_content, remove_content, add_content_files, installed_projects, check_updates, apply_updates,
             list_horizon_mods, toggle_horizon_mod, remove_horizon_mod, add_horizon_mod_files, list_bundled_horizon_mods, install_bundled_horizon_mod,
@@ -891,10 +1348,22 @@ pub fn run() {
             backup_instance, restore_instance_backup, search_library_content,
             launch_instance, kill_instance, game_states, game_log, install_instance,
             mc_versions, mc_version_art, loader_versions,
-            modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install, modrinth_install_modpack, modrinth_version_deps,
+            modrinth_search, modrinth_project, modrinth_versions, modrinth_tags, modrinth_install_modpack, modrinth_version_deps,
+            plan_install, install_content, check_compat, performance_advice, apply_fix, instance_stats, analyze_crash, pending_downloads, open_manual_download, import_manual_download,
+            dismiss_manual_download, curseforge_available, curseforge_search, curseforge_project, curseforge_files, curseforge_install_modpack,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
-            list_java, install_java, open_data_path
+            app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,
+            list_java, install_java, open_data_path,
+            server_info, server_prepare, server_accept_eula, server_save_config, server_start, server_stop, server_command, server_log,
+            playit_status, playit_link, playit_cancel_link, playit_start, playit_stop, playit_unlink, playit_tunnels
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Cairn");
+        .build(tauri::generate_context!())
+        .expect("error while building Cairn")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if shut_down_servers(app) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

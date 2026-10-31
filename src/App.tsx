@@ -1,18 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { StoreProvider, useStore, type Route } from "./store";
 import { Icon, type IconName } from "./components/Icon";
-import { Avatar, InstanceIcon, Progress } from "./components/ui";
+import { Avatar, InstanceIcon, Loading, Progress } from "./components/ui";
 import { api } from "./api";
 import { Home } from "./pages/Home";
 import { Library } from "./pages/Library";
 import { InstancePage } from "./pages/Instance";
-import { Discover } from "./pages/Discover";
-import { Accounts } from "./pages/Accounts";
-import { SettingsPage } from "./pages/Settings";
 import { CreateInstance } from "./pages/CreateInstance";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { PrivacyPrompt } from "./components/PrivacyPrompt";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { CairnMark } from "./assets/CairnMark";
+import { InstallDialog } from "./components/InstallDialog";
+import { PreLaunchDialog } from "./components/PreLaunchDialog";
+
+// Loaded on first visit: Accounts pulls in three.js for the skin view and Discover the
+// markdown renderer, which together are most of the bundle.
+const Discover = lazy(() => import("./pages/Discover").then((m) => ({ default: m.Discover })));
+const Accounts = lazy(() => import("./pages/Accounts").then((m) => ({ default: m.Accounts })));
+const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })));
 
 const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
   { name: "home", label: "Home", icon: "home" },
@@ -149,23 +155,27 @@ function Toasts() {
 }
 
 function Pages() {
-  const { route, showCreate, setShowCreate, showSearch, setShowSearch } = useStore();
+  const { route, showCreate, setShowCreate, showSearch, setShowSearch, installRequest, requestInstall } = useStore();
   const key = JSON.stringify(route);
   return (
     <main className="main">
       <UpdateBanner />
       <div className="page" key={key}>
         <div className="page-inner page-enter">
+          <Suspense fallback={<Loading label="Loading" />}>
           {route.name === "home" && <Home />}
           {route.name === "library" && <Library />}
           {route.name === "instance" && <InstancePage id={route.id} initialTab={route.tab} />}
-          {route.name === "discover" && <Discover instanceId={route.instanceId} initialType={route.projectType} openProject={route.projectId} />}
+          {route.name === "discover" && <Discover instanceId={route.instanceId} initialType={route.projectType} openProject={route.projectId} initialQuery={route.query} />}
           {route.name === "accounts" && <Accounts />}
           {route.name === "settings" && <SettingsPage />}
+          </Suspense>
         </div>
       </div>
       {showCreate && <CreateInstance onClose={() => setShowCreate(false)} />}
       {showSearch && <GlobalSearch onClose={() => setShowSearch(false)} />}
+      {installRequest && <InstallDialog req={installRequest} onClose={() => requestInstall(null)} />}
+      <PreLaunchDialog />
     </main>
   );
 }
@@ -179,6 +189,7 @@ function Shell() {
       </div>
       <TaskTray />
       <Toasts />
+      <PrivacyPrompt />
     </div>
   );
 }

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Cairn
+GenericName=Minecraft Launcher
+Comment=Minecraft launcher for modded instances
+Exec=cairn
+Icon=app.cairn.launcher
+Terminal=false
+Categories=Game;
+Keywords=minecraft;launcher;modrinth;curseforge;fabric;forge;
+StartupWMClass=cairn

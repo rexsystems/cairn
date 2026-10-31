@@ -14,3 +14,7 @@ horizon-mod-src/*/target/
 AGENTS.md
 .cursor/
 .codex/
+flatpak/cairn.deb
+build-flatpak/
+.flatpak-builder/
+*.flatpak

@@ -144,7 +144,7 @@ pub fn find_resources(paths: &Paths) -> Option<PathBuf> {
     cands.into_iter().find(|c| is_prepared_resources(c))
 }
 
-async fn latest_stable_asset() -> Result<(String, String, u64)> {
+async fn latest_stable_asset() -> Result<(String, String, u64, Option<String>)> {
     let want = platform_asset_name()?;
     let releases: Value = CLIENT
         .get(RELEASES_API)
@@ -173,7 +173,8 @@ async fn latest_stable_asset() -> Result<(String, String, u64)> {
                 .ok_or_else(|| anyhow!("Horizon asset missing download URL"))?
                 .to_string();
             let size = a["size"].as_u64().unwrap_or(0);
-            return Ok((tag.to_string(), url, size));
+            let sha256 = a["digest"].as_str().filter(|d| d.starts_with("sha256:")).and_then(|d| net::parse_checksum(d, 64));
+            return Ok((tag.to_string(), url, size, sha256));
         }
     }
     bail!("No Horizon {want} asset found on recent GitHub releases.");
@@ -204,7 +205,7 @@ pub async fn ensure_client(paths: &Paths, task: &Task) -> Result<PathBuf> {
     }
 
     task.stage("Finding Horizon release", 0, 0);
-    let (tag, url, size) = latest_stable_asset().await?;
+    let (tag, url, size, sha256) = latest_stable_asset().await?;
     let dest_dir = root.join(&tag);
     if let Some(bin) = find_bin(&dest_dir, names) {
         return Ok(bin);
@@ -217,6 +218,7 @@ pub async fn ensure_client(paths: &Paths, task: &Task) -> Result<PathBuf> {
         url,
         dest: archive.clone(),
         sha1: None,
+        sha256,
         size: if size > 0 { Some(size) } else { None },
     })
     .await
