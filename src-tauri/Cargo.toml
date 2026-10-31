@@ -45,10 +45,13 @@ once_cell = "1"
 urlencoding = "2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 fastnbt = "2"
-discord-rich-presence = "0.2"
 sentry = "0.49.3"
 tauri-plugin-single-instance = "2"
 sysinfo = { version = "0.35", default-features = false, features = ["system"] }
+
+[target.'cfg(windows)'.dependencies]
+# PeekNamedPipe, so reading Discord's pipe never blocks the presence thread.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Pipes"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "dynamic_launcher"] }
