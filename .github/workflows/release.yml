@@ -78,6 +78,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CAIRN_CURSEFORGE_API_KEY: ${{ secrets.CAIRN_CURSEFORGE_API_KEY }}
+          CAIRN_MSA_CLIENT_ID: ${{ vars.CAIRN_MSA_CLIENT_ID }}
         run: npm run build:ci
 
       - name: Read version
@@ -178,6 +179,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CAIRN_CURSEFORGE_API_KEY: ${{ secrets.CAIRN_CURSEFORGE_API_KEY }}
+          CAIRN_MSA_CLIENT_ID: ${{ vars.CAIRN_MSA_CLIENT_ID }}
         run: npm run build:linux:ci
 
       - name: Sign Linux package updaters
@@ -282,6 +284,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CAIRN_CURSEFORGE_API_KEY: ${{ secrets.CAIRN_CURSEFORGE_API_KEY }}
+          CAIRN_MSA_CLIENT_ID: ${{ vars.CAIRN_MSA_CLIENT_ID }}
         run: npm run build:macos:ci -- --target ${{ matrix.rust_target }}
 
       - name: Read version
