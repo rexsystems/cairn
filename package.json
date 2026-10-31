@@ -4,11 +4,15 @@
   "version": "0.1.0",
   "description": "Cairn: a Minecraft launcher for modded instances, with Modrinth support.",
   "license": "AGPL-3.0-or-later",
-  "author": {
-    "name": "Cairn contributors",
-    "email": "cairn@example.invalid"
+  "author": "rexsystems",
+  "homepage": "https://github.com/rexsystems/cairn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rexsystems/cairn.git"
   },
-  "homepage": "https://example.invalid/cairn",
+  "bugs": {
+    "url": "https://github.com/rexsystems/cairn/issues"
+  },
   "private": true,
   "scripts": {
     "dev:web": "vite",

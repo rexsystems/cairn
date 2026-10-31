@@ -2,6 +2,10 @@
 name = "cairn"
 version = "0.1.0"
 description = "Cairn Minecraft launcher"
+authors = ["rexsystems"]
+repository = "https://github.com/rexsystems/cairn"
+homepage = "https://github.com/rexsystems/cairn"
+license = "AGPL-3.0-or-later"
 edition = "2021"
 default-run = "cairn"
 
