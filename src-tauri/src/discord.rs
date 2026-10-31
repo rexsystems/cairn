@@ -313,8 +313,7 @@ mod tests {
 
     #[test]
     fn app_id_falls_back_to_default() {
-        let mut settings = crate::settings::Settings::default();
-        settings.discord_app_id = "not-a-number".into();
+        let mut settings = crate::settings::Settings { discord_app_id: "not-a-number".into(), ..Default::default() };
         if std::env::var("CAIRN_DISCORD_APP_ID").is_err() {
             assert_eq!(Options::from_settings(&settings).app_id, DEFAULT_APP_ID);
             settings.discord_app_id = "123456789".into();

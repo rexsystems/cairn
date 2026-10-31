@@ -16,7 +16,7 @@ pub struct LoaderVersion {
 
 /// NeoForge versions encode the Minecraft version: 21.1.77 -> 1.21.1, 20.4.237 -> 1.20.4, 26.1.0.5 -> 26.1.
 pub fn neoforge_mc(v: &str) -> Option<String> {
-    let parts: Vec<&str> = v.split(|c| c == '.' || c == '-').collect();
+    let parts: Vec<&str> = v.split(['.', '-']).collect();
     let major: u32 = parts.first()?.parse().ok()?;
     let minor: u32 = parts.get(1)?.parse().ok()?;
     if major < 25 {

@@ -22,7 +22,7 @@ fn java_bin_name() -> &'static str {
 
 /// "1.8.0_412" -> 8, "21.0.4" -> 21, "25" -> 25
 pub fn parse_major(version: &str) -> Option<u32> {
-    let mut it = version.split(|c: char| c == '.' || c == '_' || c == '-' || c == '+');
+    let mut it = version.split(['.', '_', '-', '+']);
     let first: u32 = it.next()?.parse().ok()?;
     if first == 1 {
         it.next()?.parse().ok()
@@ -109,7 +109,7 @@ pub fn detect(paths: &Paths) -> Vec<JavaInstall> {
             out.push(JavaInstall { path: p.to_string_lossy().to_string(), version, major, managed });
         }
     }
-    out.sort_by(|a, b| b.major.cmp(&a.major));
+    out.sort_by_key(|a| std::cmp::Reverse(a.major));
     out
 }
 

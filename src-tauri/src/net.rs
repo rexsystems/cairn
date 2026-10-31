@@ -23,7 +23,7 @@ pub async fn get_json<T: DeserializeOwned>(url: &str) -> Result<T> {
     let mut last = None;
     for attempt in 0..3 {
         match CLIENT.get(url).send().await {
-            Ok(r) if r.status().is_success() => return Ok(r.json::<T>().await.with_context(|| format!("decoding {url}"))?),
+            Ok(r) if r.status().is_success() => return r.json::<T>().await.with_context(|| format!("decoding {url}")),
             Ok(r) if r.status().is_client_error() => bail!("{} returned {}", url, r.status()),
             Ok(r) => last = Some(anyhow!("{} returned {}", url, r.status())),
             Err(e) => last = Some(anyhow!(e).context(format!("requesting {url}"))),
@@ -95,7 +95,7 @@ impl std::error::Error for ChecksumMismatch {}
 
 /// Pull the hex out of a published checksum file or GitHub digest ("sha256:<hex>", "<hex>  name").
 pub fn parse_checksum(text: &str, hex_len: usize) -> Option<String> {
-    let token = text.trim().split_whitespace().next()?;
+    let token = text.split_whitespace().next()?;
     let token = token.rsplit(':').next()?;
     (token.len() == hex_len && token.bytes().all(|b| b.is_ascii_hexdigit())).then(|| token.to_ascii_lowercase())
 }

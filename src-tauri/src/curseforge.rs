@@ -150,7 +150,7 @@ async fn cf_get(path: &str, key: &str) -> Result<Value> {
             .with_context(|| format!("CurseForge GET {path}"))?;
         let status = resp.status();
         if status.is_success() {
-            return Ok(resp.json().await.with_context(|| format!("decoding {path}"))?);
+            return resp.json().await.with_context(|| format!("decoding {path}"));
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
             let body = resp.text().await.unwrap_or_default();
@@ -180,7 +180,7 @@ async fn cf_post(path: &str, key: &str, body: &Value) -> Result<Value> {
             .with_context(|| format!("CurseForge POST {path}"))?;
         let status = resp.status();
         if status.is_success() {
-            return Ok(resp.json().await.with_context(|| format!("decoding {path}"))?);
+            return resp.json().await.with_context(|| format!("decoding {path}"));
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
             let body = resp.text().await.unwrap_or_default();
@@ -380,15 +380,16 @@ pub fn fingerprint_file(path: &Path) -> Result<u32> {
 fn murmur2(data: &[u8], seed: u32) -> u32 {
     const M: u32 = 0x5bd1_e995;
     let mut h = seed ^ data.len() as u32;
-    let mut chunks = data.chunks_exact(4);
-    for c in &mut chunks {
+    // Plain `chunks` instead of `as_chunks`, which needs a newer Rust than some packaging toolchains.
+    let whole = data.len() / 4 * 4;
+    for c in data[..whole].chunks(4) {
         let mut k = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
         k = k.wrapping_mul(M);
         k ^= k >> 24;
         k = k.wrapping_mul(M);
         h = h.wrapping_mul(M) ^ k;
     }
-    let tail = chunks.remainder();
+    let tail = &data[whole..];
     if !tail.is_empty() {
         for (i, b) in tail.iter().enumerate() {
             h ^= (*b as u32) << (8 * i);
@@ -734,7 +735,7 @@ pub async fn check_updates(paths: &Paths, inst: &Instance) -> Result<Vec<crate::
         .filter_map(|x| async { x })
         .collect()
         .await;
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|a| a.title.to_lowercase());
     Ok(out)
 }
 

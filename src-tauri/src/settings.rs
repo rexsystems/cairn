@@ -3,8 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::Path;
 
-/// Client ID of the official Minecraft launcher on the Windows Live (login.live.com) endpoint.
-
 /// Vars the launcher may set for its own GTK/WebKit window. Minecraft must not inherit them.
 const LAUNCHER_ENV_STRIP: &[&str] = &[
     "GDK_BACKEND",

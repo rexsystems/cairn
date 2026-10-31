@@ -362,7 +362,7 @@ async fn check_updates(state: State<'_, AppState>, id: String) -> R<Vec<modrinth
     let mut out = mr.map_err(ea)?;
     // No CurseForge key or CurseForge down: still show Modrinth updates.
     out.extend(cf.unwrap_or_default());
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|a| a.title.to_lowercase());
     Ok(out)
 }
 
@@ -419,7 +419,7 @@ fn list_log_files(state: State<AppState>, id: String) -> R<Vec<content::FileEntr
     let mut v = label(content::files_in(&dir.join(".cairn").join("logs"), &[".log"]), "Cairn session: ");
     v.extend(label(content::files_in(&dir.join("logs"), &[".log", ".log.gz"]), "Game log: "));
     v.extend(label(content::files_in(&dir.join("crash-reports"), &[".txt"]), "Crash report: "));
-    v.sort_by(|a, b| b.modified.cmp(&a.modified));
+    v.sort_by_key(|a| std::cmp::Reverse(a.modified));
     Ok(v)
 }
 
@@ -920,7 +920,7 @@ async fn msa_login(app: AppHandle, state: State<'_, AppState>) -> R<Option<Vec<a
                     let _ = window.close();
                     state.sign_ins.locked().remove("signin");
                     let desc = pairs.iter().find(|(k, _)| k == "error_description").map(|(_, v)| v.as_str()).unwrap_or(err.as_str());
-                    return Err(format!("Microsoft sign-in failed: {desc}").into());
+                    return Err(format!("Microsoft sign-in failed: {desc}"));
                 }
                 if let Some((_, code)) = pairs.iter().find(|(k, _)| k == "code") {
                     let _ = window.close();
@@ -1003,7 +1003,7 @@ fn open_data_path(app: AppHandle, state: State<AppState>, path: String) -> R<()>
     let target = if requested.exists() {
         std::fs::canonicalize(&requested).map_err(e)?
     } else {
-        return Err(format!("That path does not exist: {path}").into());
+        return Err(format!("That path does not exist: {path}"));
     };
     let root = std::fs::canonicalize(&state.paths.root).map_err(e)?;
     if !target.starts_with(&root) {

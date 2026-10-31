@@ -163,7 +163,7 @@ impl crate::deps::Repo for Repo {
         Ok(info_from(&project(id).await?))
     }
     async fn pick(&self, p: &crate::deps::ProjectInfo, t: &crate::deps::Target) -> Result<Option<crate::deps::Candidate>> {
-        let vs = versions(&p.id, &loader_filter(&p.project_type, &t.loader), &[t.mc_version.clone()]).await?;
+        let vs = versions(&p.id, &loader_filter(&p.project_type, &t.loader), std::slice::from_ref(&t.mc_version)).await?;
         let ok: Vec<Value> = vs.into_iter().filter(|v| candidate(p, v).map(|c| t.accepts(&c)).unwrap_or(false)).collect();
         Ok(prefer_release(&ok).and_then(|v| candidate(p, v)))
     }
@@ -287,7 +287,7 @@ fn install_rec<'a>(
         task.stage(&format!("Finding a compatible version of {title}"), 0, 0);
         let ver = match ver_from_id {
             Some(v) => v,
-            None => versions(&pid, &loader_filter(ptype, &inst.loader), &[inst.mc_version.clone()])
+            None => versions(&pid, &loader_filter(ptype, &inst.loader), std::slice::from_ref(&inst.mc_version))
                 .await?
                 .into_iter()
                 .next()
@@ -495,7 +495,7 @@ pub async fn check_updates(paths: &Paths, inst: &Instance) -> Result<Vec<UpdateI
             });
         }
     }
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|a| a.title.to_lowercase());
     Ok(out)
 }
 
