@@ -62,6 +62,22 @@ The **Host** tab of an instance sets up a matching server in `servers/<instance 
 
 To let friends join over the internet, **Link playit.gg** downloads the playit agent (checked against a pinned SHA-256) and opens playit.gg to approve it. The agent exists for Windows and Linux only.
 
+## Playing with friends
+
+**Invite friends** (in the Host tab while the server runs, or on an instance while you play) picks where friends connect: your playit.gg tunnel, your local network, the server you're on, or a world you opened to LAN. Nothing is shared until you turn on **Let Discord friends join from my profile**, and that turns off again when the game or server stops.
+
+With it on, your Discord profile shows **Join** (or **Ask to join**, which you accept or decline in Cairn). Cairn on the friend's side reuses a matching instance or builds one from the pack or share code, then starts the game connected to your server. The server address travels only in Discord's join secret, never in the visible status. **Copy invite code** gives a `CAIRN1:...@address` code for anyone without Discord; **Library → Paste share code** joins from it.
+
+The **Friends** page keeps the people you played with on this computer. Discord's local RPC doesn't expose your friends list or who is online, so Cairn can't show that.
+
+### Discord app setup (maintainers)
+
+In the [Developer Portal](https://discord.com/developers/applications) for the app (`1566104003291390072`):
+
+- **Rich Presence → Art Assets**: upload `cairn_logo` and `loader_vanilla`, `loader_fabric`, `loader_quilt`, `loader_forge`, `loader_neoforge`.
+- Join needs no extra toggle or OAuth scope: a party with a size plus a join secret is enough. Cairn registers itself as the app's launch command (registry on Windows, a `.desktop` handler on Linux, `~/Library/Application Support/discord/games` on macOS) so Join can start it.
+- A real friends list and online status need the [Discord Social SDK](https://discord.com/developers/docs/discord-social-sdk/overview) instead: a developer team owning the app, the Social SDK getting-started form, an OAuth2 redirect, **Public Client** turned on, and the C++ SDK binaries from the portal wrapped for Rust. Cairn doesn't use it yet.
+
 ## Settings worth knowing
 
 - Theme, reduce motion, hide-on-launch, gamepad nav

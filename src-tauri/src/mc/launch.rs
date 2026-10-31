@@ -203,6 +203,15 @@ pub fn build_args(paths: &Paths, v: &Value, auth: &LaunchAuth, opts: &LaunchOpti
             args.extend(["--width".into(), w.to_string(), "--height".into(), h.to_string()]);
         }
     }
+    // Versions before Quick Play (1.20) still read --server/--port.
+    if let Some(s) = &opts.quick_play_server {
+        if !args.iter().any(|a| a == "--quickPlayMultiplayer") {
+            match s.rsplit_once(':') {
+                Some((host, port)) => args.extend(["--server".into(), host.to_string(), "--port".into(), port.to_string()]),
+                None => args.extend(["--server".into(), s.clone()]),
+            }
+        }
+    }
     debug_assert!(
         !args.iter().any(|a| a.contains("${")),
         "unresolved launch placeholder in args: {:?}",
@@ -325,5 +334,27 @@ mod tests {
         // ${version_name} is the Minecraft version (classpath jar), not the NeoForge profile id.
         assert!(a.windows(2).any(|w| w[0] == "--version" && w[1] == "1.21.1"));
         assert!(a.iter().all(|x| !x.contains("${")));
+    }
+
+    #[test]
+    fn server_joins_use_quick_play_or_the_old_flags() {
+        let dir = std::env::temp_dir().join("cairn-test-quick-play");
+        let paths = Paths::at(&dir);
+        let auth = LaunchAuth { name: "Steve".into(), uuid: "u".into(), access_token: "t".into(), user_type: "msa".into(), xuid: "0".into() };
+        let opts = LaunchOptions {
+            memory_mb: 2048, extra_jvm_args: vec![], width: None, height: None,
+            game_dir: dir.join("g"), natives_dir: dir.join("n"), jar_id: "1.21.1".into(),
+            quick_play_world: None, quick_play_server: Some("play.example.org:25570".into()),
+        };
+        let modern = json!({
+            "id":"1.21.1","mainClass":"M","assetIndex":{"id":"17"},"libraries":[],
+            "arguments":{"jvm":[],"game":[{"rules":[{"action":"allow","features":{"is_quick_play_multiplayer":true}}],"value":["--quickPlayMultiplayer","${quickPlayMultiplayer}"]}]}
+        });
+        let a = build_args(&paths, &modern, &auth, &opts);
+        assert!(a.windows(2).any(|w| w[0] == "--quickPlayMultiplayer" && w[1] == "play.example.org:25570"));
+        assert!(!a.contains(&"--server".to_string()));
+        let legacy = json!({ "id":"1.12.2","mainClass":"M","assetIndex":{"id":"1.12"},"libraries":[], "minecraftArguments":"--username ${auth_player_name}" });
+        let a = build_args(&paths, &legacy, &auth, &opts);
+        assert!(a.windows(4).any(|w| w == ["--server", "play.example.org", "--port", "25570"]));
     }
 }

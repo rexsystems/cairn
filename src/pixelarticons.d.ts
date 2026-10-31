@@ -14,6 +14,7 @@ declare module "pixelarticons/react/*" {
   export const Folder: Icon;
   export const Globe: Icon;
   export const Home: Icon;
+  export const HumanArmsUp: Icon;
   export const Image: Icon;
   export const Library: Icon;
   export const MoreHorizontal: Icon;

@@ -5,6 +5,7 @@ import { Icon } from "../../components/Icon";
 import { Switch } from "../../components/ui";
 import { useStore } from "../../store";
 import { PlayitPanel } from "./PlayitPanel";
+import { InviteDialog } from "../../components/InviteDialog";
 
 const LOG_KEEP = 3000;
 const EULA_URL = "https://aka.ms/MinecraftEULA";
@@ -20,6 +21,7 @@ export function HostTab({ inst }: { inst: InstanceView }) {
   const [lines, setLines] = useState<string[]>([]);
   const [consent, setConsent] = useState(false);
   const [cmd, setCmd] = useState("");
+  const [inviting, setInviting] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const id = inst.id;
 
@@ -162,9 +164,11 @@ export function HostTab({ inst }: { inst: InstanceView }) {
           <p className="small muted">The server only listens on this computer. Turn on network access above, or use a playit.gg tunnel below.</p>
         )}
         <p className="small muted">Cairn never opens ports on your router.</p>
+        {live && <div><button className="btn btn-sm" onClick={() => setInviting(true)}><Icon name="friends" size={14} />Invite friends</button></div>}
       </section>
 
       <PlayitPanel port={info.config.port} />
+      {inviting && <InviteDialog id={id} name={inst.name} onClose={() => setInviting(false)} />}
 
       <section className="card stack" aria-labelledby="host-console">
         <h3 id="host-console">Console</h3>

@@ -110,6 +110,12 @@ mod flatpak {
     }
 }
 
+/// Quotes one Exec argument for a .desktop file.
+#[cfg(target_os = "linux")]
+pub fn desktop_quote(arg: &str) -> String {
+    platform::quote(arg)
+}
+
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
