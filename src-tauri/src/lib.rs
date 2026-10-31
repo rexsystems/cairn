@@ -13,6 +13,7 @@ pub mod fixes;
 pub mod game;
 pub mod horizon;
 pub mod horizon_mods;
+pub mod hosting;
 pub mod instance;
 pub mod java;
 pub mod loaders;
@@ -26,6 +27,7 @@ pub mod modrinth_app;
 pub mod net;
 pub mod paths;
 pub mod perf;
+pub mod playit;
 pub mod prism;
 pub mod servers;
 pub mod settings;
@@ -1154,6 +1156,146 @@ fn open_data_path(app: AppHandle, state: State<AppState>, path: String) -> R<()>
     app.opener().open_path(target.to_string_lossy(), None::<&str>).map_err(e)
 }
 
+#[tauri::command(async)]
+fn server_info(state: State<AppState>, id: String) -> R<hosting::ServerInfo> {
+    Ok(hosting::info(
+        &state.paths,
+        &instance::get(&state.paths, &id).map_err(ea)?,
+    ))
+}
+
+#[tauri::command]
+async fn server_prepare(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> R<hosting::SyncReport> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    let settings = Settings::load(&state.paths.settings_file());
+    let task = Task::new(&app, format!("Setting up the {} server", inst.name));
+    let t2 = task.clone();
+    task.run(async { hosting::prepare(&state.paths, &settings, &inst, &t2).await })
+        .await
+        .map_err(ea)
+}
+
+/// Writes eula.txt. Only the EULA checkbox in the Host tab calls this.
+#[tauri::command(async)]
+fn server_accept_eula(state: State<AppState>, id: String) -> R<()> {
+    hosting::accept_eula(&hosting::server_dir(&state.paths, &id)).map_err(ea)
+}
+
+#[tauri::command(async)]
+fn server_save_config(
+    state: State<AppState>,
+    id: String,
+    config: hosting::ServerConfig,
+) -> R<hosting::ServerConfig> {
+    hosting::save_config(&state.paths, &id, config).map_err(ea)
+}
+
+#[tauri::command]
+async fn server_start(app: AppHandle, state: State<'_, AppState>, id: String) -> R<()> {
+    let inst = instance::get(&state.paths, &id).map_err(ea)?;
+    hosting::start(&app, &state.paths, &inst).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn server_stop(app: AppHandle, id: String, force: Option<bool>) -> R<()> {
+    hosting::stop(&app, &id, force.unwrap_or(false))
+        .await
+        .map_err(ea)
+}
+
+#[tauri::command]
+async fn server_command(id: String, line: String) -> R<()> {
+    hosting::command(&id, &line).await.map_err(ea)
+}
+
+#[tauri::command(async)]
+fn server_log(id: String) -> Vec<String> {
+    hosting::log(&id)
+}
+
+#[tauri::command(async)]
+fn playit_status(state: State<AppState>) -> playit::Status {
+    playit::status(&state.paths)
+}
+
+/// Downloads the agent if needed, opens playit.gg's approval page and waits for the player to approve.
+#[tauri::command]
+async fn playit_link(app: AppHandle, state: State<'_, AppState>) -> R<playit::Status> {
+    use tauri_plugin_opener::OpenerExt;
+    let task = Task::new(&app, "Setting up playit.gg");
+    let t2 = task.clone();
+    task.run(async { playit::install(&state.paths, &t2).await })
+        .await
+        .map_err(ea)?;
+    let url = playit::begin_claim();
+    let _ = app.emit("playit-claim", &url);
+    app.opener().open_url(&url, None::<&str>).map_err(e)?;
+    playit::finish_claim(&state.paths).await.map_err(ea)?;
+    Ok(playit::status(&state.paths))
+}
+
+#[tauri::command(async)]
+fn playit_cancel_link() {
+    playit::cancel_claim();
+}
+
+#[tauri::command(async)]
+fn playit_start(app: AppHandle, state: State<AppState>) -> R<playit::Status> {
+    playit::start(&app, &state.paths).map_err(ea)?;
+    Ok(playit::status(&state.paths))
+}
+
+#[tauri::command(async)]
+fn playit_stop(state: State<AppState>) -> playit::Status {
+    playit::stop();
+    playit::status(&state.paths)
+}
+
+#[tauri::command(async)]
+fn playit_unlink(state: State<AppState>) -> R<playit::Status> {
+    playit::unlink(&state.paths).map_err(ea)?;
+    Ok(playit::status(&state.paths))
+}
+
+#[tauri::command]
+async fn playit_tunnels(state: State<'_, AppState>) -> R<Vec<playit::Tunnel>> {
+    playit::tunnels(&state.paths).await.map_err(ea)
+}
+
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Lets running servers save their worlds before Cairn exits instead of killing them mid-write.
+fn shut_down_servers(app: &AppHandle) -> bool {
+    let ids = hosting::running_ids();
+    if SHUTTING_DOWN.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    playit::stop();
+    if ids.is_empty() {
+        return false;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for id in &ids {
+            let _ = hosting::stop(&app, id, false).await;
+        }
+        for _ in 0..100 {
+            if hosting::running_ids().is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        hosting::kill_all();
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        app.exit(0);
+    });
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let paths = Paths::new();
@@ -1211,8 +1353,17 @@ pub fn run() {
             dismiss_manual_download, curseforge_available, curseforge_search, curseforge_project, curseforge_files, curseforge_install_modpack,
             list_accounts, set_active_account, remove_account, add_offline_account, account_cosmetics, set_account_cape, set_account_skin, set_account_skin_from_history, msa_login, msa_cancel,
             app_update_check, app_update_install, share_log, create_shortcut, take_launch_request,
-            list_java, install_java, open_data_path
+            list_java, install_java, open_data_path,
+            server_info, server_prepare, server_accept_eula, server_save_config, server_start, server_stop, server_command, server_log,
+            playit_status, playit_link, playit_cancel_link, playit_start, playit_stop, playit_unlink, playit_tunnels
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Cairn");
+        .build(tauri::generate_context!())
+        .expect("error while building Cairn")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if shut_down_servers(app) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
