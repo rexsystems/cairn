@@ -10,6 +10,7 @@ export type Route =
   | { name: "instance"; id: string; tab?: string }
   | { name: "discover"; instanceId?: string; projectType?: string; projectId?: string; query?: string }
   | { name: "accounts" }
+  | { name: "friends" }
   | { name: "settings" };
 
 interface Toast { id: number; text: string; error?: boolean }

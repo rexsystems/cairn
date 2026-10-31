@@ -13,17 +13,20 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { CairnMark } from "./assets/CairnMark";
 import { InstallDialog } from "./components/InstallDialog";
 import { PreLaunchDialog } from "./components/PreLaunchDialog";
+import { DiscordJoin } from "./components/DiscordJoin";
 
 // Loaded on first visit: Accounts pulls in three.js for the skin view and Discover the
 // markdown renderer, which together are most of the bundle.
 const Discover = lazy(() => import("./pages/Discover").then((m) => ({ default: m.Discover })));
 const Accounts = lazy(() => import("./pages/Accounts").then((m) => ({ default: m.Accounts })));
+const Friends = lazy(() => import("./pages/Friends").then((m) => ({ default: m.Friends })));
 const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })));
 
 const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
   { name: "home", label: "Home", icon: "home" },
   { name: "library", label: "Library", icon: "library" },
   { name: "discover", label: "Discover", icon: "discover" },
+  { name: "friends", label: "Friends", icon: "friends" },
   { name: "accounts", label: "Accounts", icon: "user" },
   { name: "settings", label: "Settings", icon: "settings" },
 ];
@@ -167,6 +170,7 @@ function Pages() {
           {route.name === "library" && <Library />}
           {route.name === "instance" && <InstancePage id={route.id} initialTab={route.tab} />}
           {route.name === "discover" && <Discover instanceId={route.instanceId} initialType={route.projectType} openProject={route.projectId} initialQuery={route.query} />}
+          {route.name === "friends" && <Friends />}
           {route.name === "accounts" && <Accounts />}
           {route.name === "settings" && <SettingsPage />}
           </Suspense>
@@ -176,6 +180,7 @@ function Pages() {
       {showSearch && <GlobalSearch onClose={() => setShowSearch(false)} />}
       {installRequest && <InstallDialog req={installRequest} onClose={() => requestInstall(null)} />}
       <PreLaunchDialog />
+      <DiscordJoin />
     </main>
   );
 }

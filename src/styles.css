@@ -1034,3 +1034,13 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 .host-left-out { margin: var(--space-2) 0 0; padding-left: 20px; }
 .host-problem { color: var(--ember); }
 .playit-tunnels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+
+.join-requests { position: fixed; right: 20px; top: 20px; z-index: 55; width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; }
+.join-request { display: flex; align-items: center; gap: 10px; padding: 10px 12px; box-shadow: var(--pop-shadow); animation: pop-in 160ms var(--ease); }
+.join-request-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.join-avatar { border-radius: 50%; flex: none; }
+.invite-targets { border: 0; padding: 0; margin: 0; }
+.invite-targets label { align-items: flex-start; }
+.friend-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.friend { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.friend-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }

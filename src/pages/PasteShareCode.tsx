@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { api, type ShareManifest } from "../api";
+import { api, type SharePreview } from "../api";
 import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { Modal } from "../components/ui";
 import { loaderLabel } from "../format";
+import { runJoin } from "../lib/join";
 
-/** Rebuilds an instance from a share code after showing what it contains. */
+/** Rebuilds an instance from a share code after showing what it contains. Invite codes (code@server) can also join. */
 export function PasteShareCode({ onClose }: { onClose: () => void }) {
-  const { toast, go, refreshInstances } = useStore();
+  const { toast, go, refreshInstances, play } = useStore();
   const [code, setCode] = useState("");
-  const [manifest, setManifest] = useState<ShareManifest | null>(null);
+  const [manifest, setManifest] = useState<SharePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -41,12 +42,29 @@ export function PasteShareCode({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // Uses an instance that already matches when there is one, so joining twice doesn't make copies.
+  const createAndJoin = async () => {
+    setBusy(true);
+    try {
+      const from = { code: code.trim() };
+      const id = await runJoin(await api.joinPlan(from), from, play);
+      await refreshInstances();
+      go({ name: "instance", id });
+      onClose();
+    } catch (e) {
+      toast(String(e), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fromCf = manifest?.items.filter((i) => i.s === "c").length ?? 0;
   return (
     <Modal title="Paste share code" onClose={onClose} footer={
       <>
         <button className="btn btn-quiet" onClick={onClose}>Cancel</button>
-        <button className="btn" onClick={create} disabled={!manifest || busy}><Icon name="plus" />{busy ? "Creating..." : "Create instance"}</button>
+        <button className={manifest?.address ? "btn btn-quiet" : "btn"} onClick={create} disabled={!manifest || busy}><Icon name="plus" />{busy ? "Creating..." : "Create instance"}</button>
+        {manifest?.address && <button className="btn btn-play" onClick={createAndJoin} disabled={busy}><Icon name="play" />Create and join</button>}
       </>
     }>
       <label className="field">
@@ -60,6 +78,7 @@ export function PasteShareCode({ onClose }: { onClose: () => void }) {
           <p className="small muted">
             Minecraft {manifest.mc}, {loaderLabel[manifest.loader] ?? manifest.loader}{manifest.lv ? ` ${manifest.lv}` : ""}, {manifest.items.length === 1 ? "1 file" : `${manifest.items.length} files`}
           </p>
+          {manifest.address && <p className="small">Invite to <code className="mono">{manifest.address}</code></p>}
           {fromCf > 0 && <p className="small muted">{fromCf} from CurseForge. Some of those may need a download in your browser.</p>}
         </div>
       )}

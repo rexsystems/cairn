@@ -12,6 +12,7 @@ import { ExternalLink } from "pixelarticons/react/ExternalLink";
 import { Folder } from "pixelarticons/react/Folder";
 import { Globe } from "pixelarticons/react/Globe";
 import { Home } from "pixelarticons/react/Home";
+import { HumanArmsUp } from "pixelarticons/react/HumanArmsUp";
 import { Image } from "pixelarticons/react/Image";
 import { Library } from "pixelarticons/react/Library";
 import { MoreHorizontal } from "pixelarticons/react/MoreHorizontal";
@@ -35,6 +36,7 @@ const art = {
   library: Library,
   discover: Compass,
   user: User,
+  friends: HumanArmsUp,
   settings: SettingsCog,
   pause: Pause,
   play: Play,

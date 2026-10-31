@@ -153,6 +153,36 @@ export interface PlaySession { started: number; ended: number; seconds: number; 
 export interface InstanceStats { totalSeconds: number; sessions: number; crashes: number; longestSeconds: number; weekSeconds: number; days: number[]; recent: PlaySession[] }
 export interface SharedCode { code: string; items: number; leftOut: string[] }
 export interface ShareManifest { name: string; mc: string; loader: string; lv?: string | null; items: { s: "m" | "c"; p: string; v: string }[] }
+/** A share code read back; `address` is set when it was an invite code (share code plus @server). */
+export interface SharePreview extends ShareManifest { address?: string | null }
+
+export interface InviteTarget { kind: "playit" | "lan" | "server" | "lanWorld"; label: string; address: string; max: number }
+export interface InviteInfo { code: string; notes: string[] }
+export interface DiscordStatus { enabled: boolean; connected: boolean; user?: string | null; error?: string | null; joinable: string[] }
+export type DiscordEvent =
+  | { kind: "join"; secret: string }
+  | { kind: "joinRequest"; userId: string; username: string; avatarUrl?: string | null };
+export interface InvitePack { source: "m" | "c"; project: string; version: string }
+export interface Invite { address: string; mc: string; loader: string; lv?: string | null; fp?: string | null; pack?: InvitePack | null }
+export type JoinStep =
+  | { kind: "launch"; instance: { id: string; name: string } }
+  | { kind: "installPack"; pack: InvitePack }
+  | { kind: "rebuild" }
+  | { kind: "create" }
+  | { kind: "needCode" };
+export interface JoinPlan { invite: Invite; step: JoinStep; name?: string | null }
+export interface Friend {
+  id: string;
+  kind: "joinedYou" | "youJoined";
+  name: string;
+  userId?: string | null;
+  avatarUrl?: string | null;
+  instanceId: string;
+  instanceName: string;
+  secret?: string | null;
+  code?: string | null;
+  at: number;
+}
 export interface SharedImport { instance: InstanceView; installed: number; pending: PendingDownload[]; failed: string[] }
 export interface CrashAnalysis { source: string | null; issues: CompatIssue[] }
 export interface LogLine { instanceId: string; line: string; stream: string }
@@ -232,7 +262,7 @@ export const api = {
   /** Modrinth `.mrpack` or CurseForge modpack `.zip` (format sniffed). */
   importModpack: (path: string) => invoke<InstanceView>("import_modpack", { path }),
   shareCode: (id: string) => invoke<SharedCode>("share_code", { id }),
-  readShareCode: (code: string) => invoke<ShareManifest>("read_share_code", { code }),
+  readShareCode: (code: string) => invoke<SharePreview>("read_share_code", { code }),
   importShareCode: (code: string) => invoke<SharedImport>("import_share_code", { code }),
   exportMrpack: (id: string, dest: string, extra: string[]) => invoke<string>("export_mrpack", { id, dest, extra }),
   listModrinthAppProfiles: () => invoke<ModrinthAppProfile[]>("list_modrinth_app_profiles"),
@@ -346,6 +376,20 @@ export const api = {
   playitStop: () => invoke<PlayitStatus>("playit_stop"),
   playitUnlink: () => invoke<PlayitStatus>("playit_unlink"),
   playitTunnels: () => invoke<PlayitTunnel[]>("playit_tunnels"),
+
+  inviteTargets: (id: string) => invoke<InviteTarget[]>("invite_targets", { id }),
+  /** Builds the invite code; with `discord` on, also makes the session joinable from Discord. */
+  inviteEnable: (id: string, address: string, max: number, discord: boolean) => invoke<InviteInfo>("invite_enable", { id, address, max, discord }),
+  inviteDisable: (id: string) => invoke<void>("invite_disable", { id }),
+  discordStatus: () => invoke<DiscordStatus>("discord_status"),
+  takeDiscordJoin: () => invoke<string | null>("discord_take_join"),
+  discordReply: (userId: string, accept: boolean, username: string, avatarUrl?: string | null) =>
+    invoke<Friend[]>("discord_reply", { userId, accept, username, avatarUrl: avatarUrl ?? null }),
+  joinPlan: (from: { secret?: string; code?: string }) => invoke<JoinPlan>("join_plan", { secret: from.secret ?? null, code: from.code ?? null }),
+  joinRecord: (from: { secret?: string; code?: string }, instanceId: string) =>
+    invoke<Friend[]>("join_record", { secret: from.secret ?? null, code: from.code ?? null, instanceId }),
+  friendsList: () => invoke<Friend[]>("friends_list"),
+  friendsForget: (id: string) => invoke<Friend[]>("friends_forget", { id }),
 
   /** Checks the channel chosen in Settings. Null when up to date or the check failed. */
   checkForUpdate: async (): Promise<(AppUpdate & { downloadAndInstall: () => Promise<void> }) | null> => {
