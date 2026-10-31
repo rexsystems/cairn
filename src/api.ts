@@ -331,6 +331,22 @@ export const api = {
   installJava: (major: number) => invoke<JavaInstall>("install_java", { major }),
   openDataPath: (path: string) => invoke<void>("open_data_path", { path }),
 
+  serverInfo: (id: string) => invoke<ServerInfo>("server_info", { id }),
+  serverPrepare: (id: string) => invoke<ServerSync>("server_prepare", { id }),
+  serverAcceptEula: (id: string) => invoke<void>("server_accept_eula", { id }),
+  serverSaveConfig: (id: string, config: ServerConfig) => invoke<ServerConfig>("server_save_config", { id, config }),
+  serverStart: (id: string) => invoke<void>("server_start", { id }),
+  serverStop: (id: string, force = false) => invoke<void>("server_stop", { id, force }),
+  serverCommand: (id: string, line: string) => invoke<void>("server_command", { id, line }),
+  serverLog: (id: string) => invoke<string[]>("server_log", { id }),
+  playitStatus: () => invoke<PlayitStatus>("playit_status"),
+  playitLink: () => invoke<PlayitStatus>("playit_link"),
+  playitCancelLink: () => invoke<void>("playit_cancel_link"),
+  playitStart: () => invoke<PlayitStatus>("playit_start"),
+  playitStop: () => invoke<PlayitStatus>("playit_stop"),
+  playitUnlink: () => invoke<PlayitStatus>("playit_unlink"),
+  playitTunnels: () => invoke<PlayitTunnel[]>("playit_tunnels"),
+
   /** Checks the channel chosen in Settings. Null when up to date or the check failed. */
   checkForUpdate: async (): Promise<(AppUpdate & { downloadAndInstall: () => Promise<void> }) | null> => {
     try {
@@ -342,6 +358,25 @@ export const api = {
   },
   relaunch,
 };
+
+export interface ServerConfig { port: number; memoryMb: number; maxPlayers: number; onlineMode: boolean; motd: string; lan: boolean }
+export type ServerState = "starting" | "running" | "stopping" | "stopped";
+export interface ServerInfo {
+  dir: string;
+  config: ServerConfig;
+  prepared: boolean;
+  /** Set up for a different Minecraft or loader version than the instance has now. */
+  outdated: boolean;
+  eula: boolean;
+  state: ServerState;
+  lanAddress?: string | null;
+  clientOnly: string[];
+}
+export interface ServerSync { copied: number; removed: number; clientOnly: string[] }
+export interface ServerStateEvent { instanceId: string; state: ServerState; exitCode?: number | null }
+export interface ServerLogEvent { instanceId: string; lines: string[] }
+export interface PlayitStatus { supported: boolean; installed: boolean; linked: boolean; running: boolean; claimUrl?: string | null }
+export interface PlayitTunnel { name: string; address: string; kind: string; problem?: string | null }
 
 export function on<T>(event: string, cb: (payload: T) => void): Promise<UnlistenFn> {
   return listen<T>(event, (e) => cb(e.payload));

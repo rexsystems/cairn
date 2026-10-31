@@ -1021,3 +1021,16 @@ html.reduce-motion .skin-card:hover:not(:disabled) { transform: none; }
 /* Share codes */
 .share-code { width: 100%; min-height: 96px; resize: vertical; word-break: break-all; font-size: 12px; }
 .share-left-out { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
+
+/* Host tab */
+.host-head { justify-content: space-between; align-items: flex-start; flex-wrap: nowrap; }
+.host-state { font-weight: 700; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.host-running { color: var(--moss); border-color: var(--moss); }
+.host-starting, .host-stopping { color: var(--accent); border-color: var(--accent); }
+.host-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.host-link { align-self: flex-start; }
+.host-log { height: min(40vh, 420px); }
+.host-cmd { flex: 1; min-width: 0; }
+.host-left-out { margin: var(--space-2) 0 0; padding-left: 20px; }
+.host-problem { color: var(--ember); }
+.playit-tunnels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
