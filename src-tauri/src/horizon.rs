@@ -4,6 +4,7 @@
 use crate::instance::HORIZON_MC_VERSION;
 use crate::net::{self, Download, CLIENT};
 use crate::paths::Paths;
+use crate::settings::Settings;
 use crate::tasks::Task;
 use anyhow::{anyhow, bail, Context, Result};
 use flate2::read::GzDecoder;
@@ -237,7 +238,7 @@ pub async fn ensure_client(paths: &Paths, task: &Task) -> Result<PathBuf> {
         let mut perms = std::fs::metadata(&bin)?.permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&bin, perms)?;
-        // Make sibling tools runnable too (prepare is out of scope for auto-run, but handy).
+        // Sibling tools (prepare runs automatically on first Horizon launch).
         if let Some(parent) = bin.parent() {
             for sibling in ["horizon-prepare", "horizon-ctl", "horizon-server"] {
                 let p = parent.join(sibling);
@@ -250,6 +251,158 @@ pub async fn ensure_client(paths: &Paths, task: &Task) -> Result<PathBuf> {
         }
     }
     Ok(bin)
+}
+
+fn sibling_tool(client_bin: &Path, stem: &str) -> Option<PathBuf> {
+    let parent = client_bin.parent()?;
+    let name = if cfg!(windows) {
+        format!("{stem}.exe")
+    } else {
+        stem.to_string()
+    };
+    let p = parent.join(name);
+    p.is_file().then_some(p)
+}
+
+fn with_java_env(cmd: &mut tokio::process::Command, java_bin: &Path) -> Result<()> {
+    let bin_dir = java_bin
+        .parent()
+        .ok_or_else(|| anyhow!("Java path has no bin folder"))?;
+    let home = bin_dir
+        .parent()
+        .ok_or_else(|| anyhow!("Java path has no JAVA_HOME"))?;
+    cmd.env("JAVA_HOME", home);
+    let mut entries = vec![bin_dir.to_path_buf()];
+    if let Some(path) = std::env::var_os("PATH") {
+        entries.extend(std::env::split_paths(&path));
+    }
+    let joined = std::env::join_paths(entries).context("building PATH for horizon-prepare")?;
+    cmd.env("PATH", joined);
+    Ok(())
+}
+
+async fn ensure_server_jar(paths: &Paths, vjson: &Value, task: &Task) -> Result<PathBuf> {
+    let s = vjson
+        .pointer("/downloads/server")
+        .ok_or_else(|| anyhow!("Mojang has no server jar for Minecraft {HORIZON_MC_VERSION}"))?;
+    let url = s["url"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Minecraft {HORIZON_MC_VERSION} server download URL is missing"))?;
+    let dest = paths.cache.join(format!("horizon-{HORIZON_MC_VERSION}-server.jar"));
+    task.stage("Downloading the Minecraft server jar", 0, 1);
+    net::download(&Download {
+        url: url.to_string(),
+        dest: dest.clone(),
+        sha1: s["sha1"].as_str().map(str::to_string),
+        sha256: None,
+        size: s["size"].as_u64(),
+    })
+    .await
+    .context("downloading the Minecraft server jar for Horizon")?;
+    Ok(dest)
+}
+
+async fn run_horizon_prepare(
+    prep: &Path,
+    root: &Path,
+    server_jar: &Path,
+    minecraft_dir: &Path,
+    java_bin: &Path,
+    task: &Task,
+) -> Result<()> {
+    task.stage("Preparing Horizon resources (first launch only)", 0, 0);
+    let mut cmd = tokio::process::Command::new(prep);
+    cmd.arg("--prepare")
+        .arg("--server-jar")
+        .arg(server_jar)
+        .arg("--minecraft-dir")
+        .arg(minecraft_dir)
+        .arg("--root")
+        .arg(root)
+        .current_dir(root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    with_java_env(&mut cmd, java_bin)?;
+    crate::util::hide_console(&mut cmd);
+    let out = cmd.output().await.context("starting horizon-prepare")?;
+    let log = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    let _ = std::fs::write(root.join("cairn-prepare.log"), &log);
+    if !out.status.success() {
+        let tail: Vec<&str> = log.lines().rev().take(8).collect();
+        bail!(
+            "horizon-prepare failed. Last output: {}",
+            tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
+        );
+    }
+
+    // Sounds are optional (~380 MB); silence is better than failing the launch.
+    task.stage("Importing Horizon sounds", 0, 0);
+    let mut sounds = tokio::process::Command::new(prep);
+    sounds
+        .arg("sounds")
+        .arg("--minecraft-dir")
+        .arg(minecraft_dir)
+        .arg("--root")
+        .arg(root)
+        .current_dir(root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    with_java_env(&mut sounds, java_bin)?;
+    crate::util::hide_console(&mut sounds);
+    let s_out = sounds.output().await.context("starting horizon-prepare sounds")?;
+    let s_log = String::from_utf8_lossy(&s_out.stdout).to_string() + &String::from_utf8_lossy(&s_out.stderr);
+    let _ = std::fs::write(root.join("cairn-prepare-sounds.log"), &s_log);
+    Ok(())
+}
+
+/// Ensure prepared Horizon resources exist, running `horizon-prepare` once if needed.
+pub async fn ensure_resources(paths: &Paths, settings: &Settings, client_bin: &Path, task: &Task) -> Result<PathBuf> {
+    if let Some(r) = find_resources(paths) {
+        return Ok(r);
+    }
+
+    let prep = sibling_tool(client_bin, "horizon-prepare").ok_or_else(|| {
+        anyhow!("horizon-prepare is missing next to the Horizon client. Reinstall Horizon from Play.")
+    })?;
+    let root = prep
+        .parent()
+        .ok_or_else(|| anyhow!("horizon-prepare has no parent folder"))?
+        .to_path_buf();
+
+    task.stage(&format!("Installing Minecraft {HORIZON_MC_VERSION} for Horizon"), 0, 0);
+    // Scratch dir only matters for virtual/map_to_resources asset layouts; 26.3 uses the object store.
+    let scratch = paths.cache.join("horizon-prepare-scratch");
+    std::fs::create_dir_all(&scratch)?;
+    let installed = crate::mc::install::install_version(
+        paths,
+        HORIZON_MC_VERSION,
+        &scratch,
+        task,
+        settings.concurrent_downloads,
+    )
+    .await
+    .context("installing Minecraft for Horizon prepare")?;
+    let server_jar = ensure_server_jar(paths, &installed.json, task).await?;
+    let java_bin = crate::java::ensure(paths, settings, 25, task)
+        .await
+        .context("Java 25 is required to prepare Horizon resources")?;
+
+    run_horizon_prepare(
+        &prep,
+        &root,
+        &server_jar,
+        &paths.meta,
+        Path::new(&java_bin),
+        task,
+    )
+    .await?;
+
+    find_resources(paths).ok_or_else(|| {
+        anyhow!(
+            "horizon-prepare finished but no resources were found under {}",
+            root.join(".local").join("horizon-client").join(HORIZON_MC_VERSION).display()
+        )
+    })
 }
 
 pub fn validate_instance(inst: &crate::instance::Instance) -> Result<()> {
@@ -303,6 +456,7 @@ pub fn write_ms_session_file(game_home: &Path, acc: &crate::accounts::Account) -
 /// Binary, args, and game home (`HORIZON_HOME`) for spawning the client.
 pub async fn prepare_launch(
     paths: &Paths,
+    settings: &Settings,
     inst: &crate::instance::Instance,
     task: &Task,
     world: Option<&str>,
@@ -312,14 +466,7 @@ pub async fn prepare_launch(
 ) -> Result<(PathBuf, Vec<String>, PathBuf)> {
     validate_instance(inst)?;
     let bin = ensure_client(paths, task).await?;
-    let resources = find_resources(paths).ok_or_else(|| {
-        anyhow!(
-            "Horizon needs prepared Minecraft {HORIZON_MC_VERSION} resources. \
-Play {HORIZON_MC_VERSION} once in the official launcher, then run Prepare in the Horizon launcher \
-(or run horizon-prepare next to the client). Or place prepared resources at {}.",
-            paths.root.join("horizon").join("resources").join(HORIZON_MC_VERSION).display()
-        )
-    })?;
+    let resources = ensure_resources(paths, settings, &bin, task).await?;
 
     let game_home = inst.dir(paths);
     std::fs::create_dir_all(game_home.join("saves"))?;

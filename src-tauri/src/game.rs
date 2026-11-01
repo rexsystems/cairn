@@ -375,6 +375,7 @@ async fn launch_horizon(
     let prep = async {
         let (bin, mut hz_args, game_home) = crate::horizon::prepare_launch(
             &paths,
+            &settings,
             &inst,
             &task,
             args.world.as_deref(),
