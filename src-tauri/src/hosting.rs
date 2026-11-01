@@ -346,13 +346,9 @@ async fn run_java(java: &str, dir: &Path, args: &[String], what: &str) -> Result
     Ok(())
 }
 
-#[cfg(windows)]
 fn hide_window(cmd: &mut tokio::process::Command) {
-    cmd.creation_flags(0x0800_0000);
+    crate::util::hide_console(cmd);
 }
-
-#[cfg(not(windows))]
-fn hide_window(_: &mut tokio::process::Command) {}
 
 async fn vanilla_server_jar(vjson: &Value, dir: &Path, mc: &str) -> Result<()> {
     let s = &vjson["downloads"]["server"];

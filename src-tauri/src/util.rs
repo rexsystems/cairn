@@ -119,6 +119,24 @@ pub fn slugify(name: &str) -> String {
     if s.is_empty() { "instance".into() } else { s.chars().take(40).collect() }
 }
 
+/// Keep console-subsystem children (java.exe, etc.) from opening a terminal window.
+#[cfg(windows)]
+pub fn hide_console(cmd: &mut tokio::process::Command) {
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+}
+
+#[cfg(not(windows))]
+pub fn hide_console(_: &mut tokio::process::Command) {}
+
+#[cfg(windows)]
+pub fn hide_console_std(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000);
+}
+
+#[cfg(not(windows))]
+pub fn hide_console_std(_: &mut std::process::Command) {}
+
 /// `Mutex::lock` that survives poisoning. The guarded data here is plain maps and
 /// flags, so a panic in another thread should not take the whole launcher down.
 pub trait LockExt<T> {

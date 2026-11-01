@@ -235,15 +235,15 @@ async fn install_forge_like(paths: &Paths, loader: &str, mc: &str, lv: &str, jav
     }
     let pretty = match loader { "neoforge" => "NeoForge", "forge" => "Forge", other => other };
     task.stage(&format!("Running the {pretty} installer (this can take a few minutes)"), 0, 0);
-    let out = tokio::process::Command::new(java)
+    let mut installer_cmd = tokio::process::Command::new(java);
+    installer_cmd
         .arg("-jar")
         .arg(&installer)
         .arg("--installClient")
         .arg(&paths.meta)
-        .current_dir(&paths.cache)
-        .output()
-        .await
-        .context("starting the installer")?;
+        .current_dir(&paths.cache);
+    crate::util::hide_console(&mut installer_cmd);
+    let out = installer_cmd.output().await.context("starting the installer")?;
     let log = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     let _ = std::fs::write(paths.cache.join(format!("{file}.log")), &log);
     if !out.status.success() || !paths.version_json(&id).exists() {

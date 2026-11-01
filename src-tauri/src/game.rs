@@ -229,6 +229,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(false);
+    crate::util::hide_console(&mut cmd);
     if settings.isolate_game_env {
         games.push_log(&app, &id, "[Cairn] Game env: launcher GTK/WebKit vars stripped".into(), "launcher");
     }
@@ -485,6 +486,7 @@ async fn launch_horizon(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(false);
+    crate::util::hide_console(&mut cmd);
     if settings.isolate_game_env {
         games.push_log(&app, &id, "[Cairn] Game env: launcher GTK/WebKit vars stripped".into(), "launcher");
     }

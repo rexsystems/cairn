@@ -45,7 +45,9 @@ pub fn probe(java: &Path) -> Option<(String, u32)> {
             }
         }
     }
-    let out = Command::new(java).arg("-version").output().ok()?;
+    let mut cmd = Command::new(java);
+    crate::util::hide_console_std(&mut cmd);
+    let out = cmd.arg("-version").output().ok()?;
     let text = String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
     let re = regex::Regex::new(r#"version "([^"]+)""#).ok()?;
     let v = re.captures(&text)?.get(1)?.as_str().to_string();
