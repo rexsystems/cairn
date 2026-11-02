@@ -37,6 +37,7 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - File and network commands run off the main thread, progress events are throttled and live logs are batched, so the window stays responsive during installs and while the game runs (most noticeable on Windows).
 
 ### Fixed
+- The compatibility report no longer flags multi-loader mods for another loader's dependencies, and checks Fabric API modules against their own versions.
 - Horizon Play no longer asks you to prepare Minecraft 26.3 by hand: Cairn installs 26.3 into its own meta folder, runs `horizon-prepare`, and imports sounds on first launch.
 - Skins, capes and account heads load again. Mojang serves them over http, which the Content Security Policy blocked; Cairn now downloads them itself and caches them.
 

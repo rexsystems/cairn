@@ -3,7 +3,7 @@
 //! and duplicates. Pure over scanned metadata so it is cheap to test.
 
 use crate::content::{base_name, ContentIndex};
-use crate::modmeta::{DepKind, JarMod, ModInfo, Side};
+use crate::modmeta::{DepKind, DepReq, JarMod, ModInfo, Side, Source};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -70,6 +70,41 @@ fn builtins(loader: &str) -> &'static [&'static str] {
         "neoforge" => &["minecraft", "java", "neoforge", "javafml", "lowcodefml", "mixinextras", "fml"],
         _ => &["minecraft", "java"],
     }
+}
+
+/// Loaders and the game itself. A mod can never install these, so they are never a missing dependency.
+const PLATFORM_IDS: &[&str] = &["minecraft", "java", "fabricloader", "fabric-loader", "quilt_loader", "forge", "neoforge", "javafml", "lowcodefml", "fml", "mcp"];
+
+/// The metadata files this loader reads from a jar.
+fn active_sources(i: &ModInfo, loader: &str) -> &'static [Source] {
+    match loader {
+        "fabric" => &[Source::Fabric],
+        "quilt" if i.formats.quilt => &[Source::Quilt],
+        "quilt" => &[Source::Fabric],
+        "forge" => &[Source::Forge],
+        "neoforge" if i.formats.neoforge_toml => &[Source::NeoForge],
+        "neoforge" => &[Source::Forge],
+        _ => &[],
+    }
+}
+
+fn applies(source: Option<Source>, active: &[Source]) -> bool {
+    source.is_none_or(|s| active.contains(&s))
+}
+
+/// Dependencies the loader will actually enforce for this jar.
+fn active_depends<'a>(i: &'a ModInfo, loader: &str) -> impl Iterator<Item = &'a DepReq> {
+    let active = active_sources(i, loader);
+    i.depends.iter().filter(move |d| applies(d.source, active))
+}
+
+/// (id, version) pairs the loader will see from this jar, each with its own version.
+fn active_modules<'a>(i: &'a ModInfo, loader: &str) -> Vec<(&'a str, &'a str)> {
+    if i.modules.is_empty() {
+        return i.provides.iter().map(|id| (id.as_str(), i.version.as_str())).collect();
+    }
+    let active = active_sources(i, loader);
+    i.modules.iter().filter(|m| applies(m.source, active)).map(|m| (m.id.as_str(), m.version.as_str())).collect()
 }
 
 fn loader_ids(loader: &str) -> &'static [&'static str] {
@@ -196,12 +231,15 @@ pub fn analyze(mods: &[JarMod], index: &ContentIndex, ctx: &Ctx) -> Vec<Issue> {
         }
     }
 
-    // id -> (version, file) for everything loadable, including provided and nested ids.
-    let mut provided: HashMap<&str, (&str, &str)> = HashMap::new();
+    // id -> every (version, file) offering it. Nested modules keep their own version, and
+    // the loader picks whichever copy satisfies the dependents.
+    let mut provided: HashMap<&str, Vec<(&str, &str)>> = HashMap::new();
     for m in &loaded {
-        let info = m.info.as_ref().unwrap();
-        for id in &info.provides {
-            provided.entry(id.as_str()).or_insert((info.version.as_str(), m.file.as_str()));
+        for (id, ver) in active_modules(m.info.as_ref().unwrap(), ctx.loader) {
+            let list = provided.entry(id).or_default();
+            if !list.contains(&(ver, m.file.as_str())) {
+                list.push((ver, m.file.as_str()));
+            }
         }
     }
     let disabled: HashMap<&str, &str> = mods
@@ -247,7 +285,7 @@ pub fn analyze(mods: &[JarMod], index: &ContentIndex, ctx: &Ctx) -> Vec<Issue> {
     let mut missing: BTreeMap<&str, Vec<(&JarMod, String)>> = BTreeMap::new();
     for m in &loaded {
         let info = m.info.as_ref().unwrap();
-        for d in &info.depends {
+        for d in active_depends(info, ctx.loader) {
             let id = d.id.as_str();
             match d.kind {
                 DepKind::Required => {
@@ -289,35 +327,35 @@ pub fn analyze(mods: &[JarMod], index: &ContentIndex, ctx: &Ctx) -> Vec<Issue> {
                         }
                         continue;
                     }
-                    if builtin.contains(&id) {
+                    if builtin.contains(&id) || PLATFORM_IDS.contains(&id) {
                         continue;
                     }
-                    match provided.get(id) {
-                        None => missing.entry(id).or_default().push((m, d.range.describe())),
-                        Some((ver, file)) => {
-                            if !ver.is_empty() && d.range.matches(ver) == Some(false) {
-                                let dep_name = loaded
-                                    .iter()
-                                    .find(|j| j.file == *file)
-                                    .map(|j| display(j))
-                                    .unwrap_or_else(|| id.to_string());
-                                issues.push(Issue {
-                                    key: format!("depver:{}:{id}", base_name(&m.file)),
-                                    severity: Severity::Error,
-                                    title: format!("{} needs a different {dep_name}", display(m)),
-                                    detail: format!("It asks for {dep_name} {}, but {ver} is installed.", d.range.describe()),
-                                    files: vec![m.file.clone(), file.to_string()],
-                                    fixes: vec![install_fix(format!("Update {dep_name}"), id, project_of(index, file))],
-                                });
-                            }
-                        }
+                    let Some(offers) = provided.get(id) else {
+                        missing.entry(id).or_default().push((m, d.range.describe()));
+                        continue;
+                    };
+                    if offers.iter().any(|(ver, _)| ver.is_empty() || d.range.matches(ver) != Some(false)) {
+                        continue;
                     }
+                    let (ver, file) = *offers.iter().max_by(|a, b| crate::versioning::compare(a.0, b.0)).unwrap();
+                    let owner = loaded.iter().find(|j| j.file == file);
+                    let owner_name = owner.map(|j| display(j)).unwrap_or_else(|| pretty_id(id));
+                    // A nested module is named on its own, so the user sees what is actually too old.
+                    let top_level = owner.is_none_or(|j| j.info.as_ref().unwrap().ids.iter().any(|i| i == id));
+                    let owner_id = if top_level { id } else { owner.and_then(|j| j.info.as_ref().unwrap().ids.first()).map_or(id, String::as_str) };
+                    let dep_name = if top_level { owner_name.clone() } else { format!("{id} (from {owner_name})") };
+                    issues.push(Issue {
+                        key: format!("depver:{}:{id}", base_name(&m.file)),
+                        severity: Severity::Error,
+                        title: format!("{} needs a different {dep_name}", display(m)),
+                        detail: format!("It asks for {dep_name} {}, but {ver} is installed.", d.range.describe()),
+                        files: vec![m.file.clone(), file.to_string()],
+                        fixes: vec![install_fix(format!("Update {owner_name}"), owner_id, project_of(index, file))],
+                    });
                 }
                 DepKind::Breaks | DepKind::Conflicts => {
-                    let Some((ver, file)) = provided.get(id) else { continue };
-                    if *file == m.file.as_str() || d.range.matches(ver) != Some(true) {
-                        continue;
-                    }
+                    let hit = provided.get(id).and_then(|o| o.iter().find(|(ver, file)| *file != m.file.as_str() && d.range.matches(ver) == Some(true)));
+                    let Some((_, file)) = hit else { continue };
                     let other = loaded.iter().find(|j| j.file == *file).map(|j| display(j)).unwrap_or_else(|| id.to_string());
                     let breaks = d.kind == DepKind::Breaks;
                     issues.push(Issue {
@@ -437,7 +475,7 @@ mod tests {
     }
 
     fn req(id: &str, range: Range) -> DepReq {
-        DepReq { id: id.into(), range, kind: DepKind::Required }
+        DepReq { id: id.into(), range, kind: DepKind::Required, source: None }
     }
 
     fn ctx<'a>(loader: &'a str, mc: &'a str) -> Ctx<'a> {
@@ -540,9 +578,9 @@ mod tests {
     #[test]
     fn breaks_and_conflicts() {
         let mods = vec![
-            fabric("a.jar", "a", "1.0", vec![DepReq { id: "b".into(), range: Range::Fabric(vec!["<2.0".into()]), kind: DepKind::Breaks }]),
+            fabric("a.jar", "a", "1.0", vec![DepReq { id: "b".into(), range: Range::Fabric(vec!["<2.0".into()]), kind: DepKind::Breaks, source: None }]),
             fabric("b.jar", "b", "1.5", vec![]),
-            fabric("c.jar", "c", "1.0", vec![DepReq { id: "b".into(), range: Range::Any, kind: DepKind::Conflicts }]),
+            fabric("c.jar", "c", "1.0", vec![DepReq { id: "b".into(), range: Range::Any, kind: DepKind::Conflicts, source: None }]),
         ];
         let issues = analyze(&mods, &ContentIndex::default(), &ctx("fabric", "1.21.1"));
         assert_eq!(issues.len(), 2);
@@ -550,7 +588,7 @@ mod tests {
         assert_eq!(issues[1].severity, Severity::Warning);
         // A breaks range that does not match the installed version is fine.
         let ok = vec![
-            fabric("a.jar", "a", "1.0", vec![DepReq { id: "b".into(), range: Range::Fabric(vec!["<1.0".into()]), kind: DepKind::Breaks }]),
+            fabric("a.jar", "a", "1.0", vec![DepReq { id: "b".into(), range: Range::Fabric(vec!["<1.0".into()]), kind: DepKind::Breaks, source: None }]),
             fabric("b.jar", "b", "1.5", vec![]),
         ];
         assert!(analyze(&ok, &ContentIndex::default(), &ctx("fabric", "1.21.1")).is_empty());
@@ -567,5 +605,102 @@ mod tests {
     fn vanilla_ignores_mods() {
         let issues = analyze(&[fabric("a.jar", "a", "1", vec![])], &ContentIndex::default(), &ctx("vanilla", "1.21.1"));
         assert_eq!(issues[0].severity, Severity::Warning);
+    }
+
+    fn jar(file: &str, entries: &[(&str, Vec<u8>)]) -> JarMod {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("cairn-compat-{}-{n}-{file}", std::process::id()));
+        crate::modmeta::testjar::write(&d, entries);
+        let info = crate::modmeta::read_jar(&d);
+        std::fs::remove_file(&d).unwrap();
+        JarMod { file: file.into(), enabled: true, info }
+    }
+
+    fn fmj(id: &str, name: &str, version: &str, depends: &str, jars: &[&str]) -> Vec<u8> {
+        let jars: Vec<String> = jars.iter().map(|j| format!(r#"{{"file":"{j}"}}"#)).collect();
+        format!(r#"{{"schemaVersion":1,"id":"{id}","name":"{name}","version":"{version}","depends":{depends},"jars":[{}]}}"#, jars.join(",")).into_bytes()
+    }
+
+    /// Fabric API as shipped: an umbrella version with modules nested under their own versions.
+    fn fabric_api(fluids: &str) -> JarMod {
+        jar(
+            "fabric-api-0.164.0+26.3.jar",
+            &[
+                ("fabric.mod.json", fmj("fabric-api", "Fabric API", "0.164.0+26.3", r#"{"fabricloader":">=0.16"}"#, &["META-INF/jars/fluids.jar", "META-INF/jars/keys.jar"])),
+                ("META-INF/jars/fluids.jar", crate::modmeta::testjar::fabric("fabric-rendering-fluids-v1", fluids, "{}")),
+                ("META-INF/jars/keys.jar", crate::modmeta::testjar::fabric("fabric-key-mapping-api-v1", "1.0.20", "{}")),
+            ],
+        )
+    }
+
+    fn sodium(fluids_range: &str) -> JarMod {
+        let deps = format!(r#"{{"minecraft":"26.3.x","fabric-rendering-fluids-v1":"{fluids_range}","fabric-block-getter-api-v2":"*"}}"#);
+        jar(
+            "sodium-fabric-0.9.3-beta.1+mc26.3.jar",
+            &[
+                ("fabric.mod.json", fmj("sodium", "Sodium", "0.9.3-beta.1+mc26.3", &deps, &["META-INF/jars/getter.jar"])),
+                ("META-INF/jars/getter.jar", crate::modmeta::testjar::fabric("fabric-block-getter-api-v2", "2.0.9", "{}")),
+            ],
+        )
+    }
+
+    /// Vitrail ships Fabric and NeoForge metadata in one jar.
+    fn vitrail() -> JarMod {
+        let toml = r#"
+modLoader="javafml"
+[[mods]]
+modId="vitrail"
+version="0.13.0-beta"
+[[dependencies.vitrail]]
+modId="neoforge"
+type="required"
+versionRange="[26.3.0.16-beta,26.4)"
+[[dependencies.vitrail]]
+modId="sodium"
+type="required"
+versionRange="[0.9,0.10)"
+"#;
+        jar(
+            "vitrail-0.13.0-beta+mc26.3.jar",
+            &[
+                ("fabric.mod.json", fmj("vitrail", "Vitrail", "0.13.0-beta", r#"{"minecraft":">=26.3 <26.4","sodium":"0.9.x","fabric-key-mapping-api-v1":"*"}"#, &[])),
+                ("META-INF/neoforge.mods.toml", toml.as_bytes().to_vec()),
+            ],
+        )
+    }
+
+    #[test]
+    fn multi_loader_jar_uses_only_the_instance_loader_metadata() {
+        let mods = vec![fabric_api("6.0.6"), sodium(">=2.0.0"), vitrail()];
+        assert!(analyze(&mods, &ContentIndex::default(), &ctx("fabric", "26.3")).is_empty());
+        // On NeoForge the Fabric-only requirement is ignored, and NeoForge's sodium requirement still applies.
+        let neo = analyze(&[vitrail()], &ContentIndex::default(), &Ctx { loader: "neoforge", mc_version: "26.3", loader_version: Some("26.3.0.20-beta") });
+        assert_eq!(keys(&neo), vec!["missing:sodium"]);
+    }
+
+    #[test]
+    fn loader_ids_are_never_missing_mods() {
+        let mods = vec![fabric("a.jar", "a", "1.0", vec![req("neoforge", Range::Any), req("forge", Range::Any), req("quilt_loader", Range::Any)])];
+        assert!(analyze(&mods, &ContentIndex::default(), &ctx("fabric", "26.3")).is_empty());
+    }
+
+    #[test]
+    fn nested_module_checked_against_its_own_version() {
+        let ok = vec![fabric_api("6.0.6"), sodium(">=2.0.0")];
+        assert!(analyze(&ok, &ContentIndex::default(), &ctx("fabric", "26.3")).is_empty());
+        // A module that really is too old is still reported, by its own name and version.
+        let old = vec![fabric_api("1.4.0"), sodium(">=2.0.0")];
+        let issues = analyze(&old, &ContentIndex::default(), &ctx("fabric", "26.3"));
+        assert_eq!(keys(&issues), vec!["depver:sodium-fabric-0.9.3-beta.1+mc26.3.jar:fabric-rendering-fluids-v1"]);
+        assert_eq!(issues[0].title, "Sodium needs a different fabric-rendering-fluids-v1 (from Fabric API)");
+        assert!(issues[0].detail.contains("1.4.0"), "{}", issues[0].detail);
+        assert_eq!(issues[0].fixes[0].fix, Fix::InstallMod { mod_id: "fabric-api".into(), project_id: None, source: None });
+    }
+
+    #[test]
+    fn module_missing_from_fabric_api_is_still_reported() {
+        let issues = analyze(&[sodium(">=2.0.0")], &ContentIndex::default(), &ctx("fabric", "26.3"));
+        assert_eq!(keys(&issues), vec!["missing:fabric-rendering-fluids-v1"]);
     }
 }

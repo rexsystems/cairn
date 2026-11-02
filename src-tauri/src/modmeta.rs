@@ -47,11 +47,34 @@ impl Range {
     }
 }
 
+/// The metadata file an entry came from. Multi-loader jars carry several, and each
+/// loader reads only its own.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    Fabric,
+    Quilt,
+    Forge,
+    NeoForge,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DepReq {
     pub id: String,
     pub range: Range,
     pub kind: DepKind,
+    /// None for entries not tied to one metadata file.
+    #[serde(default)]
+    pub source: Option<Source>,
+}
+
+/// A mod id this jar satisfies, with the version of the mod that declares it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Module {
+    pub id: String,
+    pub version: String,
+    #[serde(default)]
+    pub source: Option<Source>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -93,6 +116,9 @@ pub struct ModInfo {
     pub name: String,
     pub version: String,
     pub depends: Vec<DepReq>,
+    /// Every id in `provides` with its own version, nested jars included. Fabric API
+    /// modules carry their own versions, not the umbrella one.
+    pub modules: Vec<Module>,
     pub side: Side,
     pub formats: Formats,
     /// mods.toml jars that depend on `neoforge` rather than `forge`.
@@ -140,19 +166,25 @@ fn fabric_range(v: &Value) -> Range {
     }
 }
 
+fn add_module(info: &mut ModInfo, id: &str, version: &str, source: Source) {
+    info.provides.push(id.to_string());
+    info.modules.push(Module { id: id.to_string(), version: version.to_string(), source: Some(source) });
+}
+
 fn parse_fabric(v: &Value, info: &mut ModInfo) {
     let Some(id) = v["id"].as_str() else { return };
     info.formats.fabric = true;
     info.ids.push(id.to_string());
-    info.provides.push(id.to_string());
+    let version = v["version"].as_str().unwrap_or_default();
+    add_module(info, id, version, Source::Fabric);
     if info.name.is_empty() {
         info.name = v["name"].as_str().unwrap_or(id).to_string();
     }
     if info.version.is_empty() {
-        info.version = v["version"].as_str().unwrap_or_default().to_string();
+        info.version = version.to_string();
     }
-    if let Some(p) = v["provides"].as_array() {
-        info.provides.extend(p.iter().filter_map(|x| x.as_str().map(String::from)));
+    for p in v["provides"].as_array().into_iter().flatten().filter_map(|x| x.as_str()) {
+        add_module(info, p, version, Source::Fabric);
     }
     info.side = match v["environment"].as_str() {
         Some("client") => Side::Client,
@@ -162,7 +194,7 @@ fn parse_fabric(v: &Value, info: &mut ModInfo) {
     for (key, kind) in [("depends", DepKind::Required), ("breaks", DepKind::Breaks), ("conflicts", DepKind::Conflicts)] {
         if let Some(obj) = v[key].as_object() {
             for (dep, range) in obj {
-                info.depends.push(DepReq { id: dep.clone(), range: fabric_range(range), kind });
+                info.depends.push(DepReq { id: dep.clone(), range: fabric_range(range), kind, source: Some(Source::Fabric) });
             }
         }
     }
@@ -175,7 +207,7 @@ fn quilt_dep(d: &Value, kind: DepKind, out: &mut Vec<DepReq>) {
                 Some((id, r)) => (id, Range::Fabric(vec![r.to_string()])),
                 None => (s.as_str(), Range::Any),
             };
-            out.push(DepReq { id: id.split(':').next_back().unwrap_or(id).to_string(), range, kind });
+            out.push(DepReq { id: id.split(':').next_back().unwrap_or(id).to_string(), range, kind, source: Some(Source::Quilt) });
         }
         Value::Object(o) => {
             let Some(id) = o.get("id").and_then(|x| x.as_str()) else { return };
@@ -185,7 +217,7 @@ fn quilt_dep(d: &Value, kind: DepKind, out: &mut Vec<DepReq>) {
             }
             let kind = if o.get("optional").and_then(|x| x.as_bool()) == Some(true) { DepKind::Optional } else { kind };
             let range = o.get("versions").map(fabric_range).unwrap_or(Range::Any);
-            out.push(DepReq { id: id.split(':').next_back().unwrap_or(id).to_string(), range, kind });
+            out.push(DepReq { id: id.split(':').next_back().unwrap_or(id).to_string(), range, kind, source: Some(Source::Quilt) });
         }
         _ => {}
     }
@@ -196,19 +228,18 @@ fn parse_quilt(v: &Value, info: &mut ModInfo) {
     let Some(id) = ql["id"].as_str() else { return };
     info.formats.quilt = true;
     info.ids.push(id.to_string());
-    info.provides.push(id.to_string());
+    let version = ql["version"].as_str().unwrap_or_default();
+    add_module(info, id, version, Source::Quilt);
     if info.name.is_empty() {
         info.name = ql.pointer("/metadata/name").and_then(|x| x.as_str()).unwrap_or(id).to_string();
     }
     if info.version.is_empty() {
-        info.version = ql["version"].as_str().unwrap_or_default().to_string();
+        info.version = version.to_string();
     }
-    if let Some(p) = ql["provides"].as_array() {
-        for x in p {
-            let pid = x.as_str().or_else(|| x["id"].as_str());
-            if let Some(pid) = pid {
-                info.provides.push(pid.to_string());
-            }
+    for x in ql["provides"].as_array().into_iter().flatten() {
+        if let Some(pid) = x.as_str().or_else(|| x["id"].as_str()) {
+            let pv = x["version"].as_str().unwrap_or(version);
+            add_module(info, pid, pv, Source::Quilt);
         }
     }
     info.side = match v.pointer("/minecraft/environment").and_then(|x| x.as_str()) {
@@ -235,17 +266,19 @@ fn manifest_version(zip: &mut zip::ZipArchive<impl Read + std::io::Seek>) -> Opt
 
 fn parse_toml(text: &str, neoforge_file: bool, jar_version: Option<&str>, info: &mut ModInfo) {
     let Ok(doc) = text.parse::<toml::Table>() else { return };
+    let source = if neoforge_file { Source::NeoForge } else { Source::Forge };
     let mods = doc.get("mods").and_then(|m| m.as_array()).cloned().unwrap_or_default();
     for m in &mods {
         let Some(id) = m.get("modId").and_then(|x| x.as_str()) else { continue };
         info.ids.push(id.to_string());
-        info.provides.push(id.to_string());
+        let v = m.get("version").and_then(|x| x.as_str()).unwrap_or_default();
+        let v = if v.contains("${") { jar_version.unwrap_or_default() } else { v };
+        add_module(info, id, v, source);
         if info.name.is_empty() {
             info.name = m.get("displayName").and_then(|x| x.as_str()).unwrap_or(id).to_string();
         }
         if info.version.is_empty() {
-            let v = m.get("version").and_then(|x| x.as_str()).unwrap_or_default();
-            info.version = if v.contains("${") { jar_version.unwrap_or_default().to_string() } else { v.to_string() };
+            info.version = v.to_string();
         }
     }
     if let Some(deps) = doc.get("dependencies").and_then(|d| d.as_table()) {
@@ -277,7 +310,7 @@ fn parse_toml(text: &str, neoforge_file: bool, jar_version: Option<&str>, info: 
                         _ => {}
                     }
                 }
-                info.depends.push(DepReq { id: id.to_string(), range, kind });
+                info.depends.push(DepReq { id: id.to_string(), range, kind, source: Some(source) });
             }
         }
     }
@@ -286,10 +319,13 @@ fn parse_toml(text: &str, neoforge_file: bool, jar_version: Option<&str>, info: 
     }
 }
 
-fn nested_ids(bytes: Vec<u8>, depth: u8) -> Vec<String> {
-    let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else { return vec![] };
-    let info = read_zip(&mut zip, depth);
-    info.provides
+/// Adds a nested jar's ids under its own versions. Only the loader that reads the
+/// outer metadata loads the nested jar, so `source` is the outer one.
+fn add_nested(info: &mut ModInfo, bytes: Vec<u8>, depth: u8, source: Option<Source>) {
+    let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else { return };
+    let nested = read_zip(&mut zip, depth);
+    info.provides.extend(nested.provides);
+    info.modules.extend(nested.modules.into_iter().map(|m| Module { source, ..m }));
 }
 
 fn read_zip<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, depth: u8) -> ModInfo {
@@ -301,7 +337,7 @@ fn read_zip<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, depth: u8) ->
                 for j in v["jars"].as_array().cloned().unwrap_or_default() {
                     if let Some(path) = j["file"].as_str() {
                         if let Some(bytes) = read_entry(zip, path) {
-                            info.provides.extend(nested_ids(bytes, depth + 1));
+                            add_nested(&mut info, bytes, depth + 1, Some(Source::Fabric));
                         }
                     }
                 }
@@ -315,7 +351,7 @@ fn read_zip<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, depth: u8) ->
                 for j in v.pointer("/quilt_loader/jars").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
                     if let Some(path) = j.as_str() {
                         if let Some(bytes) = read_entry(zip, path) {
-                            info.provides.extend(nested_ids(bytes, depth + 1));
+                            add_nested(&mut info, bytes, depth + 1, Some(Source::Quilt));
                         }
                     }
                 }
@@ -341,9 +377,15 @@ fn read_zip<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, depth: u8) ->
             .filter_map(|i| zip.by_index(i).ok().map(|e| e.name().to_string()))
             .filter(|n| n.starts_with("META-INF/jarjar/") && n.ends_with(".jar"))
             .collect();
+        // Forge and NeoForge both read jarjar, so tie it to one only when the jar has one.
+        let source = match (info.formats.mods_toml, info.formats.neoforge_toml) {
+            (true, false) => Some(Source::Forge),
+            (false, true) => Some(Source::NeoForge),
+            _ => None,
+        };
         for path in nested {
             if let Some(bytes) = read_entry(zip, &path) {
-                info.provides.extend(nested_ids(bytes, depth + 1));
+                add_nested(&mut info, bytes, depth + 1, source);
             }
         }
     }
@@ -374,7 +416,8 @@ struct Cache {
     files: HashMap<String, CacheEntry>,
 }
 
-const CACHE_VERSION: u32 = 1;
+// 2: per-loader sources and nested module versions.
+const CACHE_VERSION: u32 = 2;
 
 /// A mod jar in the instance with its metadata (None when the jar has no mod metadata).
 #[derive(Serialize, Clone, Debug)]
@@ -485,6 +528,25 @@ mod tests {
         assert_eq!(mc.range.matches("1.20.1"), Some(true));
         assert_eq!(mc.range.matches("1.20.4"), Some(false));
         assert!(info.depends.iter().any(|d| d.id == "optifabric" && d.kind == DepKind::Breaks));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn sources_and_nested_module_versions() {
+        let d = tmp("multi");
+        let fmj = r#"{"schemaVersion":1,"id":"vitrail","version":"0.13.0","depends":{"sodium":"0.9.x"},"jars":[{"file":"META-INF/jars/fluids.jar"}]}"#;
+        let toml = "[[mods]]\nmodId=\"vitrail\"\nversion=\"0.13.0\"\n[[dependencies.vitrail]]\nmodId=\"neoforge\"\ntype=\"required\"\n";
+        let nested = fabric("fabric-rendering-fluids-v1", "6.0.6", "{}");
+        write(
+            &d.join("v.jar"),
+            &[("fabric.mod.json", fmj.as_bytes().to_vec()), ("META-INF/neoforge.mods.toml", toml.as_bytes().to_vec()), ("META-INF/jars/fluids.jar", nested)],
+        );
+        let info = read_jar(&d.join("v.jar")).unwrap();
+        let neo = info.depends.iter().find(|d| d.id == "neoforge").unwrap();
+        assert_eq!(neo.source, Some(Source::NeoForge));
+        assert_eq!(info.depends.iter().find(|d| d.id == "sodium").unwrap().source, Some(Source::Fabric));
+        let fluids = info.modules.iter().find(|m| m.id == "fabric-rendering-fluids-v1").unwrap();
+        assert_eq!((fluids.version.as_str(), fluids.source), ("6.0.6", Some(Source::Fabric)));
         std::fs::remove_dir_all(&d).unwrap();
     }
 
