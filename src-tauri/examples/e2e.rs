@@ -22,15 +22,18 @@ async fn main() -> anyhow::Result<()> {
         mc = m.latest["release"].as_str().unwrap().to_string();
     }
     let loader = args.get(1).cloned().unwrap_or_else(|| "vanilla".into());
-    let name = format!("E2E {mc} {loader}");
+    let player = std::env::var("E2E_PLAYER").unwrap_or_else(|_| "CairnTest".into());
+    let name = format!("E2E {mc} {loader} {player}");
     let existing = match std::env::var("E2E_INSTANCE") {
         Ok(id) => Some(instance::get(&paths, &id)?),
         Err(_) => instance::list(&paths).into_iter().find(|i| i.name == name),
     };
     let mut inst = match existing {
         Some(i) => i,
-        None => instance::create(&paths, Instance { name: name.clone(), mc_version: mc.clone(), loader: loader.clone(), memory_mb: Some(2048), ..Default::default() })?,
+        None => instance::create(&paths, Instance { name: name.clone(), mc_version: mc.clone(), loader: loader.clone(), memory_mb: Some(2048), use_cairn: std::env::var("E2E_CAIRN").as_deref() == Ok("1"), ..Default::default() })?,
     };
+    if let Ok(value) = std::env::var("E2E_CAIRN") { inst.use_cairn = value == "1"; }
+    if let Ok(java) = std::env::var("E2E_JAVA") { inst.java_path = Some(java); }
     eprintln!("instance {} at {}", inst.id, inst.dir(&paths).display());
 
     for pid in args.iter().skip(2) {
@@ -44,19 +47,26 @@ async fn main() -> anyhow::Result<()> {
     let t0 = Instant::now();
     let task = Task::headless(format!("prepare {name}"));
     let (java, vid, installed) = game::prepare(&paths, &settings, &mut inst, &task).await?;
+    cairn_lib::cairn_client::sync(&inst.dir(&paths), &inst)?;
+    if std::env::var("E2E_FRIENDS").as_deref() == Ok("1") {
+        std::fs::create_dir_all(inst.dir(&paths).join("config"))?;
+        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), "menu.page=friends\n")?;
+        std::fs::write(inst.dir(&paths).join("options.txt"), "guiScale:2\nmaxFps:30\nrenderDistance:3\nsimulationDistance:3\npauseOnLostFocus:false\n")?;
+    }
     eprintln!("prepared {vid} with {java} in {:?}", t0.elapsed());
 
-    let auth = launch::LaunchAuth { name: "CairnTest".into(), uuid: launch::offline_uuid("CairnTest").replace('-', ""), access_token: "0".into(), user_type: "legacy".into(), xuid: "0".into() };
+    let auth = launch::LaunchAuth { name: player.clone(), uuid: launch::offline_uuid(&player).replace('-', ""), access_token: "0".into(), user_type: "legacy".into(), xuid: "0".into() };
+    let extra_jvm_args = std::env::var("E2E_COSMETICS_URL").ok().map(|url| vec![format!("-Dcairn.cosmetics.url={url}")]).unwrap_or_default();
     let opts = launch::LaunchOptions {
         memory_mb: 2048,
-        extra_jvm_args: vec![],
+        extra_jvm_args,
         width: Some(1280),
         height: Some(720),
         game_dir: inst.dir(&paths),
         natives_dir: installed.natives_dir.clone(),
         jar_id: installed.jar_id.clone(),
         quick_play_world: None,
-        quick_play_server: None,
+        quick_play_server: std::env::var("E2E_SERVER").ok().filter(|s| !s.is_empty()),
     };
     let a = launch::build_args(&paths, &installed.json, &auth, &opts);
     let mut child = tokio::process::Command::new(&java)

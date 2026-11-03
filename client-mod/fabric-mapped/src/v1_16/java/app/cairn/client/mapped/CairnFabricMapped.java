@@ -92,6 +92,10 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (mc.level != null && ticks % 20 == 0) for (net.minecraft.client.player.AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
         client.friends.activity(GAME_VERSION, mc.level != null, mc.level == null || mc.getCurrentServer() == null ? null : mc.getCurrentServer().ip);
+        client.friends.joinHandler(mc.level == null ? address -> {
+            if (mc.level == null) mc.setScreen(new net.minecraft.client.gui.screens.ConnectScreen(new net.minecraft.client.gui.screens.TitleScreen(), mc,
+                new net.minecraft.client.multiplayer.ServerData(address, address, false)));
+        } : null);
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.screen == null) {
@@ -180,12 +184,12 @@ public final class CairnFabricMapped implements ClientModInitializer {
         @Override public boolean mouseScrolled(double x, double y, double amount) { client.wheel(amount < 0 ? 1 : -1); return true; }
         @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
             if (client.binding()) { client.bind(key == GLFW.GLFW_KEY_ESCAPE ? -1 : key, InputConstants.Type.KEYSYM.getOrCreate(key).getDisplayName().getString()); return true; }
-            if (key == GLFW.GLFW_KEY_ESCAPE || key == client.keyCode(CairnClient.Bind.MENU)) { if (!client.escape()) onClose(); return true; }
+            if (key == GLFW.GLFW_KEY_ESCAPE || client.menuCloseKey(key, GLFW.GLFW_KEY_TAB)) { if (!client.escape()) onClose(); return true; }
+            if (key == GLFW.GLFW_KEY_TAB) { client.tab(); return true; }
             if (client.typing()) {
                 if (key == GLFW.GLFW_KEY_BACKSPACE) client.backspace(); else if (key == GLFW.GLFW_KEY_ENTER) client.key(0, true);
                 return true;
             }
-            if (key == GLFW.GLFW_KEY_TAB) { client.tab(); return true; }
             if (client.editing()) {
                 if (key == GLFW.GLFW_KEY_G) client.snap();
                 else if (key == GLFW.GLFW_KEY_H) client.toggleEditorTools();

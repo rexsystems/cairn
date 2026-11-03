@@ -86,6 +86,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (mc.level != null && ticks % 20 == 0) for (net.minecraft.client.player.AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
         client.friends.activity(GAME_VERSION, mc.level != null, mc.level == null || mc.getCurrentServer() == null ? null : mc.getCurrentServer().ip);
+        client.friends.joinHandler(mc.level == null ? FriendConnection::join : null);
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.screen == null) {
@@ -166,12 +167,12 @@ public final class CairnFabricMapped implements ClientModInitializer {
         public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { client.wheel(vertical < 0 ? 1 : -1); return true; }
         @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
             if (client.binding()) { client.bind(key == InputConstants.KEY_ESCAPE ? -1 : key, InputConstants.Type.KEYSYM.getOrCreate(key).getDisplayName().getString()); return true; }
-            if (key == InputConstants.KEY_ESCAPE || key == client.keyCode(CairnClient.Bind.MENU)) { if (!client.escape()) onClose(); return true; }
+            if (key == InputConstants.KEY_ESCAPE || client.menuCloseKey(key, InputConstants.KEY_TAB)) { if (!client.escape()) onClose(); return true; }
+            if (key == InputConstants.KEY_TAB) { client.tab(); return true; }
             if (client.typing()) {
                 if (key == InputConstants.KEY_BACKSPACE) client.backspace(); else if (key == InputConstants.KEY_RETURN) client.key(0, true);
                 return true;
             }
-            if (key == InputConstants.KEY_TAB) { client.tab(); return true; }
             if (client.editing()) {
                 if (key == InputConstants.KEY_G) client.snap();
                 else if (key == InputConstants.KEY_H) client.toggleEditorTools();

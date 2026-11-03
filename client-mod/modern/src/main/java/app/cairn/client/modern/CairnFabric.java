@@ -117,8 +117,12 @@ public final class CairnFabric implements ClientModInitializer {
         return client != null && client.enabled(Module.ZOOM) && mc.player != null && mc.gui.screen() == null && InputConstants.isKeyDown(client.keyCode(CairnClient.Bind.ZOOM));
     }
     private static final String GAME_VERSION = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("minecraft").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
-    private static final java.util.function.Consumer<String> JOIN = address -> net.minecraft.client.gui.screens.ConnectScreen.startConnecting(new net.minecraft.client.gui.screens.TitleScreen(), Minecraft.getInstance(),
-        net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), new net.minecraft.client.multiplayer.ServerData(address, address, net.minecraft.client.multiplayer.ServerData.Type.OTHER), false, null);
+    private static final java.util.function.Consumer<String> JOIN = address -> {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) return;
+        net.minecraft.client.gui.screens.ConnectScreen.startConnecting(new net.minecraft.client.gui.screens.TitleScreen(), mc,
+            net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), new net.minecraft.client.multiplayer.ServerData(address, address, net.minecraft.client.multiplayer.ServerData.Type.OTHER), false, null);
+    };
     public static void tick() {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
@@ -172,7 +176,7 @@ public final class CairnFabric implements ClientModInitializer {
         }
     }
     public static void click(int button) {
-        if (client != null && Minecraft.getInstance().gui.screen() == null && (button == 0 || button == 1)) client.click(button == 1);
+        if (client != null && Minecraft.getInstance().gui.screen() == null && (button == InputConstants.MOUSE_BUTTON_LEFT || button == InputConstants.MOUSE_BUTTON_RIGHT)) client.click(button == InputConstants.MOUSE_BUTTON_RIGHT);
     }
     private static CairnClient.Canvas canvas(GuiGraphicsExtractor graphics) {
         return new CairnClient.Canvas() {
@@ -196,21 +200,24 @@ public final class CairnFabric implements ClientModInitializer {
     }
     private static final class Menu extends Screen {
         Menu() { super(Component.literal("Cairn Client")); }
-        @Override public void extractRenderState(GuiGraphicsExtractor graphics, int x, int y, float delta) { client.renderMenu(canvas(graphics), width, height, x, y); }
-        @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) { if (event.button() == 0) { client.mouseDown(width, height, (int) event.x(), (int) event.y()); return true; } return false; }
-        @Override public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) { if (event.button() == 0) { client.drag(width, height, (int) event.x(), (int) event.y()); return true; } return false; }
+        @Override public void extractRenderState(GuiGraphicsExtractor graphics, int x, int y, float delta) {
+            client.renderMenu(canvas(graphics), width, height, x, y);
+            minecraft.textInputManager().onTextInputFocusChange(this, client.typing());
+        }
+        @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) { if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) { client.mouseDown(width, height, (int) event.x(), (int) event.y()); return true; } return false; }
+        @Override public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) { if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) { client.drag(width, height, (int) event.x(), (int) event.y()); return true; } return false; }
         @Override public boolean mouseReleased(MouseButtonEvent event) { client.mouseUp(); return true; }
         @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { client.wheel(vertical < 0 ? 1 : -1); return true; }
         @Override public boolean keyPressed(KeyEvent event) {
             int key = event.key();
             if (client.binding()) { client.bind(key == InputConstants.KEY_ESCAPE ? -1 : key, InputConstants.getKey(event).getDisplayName().getString()); return true; }
-            if (key == InputConstants.KEY_ESCAPE || key == client.keyCode(CairnClient.Bind.MENU)) { if (!client.escape()) onClose(); return true; }
+            if (key == InputConstants.KEY_ESCAPE || client.menuCloseKey(key, InputConstants.KEY_TAB)) { if (!client.escape()) onClose(); return true; }
+            if (key == InputConstants.KEY_TAB) { client.tab(); return true; }
             if (client.typing()) {
                 if (key == InputConstants.KEY_BACKSPACE) client.backspace();
                 else if (key == InputConstants.KEY_RETURN) client.key(0, true);
                 return true;
             }
-            if (key == InputConstants.KEY_TAB) { client.tab(); return true; }
             if (client.editing()) {
                 if (key == InputConstants.KEY_G) client.snap();
                 else if (key == InputConstants.KEY_H) client.toggleEditorTools();
@@ -235,7 +242,7 @@ public final class CairnFabric implements ClientModInitializer {
             return false;
         }
         @Override public void onClose() { minecraft.gui.setScreen(null); }
-        @Override public void removed() { client.leaveEditor(); }
+        @Override public void removed() { minecraft.textInputManager().stopTextInput(this); client.leaveEditor(); }
         @Override public boolean isPauseScreen() { return false; }
     }
 }

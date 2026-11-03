@@ -221,6 +221,7 @@ public final class CairnClient {
         return cinematicActive || current;
     }
     public boolean menuKey(int code) { return keysManaged && listening == null && code == keyCode(Bind.MENU); }
+    public boolean menuCloseKey(int code, int tabCode) { return code != tabCode && menuKey(code); }
     /** Adapters that read raw key codes call this once; Forge keeps vanilla's own Controls screen instead. */
     public void manageKeys(int menuCode, String menuName, int zoomCode, String zoomName) {
         keysManaged = true;

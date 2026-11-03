@@ -55,6 +55,10 @@ public final class CairnForge {
         client.cosmetics.account(mc.getSession().getUsername(), mc.getSession().getPlayerID(), mc.getSession().getToken());
         client.cosmetics.tick();
         client.friends.activity(net.minecraftforge.fml.common.Loader.MC_VERSION, mc.theWorld != null, mc.theWorld == null || mc.getCurrentServerData() == null ? null : mc.getCurrentServerData().serverIP);
+        client.friends.joinHandler(mc.theWorld == null ? address -> {
+            if (mc.theWorld != null) return;
+            mc.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(new net.minecraft.client.gui.GuiMainMenu(), mc, FriendConnection.server(address)));
+        } : null);
         if (mc.thePlayer == null) return;
         if (mc.theWorld != null && mc.getNetHandler() != null) for (Object value : mc.theWorld.playerEntities) capes((net.minecraft.entity.player.EntityPlayer) value);
         mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);
@@ -215,12 +219,12 @@ public final class CairnForge {
         @Override protected void keyTyped(char character, int key) throws IOException {
             if (key == Keyboard.KEY_ESCAPE || key == Keyboard.KEY_RSHIFT) {
                 if (!client.escape()) mc.displayGuiScreen(null);
-            } else if (client.typing()) {
+            } else if (key == Keyboard.KEY_TAB) client.tab();
+            else if (client.typing()) {
                 if (key == Keyboard.KEY_BACK) client.backspace();
                 else if (key == Keyboard.KEY_RETURN) client.key(0, true);
                 else client.type(character);
-            } else if (key == Keyboard.KEY_TAB) client.tab();
-            else if (client.editing()) {
+            } else if (client.editing()) {
                 if (key == Keyboard.KEY_G) client.snap();
                 else if (key == Keyboard.KEY_H) client.toggleEditorTools();
                 else if (key == Keyboard.KEY_RETURN) client.editorSettings();

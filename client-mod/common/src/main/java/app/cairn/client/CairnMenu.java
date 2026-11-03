@@ -142,22 +142,28 @@ final class CairnMenu {
         int enabled = 0; for (Module module : MODULES) if (client.enabled(module)) enabled++;
         canvas.text(MODULES.length + " modules / " + enabled + " enabled", x + 14, top + 25, MUTED);
         button(canvas, "Edit HUD", x + w - 94, top + 7, 80, 26, 0xff3c4835, ACCENT, () -> client.enterEditor());
-        if (client.keysManaged() && w >= 400) bindButton(canvas, Bind.MENU, x + w - 248, top + 7, 150, 26);
-        boolean headerCosmetics = w >= 480 || w < 400 && w >= 330;
-        int cosmeticsX = client.keysManaged() && w >= 400 ? x + w - 334 : x + w - 180;
+        if (client.keysManaged() && w >= 620) bindButton(canvas, Bind.MENU, x + w - 248, top + 7, 150, 26);
+        boolean headerCosmetics = w >= 392;
+        int cosmeticsX = client.keysManaged() && w >= 620 ? x + w - 334 : x + w - 180;
         if (headerCosmetics) button(canvas, "Cosmetics", cosmeticsX, top + 7, 80, 26, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) page("modules"); else openCosmetics(); });
         int friendsX = cosmeticsX - 72;
         boolean headerFriends = headerCosmetics && friendsX >= x + 140;
         if (headerFriends) button(canvas, friendsLabel(), friendsX, top + 7, 66, 26, friends ? 0xff3c4835 : 0xff303a2d, friends ? ACCENT : TEXT, () -> { if (friends) page("modules"); else openFriends(); });
-        if (cosmetics && colorSetting == null) { cosmeticsPage(canvas, x + 12, top + 47, w - 24, bottom - top - 59); return; }
-        if (friends && colorSetting == null) { friendsPage(canvas, x + 12, top + 47, w - 24, bottom - top - 59); return; }
-        if (colorSetting != null) { colorPicker(canvas, x + 12, top + 48, w - 24, bottom - top - 60); return; }
+        int navigationHeight = headerFriends ? 0 : 30;
+        if (navigationHeight > 0) {
+            button(canvas, friendsLabel(), x + 12, top + 46, 80, 24, friends ? 0xff3c4835 : 0xff303a2d, friends ? ACCENT : TEXT, () -> { if (friends) page("modules"); else openFriends(); });
+            button(canvas, "Cosmetics", x + 98, top + 46, 80, 24, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) page("modules"); else openCosmetics(); });
+        }
+        int pageTop = top + 47 + navigationHeight;
+        if (cosmetics && colorSetting == null) { cosmeticsPage(canvas, x + 12, pageTop, w - 24, bottom - pageTop - 12); return; }
+        if (friends && colorSetting == null) { friendsPage(canvas, x + 12, pageTop, w - 24, bottom - pageTop - 12); return; }
+        if (colorSetting != null) { colorPicker(canvas, x + 12, pageTop + 1, w - 24, bottom - pageTop - 13); return; }
         if (details) {
-            button(canvas, "Back to modules", x + 12, top + 47, 116, 22, 0xff303a2d, ACCENT, () -> { details = false; settingsScroll = 0; });
-            settings(canvas, x + 12, top + 75, w - 24, bottom - top - 87);
+            button(canvas, "Back to modules", x + 12, pageTop, 116, 22, 0xff303a2d, ACCENT, () -> { details = false; settingsScroll = 0; });
+            settings(canvas, x + 12, pageTop + 28, w - 24, bottom - pageTop - 40);
             return;
         }
-        int searchY = top + 46;
+        int searchY = top + 46 + navigationHeight;
         button(canvas, (searchFocus ? "> " : "Search: ") + (query.isEmpty() ? "Find a module..." : query) + (searchFocus ? "_" : ""), x + 12, searchY, w - 74, 25, searchFocus ? 0xff3c4835 : 0xff141b16, TEXT, () -> focusSearch());
         button(canvas, "Clear", x + w - 58, searchY, 46, 25, 0xff2c342b, MUTED, () -> { query = ""; listScroll = 0; });
         int tabsY = searchY + 31, tabWidth = (w - 24) / CATEGORIES.length;
@@ -183,11 +189,6 @@ final class CairnMenu {
             final int preset = i;
             button(canvas, names[i], x + 54 + i * (presetW + 3), footerY, presetW, 22, 0xff303a2d, TEXT, () -> client.preset(preset));
         }
-        int presetsEnd = x + 54 + 3 * (presetW + 3);
-        int footerButton = w < 330 ? 70 : 82;
-        if (!headerCosmetics && x + w - 12 - footerButton >= presetsEnd) button(canvas, "Cosmetics", x + w - 12 - footerButton, footerY, footerButton, 22, 0xff3c4835, ACCENT, () -> openCosmetics());
-        int friendsFooterX = x + w - 12 - footerButton - (headerCosmetics ? 0 : footerButton + 4);
-        if (!headerFriends && friendsFooterX >= presetsEnd) button(canvas, friendsLabel(), friendsFooterX, footerY, footerButton, 22, 0xff3c4835, ACCENT, () -> openFriends());
         if (client.saveError() != null) canvas.text(fit(canvas, "Could not save settings. Check the log.", w - 24), x + 12, contentBottom - 10, 0xffffb9a4);
     }
     private String friendsLabel() {

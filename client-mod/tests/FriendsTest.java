@@ -14,6 +14,7 @@ public final class FriendsTest {
     private static final class Canvas implements CairnClient.Canvas {
         final int width, height;
         final List<String> labels = new ArrayList<String>();
+        final Map<String, int[]> positions = new HashMap<String, int[]>();
         Canvas(int width, int height) { this.width = width; this.height = height; }
         public void rect(int x, int y, int w, int h, int color) { check(x >= 0 && y >= 0 && x + w <= width && y + h <= height, "Rectangle outside viewport: " + x + "," + y + "," + w + "," + h + " in " + width + "x" + height); }
         public int textWidth(String text) { return text.length() * 6; }
@@ -21,6 +22,7 @@ public final class FriendsTest {
         public void textScaled(String text, int x, int y, int color, float scale, boolean shadow) {
             check(x >= 0 && y >= 0 && x + Math.round(text.length() * 6 * scale) <= width && y + 9 <= height, "Text outside viewport: " + text + " at " + x + "," + y + " in " + width + "x" + height);
             labels.add(text);
+            positions.put(text, new int[] { x, y });
         }
         public void image(String texture, int x, int y, int w, int h, float u0, float v0, float u1, float v1) { check(x >= 0 && y >= 0 && x + w <= width && y + h <= height, "Image outside viewport"); }
     }
@@ -65,6 +67,33 @@ public final class FriendsTest {
         check(friends.canJoin(list.get(1)) && !friends.canJoin(list.get(0)), "Join needs a visible server");
         friends.join(list.get(1));
         check(joined.equals(Collections.singletonList("mc.example.net")), "Join connects to the friend's server");
+        friends.join(list.get(0));
+        check(joined.size() == 1, "A hidden address cannot be joined");
+        friends.joinHandler(null);
+        friends.join(list.get(1));
+        check(joined.size() == 1, "Entering a world disables joining even from an existing friend row");
+
+        client.manageKeys(258, "Tab", 67, "C");
+        check(client.menuKey(258) && !client.menuCloseKey(258, 258), "Tab can open the menu without closing it during navigation");
+        client.focusSearch();
+        check(client.typing(), "Search takes text focus");
+        client.tab();
+        check(!client.typing(), "Tab leaves a text field and advances to controls");
+        client.manageKeys(344, "Right Shift", 67, "C");
+        check(client.menuCloseKey(344, 258), "Other menu keys still close the menu");
+
+        for (int[] size : new int[][] { { 320, 240 }, { 427, 240 }, { 480, 270 }, { 570, 320 }, { 640, 360 }, { 683, 384 }, { 800, 450 }, { 854, 480 }, { 960, 540 }, { 1280, 720 }, { 1600, 900 }, { 1920, 1080 } }) {
+            CairnClient navigation = new CairnClient(Files.createTempDirectory(parent, "navigation-"));
+            navigation.manageKeys(344, "Right Shift", 67, "C");
+            Canvas canvas = new Canvas(size[0], size[1]);
+            navigation.renderMenu(canvas, size[0], size[1], 0, 0);
+            check(canvas.positions.containsKey("Friends") && canvas.positions.containsKey("Cosmetics"), "Both pages are reachable from modules at " + size[0] + "x" + size[1]);
+            int[] at = canvas.positions.get("Friends");
+            navigation.mouseDown(size[0], size[1], at[0], at[1]);
+            Canvas opened = new Canvas(size[0], size[1]);
+            navigation.renderMenu(opened, size[0], size[1], 0, 0);
+            check(opened.labels.contains("Back to modules") && opened.labels.stream().anyMatch(l -> l.startsWith("Add a friend")), "Friends button opens the page");
+        }
 
         String events = "[{\"type\":\"online\",\"from\":{\"name\":\"Bob\"}},{\"type\":\"server\",\"from\":{\"name\":\"Bob\"},\"server\":\"mc.example.net\"},"
             + "{\"type\":\"request\",\"from\":{\"name\":\"Finn\"}},{\"type\":\"accepted\",\"from\":{\"name\":\"Gus\"}},{\"type\":\"server\",\"from\":{\"name\":\"X\"},\"server\":\"bad host\"},{\"type\":\"spam\"}]";

@@ -12,6 +12,7 @@ base { archivesName = "cairn-client-forge-$targetMinecraft" }
 java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 tasks.withType(JavaCompile).configureEach { options.release = 8 }
 sourceSets.main.java.srcDir('../common/src/main/java')
+sourceSets.main.java.srcDir("src/$targetMinecraft/java")
 sourceSets.main.resources.srcDir('../common/src/main/resources')
 unimined.minecraft {
     version targetMinecraft
