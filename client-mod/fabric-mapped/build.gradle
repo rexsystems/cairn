@@ -29,7 +29,9 @@ unimined.minecraft {
     fabric { loader '0.20.1' }
 }
 processResources {
-    def props = [minecraftVersion: targetMinecraft, loaderVersion: target.loader, javaVersion: String.valueOf(target.java), mixinLevel: target.java == 8 ? 'JAVA_8' : 'JAVA_17']
+    def props = [minecraftVersion: targetMinecraft, loaderVersion: target.loader, javaVersion: String.valueOf(target.java), mixinLevel: target.java == 8 ? 'JAVA_8' : 'JAVA_17',
+                 // 1.21.9+ renders capes from AvatarRenderState, so it has no AbstractClientPlayer cape mixin.
+                 cosmeticsMixins: target.family == 'v1_21_9' ? '"CosmeticsMixin"' : '"CosmeticsMixin","CapeMixin"']
     inputs.properties props
     filesMatching(['fabric.mod.json', '*.mixins.json']) { expand props }
 }

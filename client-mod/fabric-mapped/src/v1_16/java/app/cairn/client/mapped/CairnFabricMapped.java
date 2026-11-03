@@ -22,6 +22,35 @@ public final class CairnFabricMapped implements ClientModInitializer {
     private static CairnClient client;
     private static boolean sprintWasDown, sprint;
     private static int ticks;
+    private static final java.util.Map<String, net.minecraft.resources.ResourceLocation> TEXTURES = new java.util.HashMap<String, net.minecraft.resources.ResourceLocation>();
+    /** Uploads cosmetics PNGs lazily on the render thread; a broken image is remembered so it isn't decoded every frame. */
+    private static net.minecraft.resources.ResourceLocation texture(String key) {
+        if (client == null || key == null) return null;
+        if (TEXTURES.containsKey(key)) return TEXTURES.get(key);
+        byte[] png = client.cosmetics.texture(key);
+        if (png == null) return null;
+        net.minecraft.resources.ResourceLocation id = net.minecraft.resources.ResourceLocation.tryParse("cairn_client:cosmetics/" + key);
+        try {
+            com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read(new java.io.ByteArrayInputStream(png));
+            Minecraft.getInstance().getTextureManager().register(id, new net.minecraft.client.renderer.texture.DynamicTexture(image));
+        } catch (java.io.IOException | RuntimeException e) {
+            System.err.println("[Cairn Client] Could not upload " + key + ": " + e);
+            id = null;
+        }
+        TEXTURES.put(key, id);
+        return id;
+    }
+    private static app.cairn.client.Cosmetics.Look look(net.minecraft.world.entity.Entity entity) {
+        return client == null || !(entity instanceof net.minecraft.client.player.AbstractClientPlayer) ? null : client.cosmetics.look(entity.getUUID().toString());
+    }
+    public static net.minecraft.resources.ResourceLocation cape(net.minecraft.world.entity.Entity entity) {
+        app.cairn.client.Cosmetics.Look look = look(entity);
+        return look == null ? null : texture(client.cosmetics.capeTexture(look));
+    }
+    public static net.minecraft.resources.ResourceLocation badge(net.minecraft.world.entity.Entity entity) {
+        app.cairn.client.Cosmetics.Look look = look(entity);
+        return look == null ? null : texture(client.cosmetics.badgeTexture(look));
+    }
     private static final java.util.Map<String, Component> TEXT_CACHE = new java.util.LinkedHashMap<String, Component>(128, .75f, true) {
         @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, Component> entry) { return size() > 256; }
     };
@@ -58,6 +87,9 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
         mc.options.smoothCamera = client.smoothCamera(zooming(), mc.options.smoothCamera);
+        client.cosmetics.account(mc.getUser().getName(), mc.getUser().getUuid(), mc.getUser().getAccessToken());
+        if (mc.level != null && ticks % 20 == 0) for (net.minecraft.client.player.AbstractClientPlayer player : mc.level.players()) look(player);
+        client.cosmetics.tick();
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.screen == null) {
@@ -119,6 +151,15 @@ public final class CairnFabricMapped implements ClientModInitializer {
                 pose.popPose();
             }
             public int textWidth(String value) { return Minecraft.getInstance().font.width(CairnFabricMapped.text(value)); }
+            public void image(String key, int x, int y, int width, int height, float u0, float v0, float u1, float v1) {
+                net.minecraft.resources.ResourceLocation id = texture(key);
+                // This blit takes whole texels, so normalized UVs become a virtual texture size.
+                int textureWidth = Math.round(width / (u1 - u0)), textureHeight = Math.round(height / (v1 - v0));
+                if (id == null) return;
+                Minecraft.getInstance().getTextureManager().bind(id);
+                com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+                GuiComponent.blit(pose, x, y, width, height, u0 * textureWidth, v0 * textureHeight, width, height, textureWidth, textureHeight);
+            }
         };
     }
     public static void hud(PoseStack graphics) {
