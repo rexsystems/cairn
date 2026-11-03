@@ -1,0 +1,32 @@
+{
+  "hudIcons": {
+    "26.3": "visually verified with four equipped diamond pieces and Speed/Haste",
+    "1.8.9": "visually verified with four equipped diamond pieces and Speed/Haste"
+  },
+  "nativeCosmeticSelection": {
+    "26.3": {
+      "cape": "ember",
+      "badge": "moss",
+      "sqlite": "verified"
+    },
+    "1.8.9": {
+      "cape": "ember",
+      "badge": "moss",
+      "sqlite": "verified",
+      "thirdPersonCape": "visually verified"
+    }
+  },
+  "nativeFpsSettings": {
+    "version": "26.3",
+    "textColor": "AADDFF",
+    "backgroundOpacity": 50,
+    "savedConfig": "verified"
+  },
+  "localProductionServer": {
+    "bind": "127.0.0.1:8787",
+    "insecureAuth": false,
+    "health": "ok",
+    "offlineLoginHttpStatus": 401,
+    "realPremiumLogin": "not performed"
+  }
+}

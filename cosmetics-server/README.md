@@ -130,16 +130,22 @@ Without Docker, run `cargo build --release`, then start `target/release/cairn-co
 
 ### First admin and staff roles
 
-Roles are `player`, `staff`, `admin` and `banned`. `staff` and `admin` unlock the staff cape and the gold badge; in-game, staff are told apart only by that badge colour next to their vanilla name. Grant them with the CLI inside the container. Roles can be set before the player has ever signed in.
+Roles are `player`, `staff`, `admin` and `banned`. `staff` and `admin` unlock the staff cape and the gold badge; in-game, staff are told apart only by that badge colour next to their vanilla name. Only the administrator CLI or admin-token API grants roles. Players choose their equipped cosmetics in Minecraft; the launcher only previews the catalog and uploads custom capes.
+
+Grant by Minecraft name after that account signs in through Mojang at least once. Names are case-insensitive and resolve to a verified UUID. Unknown, offline/dev and ambiguous names are refused. Roles follow the UUID if the account changes its name. UUID grants are still available before first login, but staff cosmetics remain locked until Mojang verifies that UUID. Existing databases require a fresh verified login before their old privileged roles become effective. Development authentication never unlocks staff cosmetics.
 
 ```sh
 docker compose exec cosmetics cairn-cosmetics-server role <uuid> admin
 docker compose exec cosmetics cairn-cosmetics-server role <uuid> staff
+docker compose exec cosmetics cairn-cosmetics-server role <verified-name> staff
 ```
 
 You can also use the HTTP admin API:
 
 ```sh
+curl -X PUT -H "Authorization: Bearer $COSMETICS_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"role":"staff"}' https://cosmetics.example.com/v1/admin/players/<verified-name>/role
+
 curl -X PUT -H "Authorization: Bearer $COSMETICS_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"role":"staff"}' https://cosmetics.example.com/v1/admin/users/<uuid>/role
 ```
@@ -188,6 +194,7 @@ If no URL is set, or the server is down, everything else keeps working and cosme
 | `GET /v1/players?uuids=a,b,…` | – | Up to 100 UUIDs; only Cairn users are returned. Cached 60 s |
 | `GET /v1/stats` | – | `{online, peak, peakAt, total}`. Cached 30 s |
 | `GET /v1/catalog` | – | Built-in capes and badges |
+| `PUT /v1/admin/players/<name>/role` | admin token | Grant/revoke a role by verified Minecraft name |
 | `GET /v1/capes/<hash>.png` | – | Approved custom capes only |
 
 ## Development

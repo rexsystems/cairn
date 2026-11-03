@@ -209,6 +209,9 @@ public final class ClientInteractionTest {
         client.setting(Module.FPS, Setting.BACKGROUND, 0); preview.colors.clear();
         client.renderPreview(preview, Module.FPS, 10, 10, 160, 100);
         check(preview.colors.isEmpty(), "Preview reacts immediately to background being disabled");
+        client.select(Module.FPS); client.editorSettings(); preview.render(client); preview.colors.clear(); preview.click(client, "Change");
+        check(preview.colors.contains(0xff82c8d8), "Color presets show their actual swatch color");
+        client.escape();
         client.rows(Module.ARMOR, Arrays.asList(new CairnClient.HudRow(new Object(), "363"), new CairnClient.HudRow(new Object(), "528")));
         client.renderPreview(preview, Module.ARMOR, 10, 10, 160, 100);
         check(preview.icons == 2 && preview.labels.stream().anyMatch(label -> label.text.equals("528")), "Row previews render item icons and durability");
@@ -225,5 +228,10 @@ public final class ClientInteractionTest {
         }
         client.cosmetics.equip("ember", "classic");
         check(client.cosmetics.status().startsWith("No cosmetics server"), "Selection preserves the missing-server diagnosis");
+        Path legacy = Files.createTempDirectory(parent, "plain-migration-"); Files.createDirectories(legacy.resolve("config"));
+        Files.write(legacy.resolve("config/cairn-client.properties"), Arrays.asList("FPS.BORDER=1", "FPS.BG_COLOR=-14933732", "PING.TEXT_COLOR=-5588020"));
+        CairnClient migrated = new CairnClient(legacy);
+        check(migrated.setting(Module.FPS, Setting.BORDER) == 0, "Legacy default accent edges migrate to plain HUDs");
+        check(migrated.setting(Module.PING, Setting.TEXT_COLOR) == -5588020, "Migration preserves a custom text color");
     }
 }

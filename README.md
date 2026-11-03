@@ -72,6 +72,8 @@ The **Friends** page keeps the people you played with on this computer. Discord'
 
 Cairn Client also has an in-game **Friends** tab backed by the configured [cosmetics server](./cosmetics-server/README.md). It supports friend requests, shared game activity, DND, privacy settings, blocking and joining a friend's shared server address from the title screen. See the [client controls and two-client test](./client-mod/README.md#friends) and [validation record](./client-mod/VALIDATION.md) for per-version coverage.
 
+With Cairn Client enabled, Minecraft's title screen includes direct access to Cairn Settings, Friends and Cosmetics. **Right Shift** first opens the HUD editor; **Cairn Settings** opens the module gallery. Module settings include a live preview and custom HEX colors. Equip capes and badges in Minecraft after signing in to your cosmetics server; the launcher previews and uploads them. Staff cosmetics require an administrator grant to a Mojang-verified account.
+
 ### Discord app setup (maintainers)
 
 In the [Developer Portal](https://discord.com/developers/applications) for the app (`1566104003291390072`):

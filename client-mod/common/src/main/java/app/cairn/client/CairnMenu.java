@@ -364,9 +364,9 @@ final class CairnMenu {
             final String id = capes.get(i);
             int cx = x + i % columns * (cardW + gap), cy = gridTop + (i / columns - cosmeticsScroll) * (cardH + gap);
             boolean selected = id.equals(worn), hover = mouseX >= cx && mouseX < cx + cardW && lastMouseY >= cy && lastMouseY < cy + cardH;
-            canvas.rect(cx, cy, cardW, cardH, selected ? 0xff35412f : hover ? 0xff313a2f : 0xff2a3229);
+            rounded(canvas, cx, cy, cardW, cardH, 3, selected ? 0xff44252c : hover ? 0xff303741 : SURFACE);
             if (selected) { canvas.rect(cx, cy, cardW, 2, ACCENT); canvas.rect(cx, cy + cardH - 2, cardW, 2, ACCENT); }
-            canvas.rect(cx + 12, cy + 5, 32, 50, 0xff171c18);
+            canvas.rect(cx + 12, cy + 5, 32, 50, 0xff090c10);
             String texture = id.equals("none") ? null : cosmetics.previewTexture(id, now);
             // The cape's outer face sits at (1,1) and is 10x16 in the 64x32 layout.
             if (texture != null) canvas.image(texture, cx + 13, cy + 6, 30, 48, 1 / 64f, 1 / 32f, 11 / 64f, 17 / 32f);
@@ -387,7 +387,7 @@ final class CairnMenu {
             final String id = badges.get(i);
             int bx = x + i * (cell + 4), by = badgeY + 14;
             boolean selected = id.equals(badge);
-            canvas.rect(bx, by, cell, cell, selected ? 0xff35412f : 0xff2a3229);
+            rounded(canvas, bx, by, cell, cell, 3, selected ? 0xff44252c : SURFACE);
             if (selected) canvas.rect(bx, by + cell - 2, cell, 2, ACCENT);
             String texture = cosmetics.badgeTexture(id);
             if (texture != null) canvas.image(texture, bx + 4, by + 4, 20, 20, 0, 0, 1, 1);
@@ -639,6 +639,7 @@ final class CairnMenu {
         for (int i = 0; i < SWATCHES.length; i++) {
             final int color = SWATCHES[i];
             button(canvas, "", x + i * (swatchW + 4), y + 22, swatchW, 24, 0xff000000 | color, TEXT, () -> { hex = String.format(Locale.ROOT, "%06X", color); });
+            canvas.rect(x + i * (swatchW + 4) + 3, y + 25, swatchW - 6, 18, 0xff000000 | color);
         }
         button(canvas, "#" + hex + (hexFocus ? "_" : ""), x, y + 58, Math.min(w, 150), 25, hexFocus ? 0xff3c4835 : 0xff141b16, TEXT, () -> { hexFocus = true; hexSelected = true; });
         int actionY = h >= 140 ? y + 112 : y + 88;
