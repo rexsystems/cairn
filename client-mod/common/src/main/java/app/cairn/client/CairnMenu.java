@@ -624,7 +624,7 @@ final class CairnMenu {
         if (module == Module.CROSSHAIR) { list.addAll(Arrays.asList(Setting.SCALE, Setting.ACCENT_COLOR, Setting.CROSS_SIZE, Setting.CROSS_GAP, Setting.CROSS_THICKNESS, Setting.CROSS_DOT, Setting.CROSS_HIDE_VANILLA)); return list; }
         if (module.hud) list.addAll(Arrays.asList(Setting.SCALE, Setting.TEXT_COLOR, Setting.BG_COLOR, Setting.ACCENT_COLOR));
         if (module == Module.KEYSTROKES) list.addAll(Arrays.asList(Setting.KEY_SIZE, Setting.KEY_GAP, Setting.MOUSE_KEYS, Setting.SPACE_KEY, Setting.KEY_CPS, Setting.OPACITY));
-        else if (module.hud) list.addAll(Arrays.asList(Setting.AUTO_WIDTH, Setting.WIDTH, Setting.OPACITY, Setting.TEXT_ALPHA, Setting.ACCENT_ALPHA, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
+        else if (module.hud) list.addAll(Arrays.asList(Setting.AUTO_WIDTH, Setting.WIDTH, Setting.HEIGHT, Setting.PADDING_X, Setting.PADDING_Y, Setting.OPACITY, Setting.TEXT_ALPHA, Setting.ACCENT_ALPHA, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
         if (module == Module.CLOCK) list.addAll(Arrays.asList(Setting.CLOCK_SECONDS, Setting.CLOCK_24H));
         if (module == Module.ZOOM) list.addAll(Arrays.asList(Setting.ZOOM_FACTOR, Setting.SMOOTH_ZOOM, Setting.SCROLL_ZOOM, Setting.ZOOM_CINEMATIC));
         if (module == Module.SPRINT) list.addAll(Arrays.asList(Setting.SPRINT_AUTO, Setting.SPRINT_RESET));
@@ -666,7 +666,7 @@ final class CairnMenu {
             canvas.text(fit(canvas, setting.label, w - (numeric ? sliderWidth + 8 : 85)), x, cy + 7, MUTED);
             if (setting.color()) {
                 canvas.rect(x + w - 76, cy + 6, 12, 12, value);
-                button(canvas, "Change", x + w - 59, cy, 59, 23, 0xff303a2d, TEXT, () -> { colorSetting = setting; draftAlpha = client.setting(module, CairnClient.alphaSetting(setting)); setDraft(client.setting(module, setting)); hexFocus = false; colorError = null; });
+                button(canvas, "Change", x + w - 59, cy, 59, 23, 0xff303a2d, TEXT, () -> { colorSetting = setting; draftAlpha = client.setting(module, CairnClient.alphaSetting(setting)); setDraft(client.setting(module, setting)); hexFocus = false; colorError = null; focus = 0; brightnessAxis = false; });
             } else if (setting.toggle()) {
                 settingToggle(canvas, value == 1, x + w - 64, cy, () -> { client.setting(module, setting, value == 1 ? 0 : 1); client.save(); });
             } else if (setting == Setting.ALIGN) button(canvas, new String[] { "Left", "Center", "Right" }[value], x + w - 78, cy, 78, 23, SURFACE, TEXT, () -> { client.setting(module, setting, (value + 1) % 3); client.save(); });
@@ -681,13 +681,13 @@ final class CairnMenu {
     }
     private void settingSlider(Canvas canvas, Module module, Setting setting, int x, int y, int width) {
         int index = controls.size(), value = client.setting(module, setting);
-        String label = String.valueOf(value) + (setting == Setting.SCALE || setting == Setting.OPACITY ? "%" : "");
+        String label = String.valueOf(value) + (setting == Setting.SCALE || setting == Setting.OPACITY || setting == Setting.TEXT_ALPHA || setting == Setting.ACCENT_ALPHA ? "%" : "");
         canvas.text(label, x, y + 7, TEXT);
         int trackX = x + 42, trackWidth = width - 50;
         Slider slider = new Slider(module, setting, trackX, trackWidth);
         if (activeSlider != null && activeSlider.module == module && activeSlider.setting == setting) { activeSlider.x = trackX; activeSlider.width = trackWidth; }
         int progress = Math.round((value - setting.min) / (float) (setting.max - setting.min) * trackWidth);
-        rounded(canvas, trackX, y + 10, trackWidth, 4, 2, EDGE);
+        rounded(canvas, trackX, y + 10, trackWidth, 4, 2, 0xff626c79);
         if (progress > 0) rounded(canvas, trackX, y + 10, progress, 4, 2, PRIMARY);
         rounded(canvas, trackX + progress - 4, y + 7, 8, 10, 4, ACCENT);
         if (focus == index) canvas.rect(x, y + 22, width, 1, ACCENT);

@@ -26,6 +26,8 @@ abstract class CosmeticsMixin {
     @Inject(method = "renderNameTag", at = @At("HEAD"))
     private void cairn$badge(Entity entity, Component name, PoseStack pose, MultiBufferSource buffers, int light, float partialTick, CallbackInfo info) {
         if (entityRenderDispatcher.distanceToSqr(entity) > 4096) return;
+        // PlayerRenderer draws the below-name score through this same method; skip that pass so the badge stays on the name (already lifted by vanilla).
+        if (!name.equals(entity.getDisplayName())) return;
         ResourceLocation icon = CairnFabricMapped.badge(entity);
         if (icon == null) return;
         // Mirrors vanilla's name tag transform so the badge lines up with the text.

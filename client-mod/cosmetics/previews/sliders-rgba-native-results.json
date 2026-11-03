@@ -1,0 +1,101 @@
+[
+  {
+    "version": "26.3",
+    "loader": "fabric",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.21.11",
+    "loader": "fabric",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.21.1",
+    "loader": "fabric",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.20.4",
+    "loader": "fabric",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.20.1",
+    "loader": "fabric",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.16.5",
+    "loader": "fabric",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.8.9",
+    "loader": "forge",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.8.8",
+    "loader": "forge",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  },
+  {
+    "version": "1.8",
+    "loader": "forge",
+    "navigation": "passed",
+    "mouseToggle": "passed",
+    "textSearch": "passed",
+    "sliderDrag": "150% persisted",
+    "visualRgba": "00FF00 / 50% persisted",
+    "toggleClose": "captured for visual inspection",
+    "settingsAndClose": "captured for visual inspection"
+  }
+]

@@ -110,6 +110,17 @@ public final class CairnFabricMapped implements ClientModInitializer {
         sprintWasDown = down;
         input();
         if (ticks++ % 5 != 0) return;
+        if (client.enabled(Module.BLOCK_INDICATOR)) {
+            if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult && mc.hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                net.minecraft.world.level.block.Block block = mc.level.getBlockState(((net.minecraft.world.phys.BlockHitResult) mc.hitResult).getBlockPos()).getBlock();
+                client.blockTarget(new ItemStack(block), block.getName().getString());
+            } else client.blockTarget(null, null);
+        }
+        if (client.enabled(Module.REACH)) {
+            if (mc.hitResult != null && mc.hitResult.getType() != net.minecraft.world.phys.HitResult.Type.MISS)
+                client.reach(mc.player.getEyePosition(1).distanceTo(mc.hitResult.getLocation()));
+            else client.reach(-1);
+        }
         // 1.16 keeps the frame counter private; its debug string starts with the same number.
         if (client.enabled(Module.FPS)) client.value(Module.FPS, mc.fpsString.split(" ", 2)[0] + " FPS");
         if (client.enabled(Module.COORDINATES)) client.value(Module.COORDINATES, "XYZ " + (int) Math.floor(mc.player.getX()) + " " + (int) Math.floor(mc.player.getY()) + " " + (int) Math.floor(mc.player.getZ()));

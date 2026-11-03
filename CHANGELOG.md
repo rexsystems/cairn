@@ -7,6 +7,8 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 ## [Unreleased]
 
 ### Added
+- Reach HUD showing eye-to-hit distance for the current block or entity target.
+- Block Indicator HUD with the real target block's localized name and native item icon, and shared HUD height/padding controls.
 - Draggable numeric sliders across module settings and a visual HSV/alpha color picker with live preview, checkerboard transparency and optional RGBA HEX input.
 - Cairn title screen, Right Shift HUD overview, live module settings previews, stateful switches and item/effect icons in the armor and potion HUDs.
 - Administrator role grants by verified Minecraft name, tied to the account UUID and unavailable to offline/dev identities.
@@ -33,6 +35,7 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - A **Friends** page lists the people you played with, with Invite again and Join again.
 
 ### Changed
+- Forge capes apply on `RenderPlayerEvent.Pre` instead of every client tick; nametag badges lift with below-name scoreboard lines on Forge and skip the score pass on Fabric so the logo stays on the name.
 - HUDs default to neutral backgrounds without colored accent edges; old default colors migrate while custom colors remain available.
 - Cosmetic equipping is available in Minecraft; the launcher retains catalog previews and custom cape upload.
 - Rebuilt the in-game Cairn menu as a dark module gallery with red navigation, module previews, large Enabled/Disabled switches, separate settings controls and a working close button.

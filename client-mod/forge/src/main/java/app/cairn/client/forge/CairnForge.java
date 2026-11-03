@@ -61,7 +61,6 @@ public final class CairnForge {
             mc.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(new net.minecraft.client.gui.GuiMainMenu(), mc, FriendConnection.server(address)));
         } : null);
         if (mc.thePlayer == null) return;
-        if (mc.theWorld != null && mc.getNetHandler() != null) for (Object value : mc.theWorld.playerEntities) capes((net.minecraft.entity.player.EntityPlayer) value);
         mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);
         boolean left = Mouse.isButtonDown(0), right = Mouse.isButtonDown(1);
         boolean down = mc.gameSettings.keyBindSprint.isKeyDown();
@@ -74,6 +73,19 @@ public final class CairnForge {
         sprintWasDown = down;
         client.input(mc.gameSettings.keyBindForward.isKeyDown(), mc.gameSettings.keyBindBack.isKeyDown(), mc.gameSettings.keyBindLeft.isKeyDown(), mc.gameSettings.keyBindRight.isKeyDown(), mc.gameSettings.keyBindJump.isKeyDown(), left, right);
         if (ticks++ % 5 != 0) return;
+        if (client.enabled(Module.BLOCK_INDICATOR)) {
+            if (mc.objectMouseOver != null && mc.objectMouseOver.typeOfHit == net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK) {
+                net.minecraft.block.state.IBlockState state = mc.theWorld.getBlockState(mc.objectMouseOver.getBlockPos());
+                net.minecraft.block.Block block = state.getBlock(); net.minecraft.item.Item item = net.minecraft.item.Item.getItemFromBlock(block);
+                ItemStack stack = item == null ? null : new ItemStack(item, 1, block.getMetaFromState(state));
+                client.blockTarget(stack, stack == null ? block.getLocalizedName() : stack.getDisplayName());
+            } else client.blockTarget(null, null);
+        }
+        if (client.enabled(Module.REACH)) {
+            if (mc.objectMouseOver != null && mc.objectMouseOver.typeOfHit != net.minecraft.util.MovingObjectPosition.MovingObjectType.MISS)
+                client.reach(mc.thePlayer.getPositionEyes(1).distanceTo(mc.objectMouseOver.hitVec));
+            else client.reach(-1);
+        }
         if (client.enabled(Module.FPS)) client.value(Module.FPS, Minecraft.getDebugFPS() + " FPS");
         if (client.enabled(Module.COORDINATES)) client.value(Module.COORDINATES, "XYZ " + (int) Math.floor(mc.thePlayer.posX) + " " + (int) Math.floor(mc.thePlayer.posY) + " " + (int) Math.floor(mc.thePlayer.posZ));
         if (client.enabled(Module.PING)) client.value(Module.PING, mc.getNetHandler() != null && mc.getNetHandler().getPlayerInfo(mc.thePlayer.getUniqueID()) != null ? mc.getNetHandler().getPlayerInfo(mc.thePlayer.getUniqueID()).getResponseTime() + " ms" : "Local world");
@@ -129,13 +141,14 @@ public final class CairnForge {
     private app.cairn.client.Cosmetics.Look look(net.minecraft.entity.Entity entity) {
         return entity instanceof net.minecraft.client.entity.AbstractClientPlayer ? client.cosmetics.look(entity.getUniqueID().toString()) : null;
     }
-    /** 1.8 has no cape hook, so the cape slot on the tab-list entry is swapped every tick (animated capes change frame). */
-    private void capes(net.minecraft.entity.player.EntityPlayer player) {
-        net.minecraft.client.network.NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(player.getUniqueID());
+    /** 1.8 has no cape getter, so LayerCape reads NetworkPlayerInfo; swap that location on the render path (animated frames update each draw). */
+    @SubscribeEvent public void cape(net.minecraftforge.client.event.RenderPlayerEvent.Pre event) {
+        if (mc.getNetHandler() == null) return;
+        net.minecraft.client.network.NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(event.entityPlayer.getUniqueID());
         if (info == null) return;
         try {
             if (capeField == null) capeField = net.minecraftforge.fml.relauncher.ReflectionHelper.findField(net.minecraft.client.network.NetworkPlayerInfo.class, "locationCape", "field_178862_f");
-            app.cairn.client.Cosmetics.Look look = look(player);
+            app.cairn.client.Cosmetics.Look look = look(event.entityPlayer);
             net.minecraft.util.ResourceLocation cape = look == null ? null : texture(client.cosmetics.capeTexture(look));
             net.minecraft.util.ResourceLocation current = (net.minecraft.util.ResourceLocation) capeField.get(info);
             boolean ours = current != null && "cairn_client".equals(current.getResourceDomain());
@@ -158,8 +171,14 @@ public final class CairnForge {
         String name = entity.getDisplayName().getFormattedText();
         float x0 = -mc.fontRendererObj.getStringWidth(name) / 2f - 11, x1 = x0 + 9, y0 = ("deadmau5".equals(name) ? -10 : 0) - .5f, y1 = y0 + 9;
         float scale = 0.016666668F * 1.6F;
+        float height = entity.height + 0.5F;
+        // Match RenderPlayer.renderOffsetLivingLabel: below-name score lifts the real name, so lift the badge with it.
+        if (entity instanceof net.minecraft.client.entity.AbstractClientPlayer && entity.getDistanceSqToEntity(manager.livingPlayer) < 100 * 100) {
+            net.minecraft.scoreboard.Scoreboard board = ((net.minecraft.client.entity.AbstractClientPlayer) entity).getWorldScoreboard();
+            if (board != null && board.getObjectiveInDisplaySlot(2) != null) height += mc.fontRendererObj.FONT_HEIGHT * 1.15F * scale;
+        }
         net.minecraft.client.renderer.GlStateManager.pushMatrix();
-        net.minecraft.client.renderer.GlStateManager.translate((float) event.x, (float) event.y + entity.height + 0.5F, (float) event.z);
+        net.minecraft.client.renderer.GlStateManager.translate((float) event.x, (float) event.y + height, (float) event.z);
         net.minecraft.client.renderer.GlStateManager.rotate(-manager.playerViewY, 0, 1, 0);
         net.minecraft.client.renderer.GlStateManager.rotate(manager.playerViewX, 1, 0, 0);
         net.minecraft.client.renderer.GlStateManager.scale(-scale, -scale, scale);

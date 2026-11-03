@@ -136,6 +136,7 @@ public final class ClientInteractionTest {
         try {
             previewsAndOverlay(directory);
             slidersColorsAndCenter(directory);
+            hudDimensionsAndBlockTarget(directory);
             CairnClient client = new CairnClient(directory);
             client.focusSearch();
             for (char c : "keySTROKES".toCharArray()) client.type(c);
@@ -197,6 +198,27 @@ public final class ClientInteractionTest {
         } finally {
             try (java.util.stream.Stream<Path> paths = Files.walk(directory)) { paths.sorted(Comparator.reverseOrder()).forEach(path -> { try { Files.delete(path); } catch (Exception e) { throw new RuntimeException(e); } }); }
         }
+    }
+    private static void hudDimensionsAndBlockTarget(Path parent) throws Exception {
+        Path dir = Files.createTempDirectory(parent, "hud-dimensions-"); CairnClient client = new CairnClient(dir);
+        Canvas canvas = new Canvas(640, 360); client.value(Module.FPS, "Test"); client.renderHud(canvas, 640, 360);
+        int[] initial = client.bounds(Module.FPS);
+        client.setting(Module.FPS, Setting.PADDING_X, 12); client.setting(Module.FPS, Setting.PADDING_Y, 10); client.renderHud(canvas, 640, 360);
+        check(client.bounds(Module.FPS)[2] == initial[2] + 12 && client.bounds(Module.FPS)[3] == 28, "Horizontal and vertical padding change real HUD dimensions");
+        client.setting(Module.FPS, Setting.HEIGHT, 40); client.save(); client.renderHud(canvas, 640, 360);
+        check(client.bounds(Module.FPS)[3] == 40 && new CairnClient(dir).setting(Module.FPS, Setting.HEIGHT) == 40, "Panel height changes rendering and persists independently");
+        client.blockTarget(new Object(), "Stone"); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().noneMatch(item -> item.text.equals("Stone")), "Block indicator defaults off");
+        client.toggle(Module.BLOCK_INDICATOR); canvas.labels.clear(); canvas.icons = 0; client.renderHud(canvas, 640, 360);
+        check(canvas.icons == 1 && canvas.labels.stream().anyMatch(item -> item.text.equals("Stone")), "Enabled block indicator renders the real target name and icon");
+        client.blockTarget(null, null); canvas.labels.clear(); canvas.icons = 0; client.renderHud(canvas, 640, 360);
+        check(canvas.icons == 0 && canvas.labels.stream().anyMatch(item -> item.text.equals("No block")), "Missing targets clear stale block icons and names");
+        client.reach(4.25); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().noneMatch(item -> item.text.equals("4.25 blocks")), "Reach defaults off");
+        client.toggle(Module.REACH); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().anyMatch(item -> item.text.equals("4.25 blocks")), "Enabled reach shows the measured hit distance");
+        client.reach(-1); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().anyMatch(item -> item.text.equals("No target")), "Missing hits clear the reach distance");
     }
     private static Label label(Canvas canvas, String text) {
         for (Label label : canvas.labels) if (label.text.equals(text)) return label;

@@ -44,7 +44,9 @@ public final class CairnClient {
         WORLD_TIME("World time", "Time of day in Minecraft", "HUD", true, false),
         SESSION("Session", "Time in this game session", "HUD", true, false),
         MEMORY("Memory", "Java heap usage", "HUD", true, false),
-        SERVER("Server", "Current server or local world", "HUD", true, false);
+        SERVER("Server", "Current server or local world", "HUD", true, false),
+        BLOCK_INDICATOR("Block indicator", "The block you are looking at", "HUD", true, false),
+        REACH("Reach", "Distance to the block or entity under the crosshair", "HUD", true, false);
         public final String title, description, category;
         public final boolean hud, defaultEnabled;
         Module(String title, String description, String category, boolean hud, boolean enabled) {
@@ -53,6 +55,7 @@ public final class CairnClient {
     }
     public enum Setting {
         SCALE("Scale", 100, 50, 250, 10), WIDTH("Panel width", 150, 80, 320, 20),
+        HEIGHT("Panel height", 18, 8, 120, 1), PADDING_X("Horizontal padding", 6, 0, 24, 1), PADDING_Y("Vertical padding", 2, 0, 24, 1),
         OPACITY("Background opacity", 80, 0, 100, 1), BACKGROUND("Background", 1, 0, 1, 1),
         TEXT_ALPHA("Text opacity", 100, 0, 100, 1), ACCENT_ALPHA("Accent opacity", 100, 0, 100, 1),
         SHADOW("Text shadow", 0, 0, 1, 1), BORDER("Accent edge", 0, 0, 1, 1),
@@ -83,7 +86,7 @@ public final class CairnClient {
     }
     static final Module[] MODULES = Module.values();
     static final Setting[] SETTINGS = Setting.values();
-    static final int TEXT_HEIGHT = 18, MARGIN = 4, GAP = 2;
+    static final int MARGIN = 4, GAP = 2;
     static final int ACCENT = 0xffc6db82, TEXT = 0xfff1f0e8, MUTED = 0xffb4b8aa;
     static final class State {
         boolean enabled;
@@ -182,6 +185,15 @@ public final class CairnClient {
     public void rows(Module module, List<HudRow> rows) {
         state(module).rows = Collections.unmodifiableList(new ArrayList<HudRow>(rows.subList(0, Math.min(8, rows.size()))));
         state(module).measured = null;
+    }
+    public void blockTarget(Object icon, String name) {
+        boolean present = name != null && !name.isEmpty();
+        rows(Module.BLOCK_INDICATOR, present ? Collections.singletonList(new HudRow(icon, name)) : Collections.<HudRow>emptyList());
+        value(Module.BLOCK_INDICATOR, present ? name : "No block");
+    }
+    /** Distance in blocks to the current hit; negative clears to "No target". */
+    public void reach(double blocks) {
+        value(Module.REACH, blocks < 0 ? "No target" : String.format(Locale.ROOT, "%.2f blocks", blocks));
     }
     public void input(boolean forward, boolean back, boolean left, boolean right, boolean space, boolean mouseLeft, boolean mouseRight) {
         this.forward = forward; this.back = back; this.left = left; this.right = right; this.space = space; this.mouseLeft = mouseLeft; this.mouseRight = mouseRight;
@@ -326,15 +338,17 @@ public final class CairnClient {
     private int widgetWidth(Module module) {
         if (module == Module.CROSSHAIR) return 2 * (Math.round(setting(module, Setting.CROSS_SIZE) * scale(module)) + Math.round(setting(module, Setting.CROSS_GAP) * scale(module))) + Math.max(1, Math.round(setting(module, Setting.CROSS_THICKNESS) * scale(module)));
         if (module == Module.KEYSTROKES) return 3 * Math.round(setting(module, Setting.KEY_SIZE) * scale(module)) + 2 * Math.max(1, Math.round(setting(module, Setting.KEY_GAP) * scale(module)));
-        if (setting(module, Setting.AUTO_WIDTH) == 1) return Math.round(autoWidth(state(module).contentWidth) * scale(module));
+        if (setting(module, Setting.AUTO_WIDTH) == 1) return Math.round(autoWidth(state(module).contentWidth, setting(module, Setting.PADDING_X)) * scale(module));
         return Math.round(setting(module, Setting.WIDTH) * scale(module));
     }
     // Rounded up to whole steps so a ticking counter does not make the panel wobble every frame.
-    static int autoWidth(int textWidth) { return Math.min(Setting.WIDTH.max, (Math.max(24, textWidth) + 12 + 5) / 6 * 6); }
+    static int autoWidth(int textWidth) { return autoWidth(textWidth, 6); }
+    private static int autoWidth(int textWidth, int padding) { return Math.min(Setting.WIDTH.max, (Math.max(24, textWidth) + 2 * padding + 5) / 6 * 6); }
+    private int rowHeight(Module module) { return Math.max(setting(module, Setting.HEIGHT), 16 + 2 * setting(module, Setting.PADDING_Y)); }
     private int widgetHeight(Module module) {
         if (module == Module.CROSSHAIR) return widgetWidth(module);
-        if (!state(module).rows.isEmpty()) return Math.round(state(module).rows.size() * 20 * scale(module));
-        if (module != Module.KEYSTROKES) return Math.round(TEXT_HEIGHT * scale(module));
+        if (!state(module).rows.isEmpty()) return Math.round(state(module).rows.size() * rowHeight(module) * scale(module));
+        if (module != Module.KEYSTROKES) return Math.round(Math.max(setting(module, Setting.HEIGHT), 8 + 2 * setting(module, Setting.PADDING_Y)) * scale(module));
         int size = Math.round(setting(module, Setting.KEY_SIZE) * scale(module)), gap = Math.max(1, Math.round(setting(module, Setting.KEY_GAP) * scale(module)));
         int height = size * 2 + gap;
         if (setting(module, Setting.MOUSE_KEYS) == 1) height += Math.round((setting(module, Setting.KEY_SIZE) - 4) * scale(module)) + gap;
@@ -367,7 +381,7 @@ public final class CairnClient {
                 if (!source.equals(state.measured)) { state.contentWidth = canvas.textWidth(source); state.measured = source; }
                 if (!state.rows.isEmpty()) {
                     state.contentWidth = 0;
-                    for (HudRow row : state.rows) state.contentWidth = Math.max(state.contentWidth, canvas.textWidth(row.label) + 22);
+                    for (HudRow row : state.rows) state.contentWidth = Math.max(state.contentWidth, canvas.textWidth(row.label) + 20);
                 }
             }
             if (state.placed) continue;
@@ -436,9 +450,9 @@ public final class CairnClient {
         float scale = scale(module);
         String value = state(module).value.isEmpty() ? module.title : state(module).value;
         int contentWidth = canvas.textWidth(value);
-        if (!state(module).rows.isEmpty()) { contentWidth = 0; for (HudRow row : state(module).rows) contentWidth = Math.max(contentWidth, canvas.textWidth(row.label) + 22); }
+        if (!state(module).rows.isEmpty()) { contentWidth = 0; for (HudRow row : state(module).rows) contentWidth = Math.max(contentWidth, canvas.textWidth(row.label) + 20); }
         int w = module == Module.CROSSHAIR || module == Module.KEYSTROKES ? widgetWidth(module)
-            : Math.round((setting(module, Setting.AUTO_WIDTH) == 1 ? autoWidth(contentWidth) : setting(module, Setting.WIDTH)) * scale);
+            : Math.round((setting(module, Setting.AUTO_WIDTH) == 1 ? autoWidth(contentWidth, setting(module, Setting.PADDING_X)) : setting(module, Setting.WIDTH)) * scale);
         int h = widgetHeight(module);
         float fit = Math.min(1, Math.min(width / (float) Math.max(1, w), height / (float) Math.max(1, h)));
         scale *= fit; w = Math.round(w * fit); h = Math.round(h * fit);
@@ -449,21 +463,23 @@ public final class CairnClient {
         else {
             if (setting(module, Setting.BACKGROUND) == 1) canvas.rect(x, y, w, h, background(module));
             if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, w), h, color(module, Setting.ACCENT_COLOR));
-            String label = fit(canvas, value, Math.max(0, (int) (w / scale) - 12));
+            int padding = setting(module, Setting.PADDING_X);
+            String label = fit(canvas, value, Math.max(0, (int) (w / scale) - 2 * padding));
             int align = setting(module, Setting.ALIGN);
-            int tx = align == 0 ? Math.round(6 * scale) : align == 1 ? (w - Math.round(canvas.textWidth(label) * scale)) / 2 : w - Math.round((canvas.textWidth(label) + 6) * scale);
+            int tx = align == 0 ? Math.round(padding * scale) : align == 1 ? (w - Math.round(canvas.textWidth(label) * scale)) / 2 : w - Math.round((canvas.textWidth(label) + padding) * scale);
             widgetText(canvas, label, x + Math.max(0, tx), y + Math.max(0, (h - Math.round(8 * scale)) / 2), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
         }
     }
     private void renderRows(Canvas canvas, Module module, int x, int y, int width, int height, float scale) {
         if (setting(module, Setting.BACKGROUND) == 1) canvas.rect(x, y, width, height, background(module));
         if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, width), height, color(module, Setting.ACCENT_COLOR));
-        int rowHeight = Math.max(1, Math.round(20 * scale)), iconSize = Math.max(1, Math.round(16 * scale));
+        int rowHeight = Math.max(1, Math.round(rowHeight(module) * scale)), iconSize = Math.max(1, Math.round(16 * scale));
+        int padding = setting(module, Setting.PADDING_X);
         for (HudRow row : state(module).rows) {
             if (y + rowHeight > viewportHeight || height < rowHeight) break;
-            canvas.icon(row.icon, x + Math.round(3 * scale), y + Math.round(2 * scale), iconSize);
-            String label = fit(canvas, row.label, Math.max(0, (int) (width / scale) - 28));
-            widgetText(canvas, label, x + Math.round(23 * scale), y + Math.round(6 * scale), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
+            canvas.icon(row.icon, x + Math.round(padding * scale), y + Math.max(0, (rowHeight - iconSize) / 2), iconSize);
+            String label = fit(canvas, row.label, Math.max(0, (int) (width / scale) - 20 - 2 * padding));
+            widgetText(canvas, label, x + Math.round((padding + 20) * scale), y + Math.max(0, (rowHeight - Math.round(8 * scale)) / 2), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
             y += rowHeight; height -= rowHeight;
         }
     }
@@ -484,11 +500,12 @@ public final class CairnClient {
                 if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, w), h, color(module, Setting.ACCENT_COLOR));
                 State state = state(module);
                 String source = state.value.isEmpty() ? module.title : state.value;
-                int available = (int) ((w - 12 * scale) / scale);
+                int padding = setting(module, Setting.PADDING_X);
+                int available = (int) (w / scale) - 2 * padding;
                 if (state.clippedWidth != available || !source.equals(state.clippedSource)) {
                     state.clipped = fit(canvas, source, available); state.clippedSource = source; state.clippedWidth = available; state.textWidth = canvas.textWidth(state.clipped);
                 }
-                int textX = setting(module, Setting.ALIGN) == 0 ? x + Math.round(6 * scale) : setting(module, Setting.ALIGN) == 1 ? x + Math.max(0, (w - Math.round(state.textWidth * scale)) / 2) : x + Math.max(0, w - Math.round((state.textWidth + 6) * scale));
+                int textX = setting(module, Setting.ALIGN) == 0 ? x + Math.round(padding * scale) : setting(module, Setting.ALIGN) == 1 ? x + Math.max(0, (w - Math.round(state.textWidth * scale)) / 2) : x + Math.max(0, w - Math.round((state.textWidth + padding) * scale));
                 widgetText(canvas, state.clipped, textX, y + Math.max(0, (h - Math.round(8 * scale)) / 2), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
             }
             if (editing && module == selected) {
@@ -500,6 +517,7 @@ public final class CairnClient {
         friends.render(canvas, width, height);
     }
     public void renderMenu(Canvas canvas, int width, int height, int mouseX, int mouseY) {
+        viewportWidth = width; viewportHeight = height;
         if (editing) {
             renderHud(canvas, width, height);
             if (!editorTools) return;

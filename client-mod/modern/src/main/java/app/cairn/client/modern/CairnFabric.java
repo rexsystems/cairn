@@ -147,6 +147,17 @@ public final class CairnFabric implements ClientModInitializer {
         sprintWasDown = down;
         client.input(mc.options.keyUp.isDown(), mc.options.keyDown.isDown(), mc.options.keyLeft.isDown(), mc.options.keyRight.isDown(), mc.options.keyJump.isDown(), mc.mouseHandler.isLeftPressed(), mc.mouseHandler.isRightPressed());
         if (ticks++ % 5 != 0) return;
+        if (client.enabled(Module.BLOCK_INDICATOR)) {
+            if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit && hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                var block = mc.level.getBlockState(hit.getBlockPos()).getBlock();
+                client.blockTarget(new ItemStack(block), block.getName().getString());
+            } else client.blockTarget(null, null);
+        }
+        if (client.enabled(Module.REACH)) {
+            if (mc.hitResult != null && mc.hitResult.getType() != net.minecraft.world.phys.HitResult.Type.MISS)
+                client.reach(mc.player.getEyePosition(1).distanceTo(mc.hitResult.getLocation()));
+            else client.reach(-1);
+        }
         if (client.enabled(Module.FPS)) client.value(Module.FPS, mc.getFps() + " FPS");
         if (client.enabled(Module.COORDINATES)) client.value(Module.COORDINATES, "XYZ " + (int) Math.floor(mc.player.getX()) + " " + (int) Math.floor(mc.player.getY()) + " " + (int) Math.floor(mc.player.getZ()));
         var info = mc.getConnection() == null ? null : mc.getConnection().getPlayerInfo(mc.player.getUUID());
