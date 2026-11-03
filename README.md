@@ -1,6 +1,6 @@
 # Cairn
 
-Minecraft launcher for Fabric, Quilt, Forge and NeoForge instances, with Modrinth installs built in. Library can also import CurseForge modpack zips and instances from Modrinth App, Prism Launcher, PolyMC and MultiMC. Vanilla 26.3 instances can run the Horizon client.
+Minecraft launcher for Fabric, Quilt, Forge and NeoForge instances, with Modrinth installs built in. Library can also import CurseForge modpack zips and instances from Modrinth App, Prism Launcher, PolyMC and MultiMC. Vanilla 26.3 instances can run the Horizon client. Fabric 1.16.5, 1.20.1, 1.20.4, 1.21.1, 1.21.11 and 26.3 and Forge 1.8.x instances can add Cairn Client, a HUD and zoom mod, with one toggle (see `client-mod/README.md`).
 
 Cairn is not affiliated with Mojang, Microsoft, Modrinth or CurseForge. Minecraft is a trademark of Mojang AB.
 
