@@ -262,6 +262,8 @@ public final class Friends {
             Map<String, Object> event = Json.object(raw);
             String type = Json.string(event.get("type"), ""), name = Json.string(Json.object(event.get("from")).get("name"), "A friend");
             String title, text;
+            // DND or privacy changed from the launcher or another game; apply before toasting the rest.
+            if (type.equals("settings")) { applySettings(Json.object(event.get("settings"))); continue; }
             if (type.equals("online")) { title = name; text = "is now online"; }
             else if (type.equals("server")) {
                 String server = Json.string(event.get("server"), null);

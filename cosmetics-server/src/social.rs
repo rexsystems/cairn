@@ -433,6 +433,10 @@ pub async fn put_settings(State(state): State<Shared>, headers: HeaderMap, Json(
          ON CONFLICT(uuid) DO UPDATE SET share = excluded.share, appear_offline = excluded.appear_offline, requests = excluded.requests, dnd = excluded.dnd",
         params![user.uuid, new.share, new.appear_offline as i64, new.requests, new.dnd as i64],
     )?;
+    if old.json() != new.json() {
+        // The player's other clients (launcher, a second game) learn DND/privacy changes without polling.
+        state.social.push(&user.uuid, &user.uuid, json!({ "type": "settings", "settings": new.json() }));
+    }
     let presence = lock(&state.presence).get(&user.uuid).cloned();
     if !visible(presence.as_ref(), window, &old) && visible(presence.as_ref(), window, &new) {
         for friend in friend_ids(&conn, &user.uuid)? {

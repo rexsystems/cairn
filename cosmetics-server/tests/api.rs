@@ -546,8 +546,9 @@ async fn notifications_are_long_polled_and_private() {
     h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("mc.example")))).await;
     let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
     let kinds: Vec<&str> = got["events"].as_array().unwrap().iter().map(|e| e["type"].as_str().unwrap()).collect();
-    assert_eq!(kinds, ["online", "server"], "DND still queues events; the client decides not to toast");
-    assert_eq!(got["events"][1]["server"], "mc.example");
+    assert_eq!(kinds, ["settings", "online", "server"], "DND still queues events; the client decides not to toast");
+    assert_eq!(got["events"][0]["settings"]["dnd"], true, "Bob's own clients hear his DND change");
+    assert_eq!(got["events"][2]["server"], "mc.example");
     let (_, other) = h.call("GET", "/v1/events?after=0", Some(&cara), None).await;
     assert!(other["events"].as_array().unwrap().is_empty(), "non-friends hear nothing");
 
