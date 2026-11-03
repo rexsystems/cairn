@@ -38,9 +38,9 @@ Keystrokes draws W/A/S/D, left/right mouse buttons and Space as individual keys.
 
 ## Modules
 
-Twenty-two modules: FPS, coordinates, ping, keystrokes, left/right CPS, armor durability, potion effects, local clock, movement speed, toggle sprint, zoom, crosshair, direction, biome, held item, hunger/saturation, world time, session duration, memory, server address, block indicator and reach.
+Seventy modules across HUD, Controls and Visuals. Core HUD covers FPS, coordinates, ping, keystrokes, CPS, armor durability, effects, clock, speed, direction, biome, held item, food, world time, session, memory, server, block indicator and reach. The expanded set adds TPS, combo, death info, horses, boss bar, hearts, armor points, attack indicator, elytra, shield, totem, light level, scoreboard, TNT timer, item info/despawn, pack display, inventory free slots, system resources, saturation, UHC overlay, team tracker and death waypoints. Visual/control modules include block overlay, brightness, FOV, hitboxes, hit indicator, time/weather overrides, nick hider, drop prevention, autohide HUD, perspective, snaplook, auto perspective, viewmodel scale, particles, nametags, reconnect, toast control, UI scaling, cull logs, custom F3, chat timestamps, mob overlay, loot beams and the Cairn title tweaker.
 
-Block Indicator shows the localized name and native item icon of the block under the crosshair. Looking away clears the previous target. Reach shows the eye-to-hit distance in blocks for the current block or entity target, or "No target" when nothing is hit. Both default off and read the current Minecraft hit result every five ticks, without network requests. They use the shared HUD color, alpha, dimensions, padding and slider controls.
+Adapter depth varies by version: Minecraft 26.3 feeds the broadest set of live HUD values; Forge and mapped Fabric share TPS/client tick, FOV multiplication, title gating and the main vitals. World-render overlays (hitboxes, loot beams, mob overlay, block outline color) expose Cairn toggles and still need per-version draw hooks where missing. See [ROADMAP.md](./ROADMAP.md) for entries that remain server-side or launcher-only.
 
 The larger module/configuration request is tracked separately in [ROADMAP.md](./ROADMAP.md). Entries there are not advertised as implemented modules.
 

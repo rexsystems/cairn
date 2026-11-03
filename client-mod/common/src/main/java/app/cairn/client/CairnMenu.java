@@ -628,6 +628,19 @@ final class CairnMenu {
         if (module == Module.CLOCK) list.addAll(Arrays.asList(Setting.CLOCK_SECONDS, Setting.CLOCK_24H));
         if (module == Module.ZOOM) list.addAll(Arrays.asList(Setting.ZOOM_FACTOR, Setting.SMOOTH_ZOOM, Setting.SCROLL_ZOOM, Setting.ZOOM_CINEMATIC));
         if (module == Module.SPRINT) list.addAll(Arrays.asList(Setting.SPRINT_AUTO, Setting.SPRINT_RESET));
+        if (module == Module.BLOCK_OVERLAY) list.addAll(Arrays.asList(Setting.OVERLAY_COLOR, Setting.OPACITY));
+        if (module == Module.BRIGHTNESS) list.add(Setting.BRIGHTNESS_GAMMA);
+        if (module == Module.FOV_CHANGER) list.add(Setting.FOV_FACTOR);
+        if (module == Module.TIME_CHANGER) list.add(Setting.TIME_OF_DAY);
+        if (module == Module.WEATHER_CHANGER) list.add(Setting.WEATHER_MODE);
+        if (module == Module.VIEWMODEL) list.add(Setting.VIEWMODEL_SCALE);
+        if (module == Module.PARTICLES) list.add(Setting.PARTICLE_RATE);
+        if (module == Module.UI_SCALING) list.add(Setting.UI_SCALE);
+        if (module == Module.NICK_HIDER) list.add(Setting.NICK_COVER);
+        if (module == Module.COMBO) list.add(Setting.COMBO_TIMEOUT);
+        if (module == Module.AUTOHIDE_HUD) list.add(Setting.AUTOHIDE_INVENTORY);
+        if (module == Module.NAMETAGS) list.add(Setting.SHOW_NAMETAGS);
+        if (module == Module.PERSPECTIVE || module == Module.SNAPLOOK || module == Module.RECONNECT) { /* keybinds via Binds page */ }
         return list;
     }
     private void settings(Canvas canvas, int x, int y, int w, int height) {
@@ -656,13 +669,16 @@ final class CairnMenu {
         List<Setting> options = options(module);
         int rowHeight = 28, first = y + (compact || side ? 40 : 50 + previewHeight), reserved = compact || side ? 66 : 76 + previewHeight;
         if (module == Module.ZOOM && client.keysManaged()) { bindButton(canvas, Bind.ZOOM, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
+        if (module == Module.PERSPECTIVE && client.keysManaged()) { bindButton(canvas, Bind.PERSPECTIVE, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
+        if (module == Module.SNAPLOOK && client.keysManaged()) { bindButton(canvas, Bind.SNAPLOOK, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
+        if (module == Module.RECONNECT && client.keysManaged()) { bindButton(canvas, Bind.RECONNECT, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
         int capacity = Math.max(1, (height - reserved) / rowHeight);
         settingsScroll = clamp(settingsScroll, 0, Math.max(0, options.size() - capacity));
         for (int i = settingsScroll; i < Math.min(options.size(), settingsScroll + capacity); i++) {
             final Setting setting = options.get(i);
             int cy = first + (i - settingsScroll) * rowHeight, value = client.setting(module, setting);
             int sliderWidth = Math.min(180, Math.max(112, w / 2));
-            boolean numeric = !setting.color() && !setting.toggle() && setting != Setting.ALIGN;
+            boolean numeric = !setting.color() && !setting.toggle() && setting != Setting.ALIGN && setting != Setting.WEATHER_MODE;
             canvas.text(fit(canvas, setting.label, w - (numeric ? sliderWidth + 8 : 85)), x, cy + 7, MUTED);
             if (setting.color()) {
                 canvas.rect(x + w - 76, cy + 6, 12, 12, value);
@@ -670,6 +686,7 @@ final class CairnMenu {
             } else if (setting.toggle()) {
                 settingToggle(canvas, value == 1, x + w - 64, cy, () -> { client.setting(module, setting, value == 1 ? 0 : 1); client.save(); });
             } else if (setting == Setting.ALIGN) button(canvas, new String[] { "Left", "Center", "Right" }[value], x + w - 78, cy, 78, 23, SURFACE, TEXT, () -> { client.setting(module, setting, (value + 1) % 3); client.save(); });
+            else if (setting == Setting.WEATHER_MODE) button(canvas, new String[] { "Clear", "Rain", "Thunder" }[value], x + w - 78, cy, 78, 23, SURFACE, TEXT, () -> { client.setting(module, setting, (value + 1) % 3); client.save(); });
             else settingSlider(canvas, module, setting, x + w - sliderWidth, cy, sliderWidth);
         }
         int foot = y + Math.max(48, height - 24);

@@ -46,7 +46,55 @@ public final class CairnClient {
         MEMORY("Memory", "Java heap usage", "HUD", true, false),
         SERVER("Server", "Current server or local world", "HUD", true, false),
         BLOCK_INDICATOR("Block indicator", "The block you are looking at", "HUD", true, false),
-        REACH("Reach", "Distance to the block or entity under the crosshair", "HUD", true, false);
+        REACH("Reach", "Distance to the block or entity under the crosshair", "HUD", true, false),
+        TPS("TPS", "Estimated client tick rate", "HUD", true, false),
+        COMBO("Combo", "Hits landed before the combo resets", "HUD", true, false),
+        DEATH_INFO("Death info", "Last death message and coordinates", "HUD", true, false),
+        HORSES("Horses", "Mount jump strength and health", "HUD", true, false),
+        BOSS_BAR("Boss bar", "Active boss bar name and progress", "HUD", true, false),
+        HEARTS("Hearts", "Health and absorption", "HUD", true, false),
+        ARMOR_POINTS("Armor points", "Armor defense points", "HUD", true, false),
+        ATTACK_INDICATOR("Attack indicator", "Attack cooldown progress", "HUD", true, false),
+        ELYTRA("Elytra", "Chest elytra durability while flying", "HUD", true, false),
+        SHIELD("Shield", "Offhand or main-hand shield durability", "HUD", true, false),
+        TOTEM("Totem", "Totems in inventory and last pop", "HUD", true, false),
+        LIGHT_LEVEL("Light level", "Block and sky light at your feet", "HUD", true, false),
+        SCOREBOARD("Scoreboard", "Sidebar scoreboard lines", "HUD", true, false),
+        TNT_TIMER("TNT timer", "Fuse of nearby primed TNT", "HUD", true, false),
+        ITEM_INFO("Item info", "Looked-at item entity name and age", "HUD", true, false),
+        ITEM_DESPAWN("Item despawn", "Seconds until nearby item entities despawn", "HUD", true, false),
+        PACK_DISPLAY("Pack display", "Active resource pack names", "HUD", true, false),
+        INVENTORY("Inventory", "Empty hotbar and inventory slots", "HUD", true, false),
+        SYSTEM_RESOURCES("System resources", "Heap plus available processors", "HUD", true, false),
+        SATURATION("Saturation", "Food saturation only", "HUD", true, false),
+        UHC_OVERLAY("UHC overlay", "Health with absorption called out for UHC", "HUD", true, false),
+        TEAM_TRACKER("Team tracker", "Scoreboard teammates nearby", "HUD", true, false),
+        BLOCK_OVERLAY("Block overlay", "Colored outline on the targeted block", "Visuals", false, false),
+        BRIGHTNESS("Brightness", "Raises gamma while enabled", "Visuals", false, false),
+        FOV_CHANGER("FOV changer", "Multiplies field of view", "Visuals", false, false),
+        HITBOXES("Hitboxes", "Draw entity collision boxes", "Visuals", false, false),
+        HIT_INDICATOR("Hit indicator", "Flash when you deal damage", "Visuals", false, false),
+        TIME_CHANGER("Time changer", "Client-only time of day override", "Visuals", false, false),
+        WEATHER_CHANGER("Weather changer", "Client-only clear or rain override", "Visuals", false, false),
+        NICK_HIDER("Nick hider", "Replace your name in the HUD with a cover", "Visuals", false, false),
+        DROP_PREVENTION("Drop prevention", "Block the drop-item key while enabled", "Controls", false, false),
+        AUTOHIDE_HUD("Autohide HUD", "Hide Cairn HUD widgets while inventory is open", "HUD", false, false),
+        PERSPECTIVE("Perspective", "Cycle first/third person with a Cairn bind", "Visuals", false, false),
+        SNAPLOOK("Snaplook", "Hold to look behind, release to restore", "Visuals", false, false),
+        AUTO_PERSPECTIVE("Auto perspective", "Third person while flying with elytra", "Visuals", false, false),
+        VIEWMODEL("ViewModel", "Scale the held-item viewmodel", "Visuals", false, false),
+        PARTICLES("Particles", "Reduce or keep vanilla particle density", "Visuals", false, false),
+        NAMETAGS("Nametags", "Show or hide other players' nametags", "Visuals", false, false),
+        RECONNECT("Reconnect", "Reconnect to the last multiplayer server", "Controls", false, false),
+        TOAST_CONTROL("Toast control", "Mute vanilla recipe and advancement toasts", "Controls", false, false),
+        UI_SCALING("UI scaling", "Override GUI scale while in-game menus open", "Controls", false, false),
+        CULL_LOGS("Cull logs", "Drop repetitive chat log lines", "Controls", false, false),
+        CUSTOM_F3("Custom F3", "Hide the vanilla debug HUD while Cairn is active", "Controls", false, false),
+        CHAT_TIMESTAMPS("Chat timestamps", "Prefix chat lines with the local time", "Controls", false, false),
+        WAYPOINTS("Waypoints", "Show last death coordinates as a waypoint", "HUD", true, false),
+        MOB_OVERLAY("Mob overlay", "Show mob health above nearby mobs", "Visuals", false, false),
+        LOOT_BEAMS("Loot beams", "Beam markers on nearby item entities", "Visuals", false, false),
+        TITLE_TWEAKER("Title tweaker", "Use the Cairn title screen instead of vanilla", "Controls", false, true);
         public final String title, description, category;
         public final boolean hud, defaultEnabled;
         Module(String title, String description, String category, boolean hud, boolean enabled) {
@@ -72,7 +120,13 @@ public final class CairnClient {
         CROSS_THICKNESS("Thickness", 1, 1, 4, 1), CROSS_DOT("Center dot", 1, 0, 1, 1),
         CROSS_HIDE_VANILLA("Replace vanilla crosshair", 1, 0, 1, 1),
         CLOCK_SECONDS("Show seconds", 0, 0, 1, 1), CLOCK_24H("24 hour clock", 1, 0, 1, 1),
-        SPRINT_AUTO("Auto sprint", 0, 0, 1, 1), SPRINT_RESET("Reset when stopped", 0, 0, 1, 1);
+        SPRINT_AUTO("Auto sprint", 0, 0, 1, 1), SPRINT_RESET("Reset when stopped", 0, 0, 1, 1),
+        FOV_FACTOR("FOV percent", 100, 30, 200, 5), BRIGHTNESS_GAMMA("Gamma percent", 150, 100, 300, 10),
+        OVERLAY_COLOR("Overlay color", 0xffffffff, 0, 0, 0), TIME_OF_DAY("Time of day", 6000, 0, 23999, 500),
+        WEATHER_MODE("Weather", 0, 0, 2, 1), VIEWMODEL_SCALE("ViewModel scale", 100, 50, 150, 5),
+        PARTICLE_RATE("Particle percent", 100, 0, 100, 10), UI_SCALE("GUI scale", 2, 1, 4, 1),
+        NICK_COVER("Cover name length", 8, 3, 16, 1), COMBO_TIMEOUT("Combo timeout ms", 2000, 500, 5000, 100),
+        AUTOHIDE_INVENTORY("Hide in inventories", 1, 0, 1, 1), SHOW_NAMETAGS("Show nametags", 1, 0, 1, 1);
         public final String label;
         public final int initial, min, max, step;
         Setting(String label, int initial, int min, int max, int step) { this.label = label; this.initial = initial; this.min = min; this.max = max; this.step = step; }
@@ -80,7 +134,7 @@ public final class CairnClient {
         public boolean toggle() { return !color() && max == 1; }
     }
     /** Keys the adapter lets players rebind from the Cairn menu. */
-    public enum Bind { MENU("Menu key"), ZOOM("Zoom key");
+    public enum Bind { MENU("Menu key"), ZOOM("Zoom key"), PERSPECTIVE("Perspective"), SNAPLOOK("Snaplook"), RECONNECT("Reconnect");
         public final String label;
         Bind(String label) { this.label = label; }
     }
@@ -195,6 +249,128 @@ public final class CairnClient {
     public void reach(double blocks) {
         value(Module.REACH, blocks < 0 ? "No target" : String.format(Locale.ROOT, "%.2f blocks", blocks));
     }
+    private long lastClientTickNanos; private double estimatedTps = 20;
+    private int combo; private long lastComboHit; private int totemPops; private long hitFlashUntil;
+    private String lastDeath = "No death yet", deathWaypoint = "";
+    private boolean snaplookHeld, reconnectRequested, perspectivePressed, inventoryOpen;
+    private Double brightnessPrevious;
+    public void inventoryOpen(boolean open) { inventoryOpen = open; }
+    /** Call once per client tick so TPS and timed HUD modules stay honest. */
+    public void clientTick() {
+        long now = System.nanoTime();
+        if (lastClientTickNanos > 0) {
+            double dt = (now - lastClientTickNanos) / 1_000_000_000.0;
+            double instant = Math.min(20.0, 1.0 / Math.max(dt, 0.000_000_1));
+            estimatedTps = estimatedTps * 0.9 + instant * 0.1;
+        }
+        lastClientTickNanos = now;
+        if (enabled(Module.TPS)) value(Module.TPS, String.format(Locale.ROOT, "%.1f TPS", estimatedTps));
+        if (enabled(Module.SYSTEM_RESOURCES)) {
+            Runtime runtime = Runtime.getRuntime();
+            value(Module.SYSTEM_RESOURCES, (runtime.totalMemory() - runtime.freeMemory()) / 1048576 + " MB / " + Runtime.getRuntime().availableProcessors() + " threads");
+        }
+        if (enabled(Module.COMBO) && combo > 0 && now - lastComboHit > setting(Module.COMBO, Setting.COMBO_TIMEOUT) * 1_000_000L) {
+            combo = 0; value(Module.COMBO, "0 combo");
+        }
+        if (enabled(Module.WAYPOINTS)) value(Module.WAYPOINTS, deathWaypoint.isEmpty() ? "No waypoint" : deathWaypoint);
+    }
+    public void comboHit() {
+        long now = System.nanoTime();
+        if (now - lastComboHit > setting(Module.COMBO, Setting.COMBO_TIMEOUT) * 1_000_000L) combo = 0;
+        combo++; lastComboHit = now; hitFlashUntil = now + 250_000_000L;
+        if (enabled(Module.COMBO)) value(Module.COMBO, combo + " combo");
+    }
+    public boolean hitFlash() { return enabled(Module.HIT_INDICATOR) && System.nanoTime() < hitFlashUntil; }
+    public void death(String message, int x, int y, int z) {
+        lastDeath = message == null || message.isEmpty() ? "Died at " + x + " " + y + " " + z : message;
+        deathWaypoint = "Death " + x + " " + y + " " + z;
+        if (enabled(Module.DEATH_INFO)) value(Module.DEATH_INFO, lastDeath);
+        if (enabled(Module.WAYPOINTS)) value(Module.WAYPOINTS, deathWaypoint);
+    }
+    public void totemPop() { totemPops++; if (enabled(Module.TOTEM)) value(Module.TOTEM, state(Module.TOTEM).value.replaceAll(" · \\d+ pops$", "") + " · " + totemPops + " pops"); }
+    public void hearts(float health, float max, float absorption) {
+        if (enabled(Module.HEARTS)) value(Module.HEARTS, String.format(Locale.ROOT, "%.1f / %.1f HP%s", health, max, absorption > 0 ? String.format(Locale.ROOT, " +%.1f abs", absorption) : ""));
+        if (enabled(Module.UHC_OVERLAY)) value(Module.UHC_OVERLAY, String.format(Locale.ROOT, "%.1f HP%s", health, absorption > 0 ? String.format(Locale.ROOT, " | %.1f abs", absorption) : ""));
+    }
+    public void armorPoints(int points) { if (enabled(Module.ARMOR_POINTS)) value(Module.ARMOR_POINTS, points + " armor"); }
+    public void attackCooldown(float progress) { if (enabled(Module.ATTACK_INDICATOR)) value(Module.ATTACK_INDICATOR, progress >= 1 ? "Ready" : String.format(Locale.ROOT, "%d%%", Math.round(progress * 100))); }
+    public void horse(float health, float max, double jump) {
+        if (enabled(Module.HORSES)) value(Module.HORSES, String.format(Locale.ROOT, "Mount %.1f/%.1f · jump %.2f", health, max, jump));
+    }
+    public void clearHorse() { if (enabled(Module.HORSES)) value(Module.HORSES, "Not mounted"); }
+    public void bossBar(String name, float progress) {
+        if (!enabled(Module.BOSS_BAR)) return;
+        value(Module.BOSS_BAR, name == null || name.isEmpty() ? "No boss bar" : String.format(Locale.ROOT, "%s · %d%%", name, Math.round(Math.max(0, Math.min(1, progress)) * 100)));
+    }
+    public void lightLevel(int block, int sky) { if (enabled(Module.LIGHT_LEVEL)) value(Module.LIGHT_LEVEL, "Block " + block + " / Sky " + sky); }
+    public void scoreboardLines(List<String> lines) {
+        if (!enabled(Module.SCOREBOARD)) return;
+        if (lines == null || lines.isEmpty()) { value(Module.SCOREBOARD, "No sidebar"); rows(Module.SCOREBOARD, Collections.<HudRow>emptyList()); return; }
+        List<HudRow> out = new ArrayList<HudRow>();
+        for (int i = 0; i < Math.min(8, lines.size()); i++) out.add(new HudRow(null, lines.get(i)));
+        rows(Module.SCOREBOARD, out); value(Module.SCOREBOARD, lines.get(0));
+    }
+    public void tntFuse(int ticksLeft) { if (enabled(Module.TNT_TIMER)) value(Module.TNT_TIMER, ticksLeft < 0 ? "No TNT" : String.format(Locale.ROOT, "%.2fs", ticksLeft / 20.0)); }
+    public void itemEntity(String name, int ageTicks) {
+        if (enabled(Module.ITEM_INFO)) value(Module.ITEM_INFO, name == null ? "No item" : name + " · " + ageTicks / 20 + "s");
+        if (enabled(Module.ITEM_DESPAWN)) value(Module.ITEM_DESPAWN, name == null ? "No item" : Math.max(0, (6000 - ageTicks) / 20) + "s left");
+    }
+    public void packNames(String names) { if (enabled(Module.PACK_DISPLAY)) value(Module.PACK_DISPLAY, names == null || names.isEmpty() ? "Default pack" : names); }
+    public void inventorySlots(int emptyHotbar, int emptyInv) { if (enabled(Module.INVENTORY)) value(Module.INVENTORY, "Hotbar " + emptyHotbar + " free · Inv " + emptyInv + " free"); }
+    public void saturation(float saturation) { if (enabled(Module.SATURATION)) value(Module.SATURATION, String.format(Locale.ROOT, "%.1f sat", saturation)); }
+    public void elytra(int remaining, boolean flying) { if (enabled(Module.ELYTRA)) value(Module.ELYTRA, remaining < 0 ? "No elytra" : (flying ? "Flying · " : "") + remaining + " dur"); }
+    public void shield(int remaining) { if (enabled(Module.SHIELD)) value(Module.SHIELD, remaining < 0 ? "No shield" : remaining + " dur"); }
+    public void totems(int count) { if (enabled(Module.TOTEM)) value(Module.TOTEM, count + " totem" + (count == 1 ? "" : "s") + (totemPops > 0 ? " · " + totemPops + " pops" : "")); }
+    public void teamTracker(List<String> teammates) {
+        if (!enabled(Module.TEAM_TRACKER)) return;
+        if (teammates == null || teammates.isEmpty()) { value(Module.TEAM_TRACKER, "No teammates"); rows(Module.TEAM_TRACKER, Collections.<HudRow>emptyList()); return; }
+        List<HudRow> out = new ArrayList<HudRow>();
+        for (int i = 0; i < Math.min(8, teammates.size()); i++) out.add(new HudRow(null, teammates.get(i)));
+        rows(Module.TEAM_TRACKER, out); value(Module.TEAM_TRACKER, teammates.size() + " nearby");
+    }
+    public float fovFactor() { return enabled(Module.FOV_CHANGER) ? setting(Module.FOV_CHANGER, Setting.FOV_FACTOR) / 100f : 1f; }
+    public float brightnessGamma(float current) {
+        if (!enabled(Module.BRIGHTNESS)) {
+            if (brightnessPrevious != null) { float restore = brightnessPrevious.floatValue(); brightnessPrevious = null; return restore; }
+            return current;
+        }
+        if (brightnessPrevious == null) brightnessPrevious = Double.valueOf(current);
+        return setting(Module.BRIGHTNESS, Setting.BRIGHTNESS_GAMMA) / 100f;
+    }
+    public int overlayColor() { return color(Module.BLOCK_OVERLAY, Setting.OVERLAY_COLOR); }
+    public boolean drawBlockOverlay() { return enabled(Module.BLOCK_OVERLAY); }
+    public boolean drawHitboxes() { return enabled(Module.HITBOXES); }
+    public boolean drawMobOverlay() { return enabled(Module.MOB_OVERLAY); }
+    public boolean drawLootBeams() { return enabled(Module.LOOT_BEAMS); }
+    public boolean hideNametags() { return enabled(Module.NAMETAGS) && setting(Module.NAMETAGS, Setting.SHOW_NAMETAGS) == 0; }
+    public boolean preventDrop() { return enabled(Module.DROP_PREVENTION); }
+    public boolean muteToasts() { return enabled(Module.TOAST_CONTROL); }
+    public boolean cullLogs() { return enabled(Module.CULL_LOGS); }
+    public boolean hideVanillaF3() { return enabled(Module.CUSTOM_F3); }
+    public boolean chatTimestamps() { return enabled(Module.CHAT_TIMESTAMPS); }
+    public boolean cairnTitle() { return enabled(Module.TITLE_TWEAKER); }
+    public boolean autohideHud(boolean inventoryOpen) { return enabled(Module.AUTOHIDE_HUD) && inventoryOpen && setting(Module.AUTOHIDE_HUD, Setting.AUTOHIDE_INVENTORY) == 1; }
+    public int timeOverride() { return enabled(Module.TIME_CHANGER) ? setting(Module.TIME_CHANGER, Setting.TIME_OF_DAY) : -1; }
+    /** 0 clear, 1 rain, 2 thunder; -1 means leave vanilla alone. */
+    public int weatherOverride() { return enabled(Module.WEATHER_CHANGER) ? setting(Module.WEATHER_CHANGER, Setting.WEATHER_MODE) : -1; }
+    public float viewmodelScale() { return enabled(Module.VIEWMODEL) ? setting(Module.VIEWMODEL, Setting.VIEWMODEL_SCALE) / 100f : 1f; }
+    public float particleRate() { return enabled(Module.PARTICLES) ? setting(Module.PARTICLES, Setting.PARTICLE_RATE) / 100f : 1f; }
+    public int uiScaleOverride() { return enabled(Module.UI_SCALING) ? setting(Module.UI_SCALING, Setting.UI_SCALE) : -1; }
+    public String coverName(String real) {
+        if (!enabled(Module.NICK_HIDER) || real == null) return real;
+        int n = setting(Module.NICK_HIDER, Setting.NICK_COVER); StringBuilder b = new StringBuilder(n); for (int i = 0; i < n; i++) b.append('*'); return b.toString();
+    }
+    public boolean consumeReconnect() { boolean v = reconnectRequested; reconnectRequested = false; return v; }
+    public void requestReconnect() { if (enabled(Module.RECONNECT)) reconnectRequested = true; }
+    public boolean snaplook(boolean keyDown) {
+        if (!enabled(Module.SNAPLOOK)) { snaplookHeld = false; return false; }
+        snaplookHeld = keyDown; return snaplookHeld;
+    }
+    public boolean perspectivePressed(boolean keyDown) {
+        if (!enabled(Module.PERSPECTIVE)) { perspectivePressed = false; return false; }
+        boolean edge = keyDown && !perspectivePressed; perspectivePressed = keyDown; return edge;
+    }
+    public boolean autoPerspective(boolean elytraFlying) { return enabled(Module.AUTO_PERSPECTIVE) && elytraFlying; }
     public void input(boolean forward, boolean back, boolean left, boolean right, boolean space, boolean mouseLeft, boolean mouseRight) {
         this.forward = forward; this.back = back; this.left = left; this.right = right; this.space = space; this.mouseLeft = mouseLeft; this.mouseRight = mouseRight;
     }
@@ -265,6 +441,9 @@ public final class CairnClient {
         keysManaged = true;
         keyCodes[Bind.MENU.ordinal()] = number("key.MENU", menuCode); keyNames[Bind.MENU.ordinal()] = config.getProperty("key.MENU.name", menuName);
         keyCodes[Bind.ZOOM.ordinal()] = number("key.ZOOM", zoomCode); keyNames[Bind.ZOOM.ordinal()] = config.getProperty("key.ZOOM.name", zoomName);
+        keyCodes[Bind.PERSPECTIVE.ordinal()] = number("key.PERSPECTIVE", 294); keyNames[Bind.PERSPECTIVE.ordinal()] = config.getProperty("key.PERSPECTIVE.name", "F5");
+        keyCodes[Bind.SNAPLOOK.ordinal()] = number("key.SNAPLOOK", 71); keyNames[Bind.SNAPLOOK.ordinal()] = config.getProperty("key.SNAPLOOK.name", "G");
+        keyCodes[Bind.RECONNECT.ordinal()] = number("key.RECONNECT", 82); keyNames[Bind.RECONNECT.ordinal()] = config.getProperty("key.RECONNECT.name", "R");
     }
     private boolean cinematicActive, cinematicPrevious;
     public boolean keysManaged() { return keysManaged; }
@@ -394,7 +573,7 @@ public final class CairnClient {
     private Module previewModule;
     private Setting previewColor;
     private int previewRgb, previewAlpha;
-    static Setting alphaSetting(Setting color) { return color == Setting.BG_COLOR ? Setting.OPACITY : color == Setting.TEXT_COLOR ? Setting.TEXT_ALPHA : Setting.ACCENT_ALPHA; }
+    static Setting alphaSetting(Setting color) { return color == Setting.BG_COLOR || color == Setting.OVERLAY_COLOR ? Setting.OPACITY : color == Setting.TEXT_COLOR ? Setting.TEXT_ALPHA : Setting.ACCENT_ALPHA; }
     private int color(Module module, Setting setting) {
         int rgb = setting(module, setting), alpha = setting(module, alphaSetting(setting));
         if (module == previewModule && setting == previewColor) { rgb = previewRgb; alpha = previewAlpha; }
@@ -486,6 +665,7 @@ public final class CairnClient {
     public void renderHud(Canvas canvas, int width, int height) {
         viewportWidth = width; viewportHeight = height;
         counters();
+        if (!editing && autohideHud(inventoryOpen)) return;
         layout(canvas, width, height);
         for (Module module : MODULES) {
             if (!enabled(module) || !module.hud) continue;

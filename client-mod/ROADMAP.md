@@ -1,25 +1,17 @@
 # Requested client modules
 
-This is Cairn's own module backlog from the November 2026 request. It is not a claim that every entry is implemented. Unknown defaults must be chosen explicitly and documented.
+This is Cairn's own module backlog from the November 2026 request. It is not a claim that every entry is finished on every supported version. Unknown defaults must be chosen explicitly and documented. A catalog entry or toggle without an implementation is not a finished module.
 
-Current work comes first: title menu, Right Shift HUD editor, module settings with live previews, plain HUD defaults, armor/effect icons, in-game cosmetic selection and administrator grants tied to verified identities. See VALIDATION.md for actual coverage.
+## Status
+
+**In the client Module catalog now (70):** FPS, Coordinates, Ping, Keystrokes, CPS, Armor, Effects, Clock, Speed, Toggle sprint, Zoom, Crosshair, Direction, Biome, Held item, Food, World time, Session, Memory, Server, Block indicator, Reach, TPS, Combo, Death info, Horses, Boss bar, Hearts, Armor points, Attack indicator, Elytra, Shield, Totem, Light level, Scoreboard, TNT timer, Item info, Item despawn, Pack display, Inventory, System resources, Saturation, UHC overlay, Team tracker, Block overlay, Brightness, FOV changer, Hitboxes, Hit indicator, Time changer, Weather changer, Nick hider, Drop prevention, Autohide HUD, Perspective, Snaplook, Auto perspective, ViewModel, Particles, Nametags, Reconnect, Toast control, UI scaling, Cull logs, Custom F3, Chat timestamps, Waypoints, Mob overlay, Loot beams, Title tweaker.
+
+**Still open (need dedicated systems or launcher work):** Item Physics, Pack Organizer, Tooltips rewrite, Animations, Camera presets, Color Saturation, Motion Blur, Light Level world overlay (beyond the HUD number), Subtitles HUD, Jump Reset combat helper, Auto Text, Backups, Custom Advancements screen, full Custom Chat, Discord presence module, Hypixel utilities, Screenshot helper module, Keybind Search UI, Tablist cosmetics column, Tier Tagger, Voice (devices/PTT/proximity), full Waypoints editor with beams/sharing, Party system, Admin web UI, seasonal grants, optional performance mod packs.
+
+Current work still comes first for polish: title menu, Right Shift HUD editor, live settings previews, armor/effect icons, in-game cosmetics and verified staff grants. See VALIDATION.md for actual coverage.
 
 ## Configuration requirements
 
-Every HUD must expose independent text/background colors, background opacity, background visibility, padding, width/height, scale and alignment where applicable. Colors accept custom RGB HEX. Previews must reflect changes immediately. Module-specific options must change the real behavior and have regression tests. A catalog entry or toggle without an implementation is not a finished module.
+Every HUD must expose independent text/background colors, background opacity, background visibility, padding, width/height, scale and alignment where applicable. Colors accept custom RGB HEX. Previews must reflect changes immediately. Module-specific options must change the real behavior and have regression tests.
 
-## Requested module groups
-
-| Group | Requested modules and behavior |
-| --- | --- |
-| Existing HUD expansion | FPS, Ping, Coordinates, CPS, Direction, Playtime, Potion Effects, Time, Server Address, System Resources: formatting, visibility, per-field colors, timing and layout options |
-| Equipment and inventory | Armor Bar, Armor Status, Attack Indicator, Drop Prevention, Elytras, Hearts, Inventory, Item Despawn, Item Info, Item Physics, Pack Display, Pack Organizer, Saturation, Shield Status, Totem, Tooltips, UHC Overlay |
-| Camera and visuals | Animations, Auto Perspective, Block Overlay, Brightness, Camera, Color Saturation, Custom Crosshair, Dark Mode, FOV Changer, Hitbox, Hit Indicator, Light Level Overlay, Loot Beams, Mob Overlay, Motion Blur, Mousestrokes, Nametags, Nick Hider, Perspective, Snaplook, Time Changer, Title Tweaker, ViewModel, Weather Changer, Particles and Visuals |
-| Additional HUD | Autohide HUD, Block Indicator, Boss Bar, Combo Display, Death Info, Horses, Item Info, Jump Reset, Reach Display, Scoreboard, Subtitles, TNT Timer, TPS |
-| Chat, input and utilities | Auto Text, Backups, Cull Logs, Custom Advancements Screen, Custom Chat, Custom F3, Discord, Hypixel utilities, Reconnect, Screenshot, Keybind Search, Tablist, Tier Tagger, Toast Control, Toggle Sprint, UI Scaling |
-| Social and world | Voice with device/PTT controls, party/proximity modes and volume limits; Waypoints with names/beams/death markers; Team Tracker; party sharing remains part of the original handoff |
-| Client settings | Server search/folders/favorites, world favorites/trash, preview backgrounds, window/fullscreen controls, idle/background FPS limits, chat history/copy/mentions, sound filters, graphics and performance options, cosmetic visibility/physics |
-
-Implement and validate each group across the supported versions, accounting for features that do not exist in older Minecraft versions. Preserve custom configurations through migrations. Keep server-dependent controls honest when no server is configured, authentication is unavailable or the backend is down.
-
-The earlier handoff also requests emotes, parties, minimap, launcher 3D cosmetic preview, Tab badges, a protected admin page, seasonal grants and optional compatible performance mods. Those remain open until implemented and tested; listing them here does not mark them complete.
+Implement and validate each remaining group across the supported versions, accounting for features that do not exist in older Minecraft versions. Preserve custom configurations through migrations. Keep server-dependent controls honest when no server is configured, authentication is unavailable or the backend is down.

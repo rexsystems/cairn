@@ -52,7 +52,7 @@ public final class CairnForge {
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
-        if (mc.currentScreen != null && mc.currentScreen.getClass() == net.minecraft.client.gui.GuiMainMenu.class) mc.displayGuiScreen(new Title());
+        if (client.cairnTitle() && mc.currentScreen != null && mc.currentScreen.getClass() == net.minecraft.client.gui.GuiMainMenu.class) mc.displayGuiScreen(new Title());
         client.cosmetics.account(mc.getSession().getUsername(), mc.getSession().getPlayerID(), mc.getSession().getToken());
         client.cosmetics.tick();
         client.friends.activity(net.minecraftforge.fml.common.Loader.MC_VERSION, mc.theWorld != null, mc.theWorld == null || mc.getCurrentServerData() == null ? null : mc.getCurrentServerData().serverIP);
@@ -60,8 +60,11 @@ public final class CairnForge {
             if (mc.theWorld != null) return;
             mc.displayGuiScreen(new net.minecraft.client.multiplayer.GuiConnecting(new net.minecraft.client.gui.GuiMainMenu(), mc, FriendConnection.server(address)));
         } : null);
+        client.clientTick();
+        client.inventoryOpen(mc.currentScreen != null && !(mc.currentScreen instanceof Menu) && !(mc.currentScreen instanceof Title));
         if (mc.thePlayer == null) return;
         mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);
+        if (client.enabled(Module.BRIGHTNESS)) mc.gameSettings.gammaSetting = client.brightnessGamma(mc.gameSettings.gammaSetting);
         boolean left = Mouse.isButtonDown(0), right = Mouse.isButtonDown(1);
         boolean down = mc.gameSettings.keyBindSprint.isKeyDown();
         if (client.enabled(Module.SPRINT) && mc.currentScreen == null) {
@@ -93,6 +96,17 @@ public final class CairnForge {
         if (client.enabled(Module.DIRECTION)) client.value(Module.DIRECTION, mc.thePlayer.getHorizontalFacing().getName().toUpperCase(Locale.ROOT));
         if (client.enabled(Module.BIOME)) client.value(Module.BIOME, mc.theWorld.getBiomeGenForCoords(mc.thePlayer.getPosition()).biomeName);
         if (client.enabled(Module.FOOD)) client.value(Module.FOOD, "Food " + mc.thePlayer.getFoodStats().getFoodLevel() + " / Sat " + Math.round(mc.thePlayer.getFoodStats().getSaturationLevel()));
+        client.saturation(mc.thePlayer.getFoodStats().getSaturationLevel());
+        client.hearts(mc.thePlayer.getHealth(), mc.thePlayer.getMaxHealth(), mc.thePlayer.getAbsorptionAmount());
+        client.armorPoints(mc.thePlayer.getTotalArmorValue());
+        if (mc.thePlayer.ridingEntity instanceof net.minecraft.entity.EntityLivingBase) {
+            net.minecraft.entity.EntityLivingBase mount = (net.minecraft.entity.EntityLivingBase) mc.thePlayer.ridingEntity;
+            client.horse(mount.getHealth(), mount.getMaxHealth(), 0);
+        } else client.clearHorse();
+        int emptyHotbar = 0, emptyInv = 0;
+        for (int i = 0; i < 9; i++) if (mc.thePlayer.inventory.mainInventory[i] == null) emptyHotbar++;
+        for (int i = 9; i < 36; i++) if (mc.thePlayer.inventory.mainInventory[i] == null) emptyInv++;
+        client.inventorySlots(emptyHotbar, emptyInv);
         if (client.enabled(Module.WORLD_TIME)) { long time = (mc.theWorld.getWorldTime() + 6000) % 24000; client.value(Module.WORLD_TIME, time / 1000 + ":" + (time % 1000 * 60 / 1000 < 10 ? "0" : "") + time % 1000 * 60 / 1000); }
         if (client.enabled(Module.SERVER)) client.value(Module.SERVER, mc.getCurrentServerData() == null ? "Singleplayer" : mc.getCurrentServerData().serverIP);
         if (client.enabled(Module.HELD_ITEM)) {
@@ -199,7 +213,7 @@ public final class CairnForge {
         net.minecraft.client.renderer.GlStateManager.popMatrix();
     }
     @SubscribeEvent public void fov(FOVUpdateEvent event) {
-        event.newfov /= client.zoomFactor(zooming());
+        event.newfov = event.newfov / client.zoomFactor(zooming()) * client.fovFactor();
     }
     private boolean zooming() { return zoom.isKeyDown() && mc.currentScreen == null && mc.thePlayer != null; }
     @SubscribeEvent public void mouse(net.minecraftforge.client.event.MouseEvent event) {

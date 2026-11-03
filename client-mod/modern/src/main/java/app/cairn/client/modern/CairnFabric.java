@@ -97,7 +97,8 @@ public final class CairnFabric implements ClientModInitializer {
         pose.popPose();
     }
     public static float zoomFactor() {
-        return client == null ? 1 : client.zoomFactor(zooming());
+        if (client == null) return 1;
+        return client.zoomFactor(zooming()) / Math.max(0.01f, client.fovFactor());
     }
     public static boolean hideCrosshair() { return client != null && client.enabled(Module.CROSSHAIR) && client.setting(Module.CROSSHAIR, CairnClient.Setting.CROSS_HIDE_VANILLA) == 1; }
     public void onInitializeClient() {
@@ -128,8 +129,10 @@ public final class CairnFabric implements ClientModInitializer {
     public static void tick() {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.gui.screen() != null && mc.gui.screen().getClass() == net.minecraft.client.gui.screens.TitleScreen.class) mc.gui.setScreen(new Title());
+        if (client.cairnTitle() && mc.gui.screen() != null && mc.gui.screen().getClass() == net.minecraft.client.gui.screens.TitleScreen.class) mc.gui.setScreen(new Title());
         mc.options.smoothCamera = client.smoothCamera(zooming(), mc.options.smoothCamera);
+        client.clientTick();
+        client.inventoryOpen(mc.gui.screen() != null && !(mc.gui.screen() instanceof Menu) && !(mc.gui.screen() instanceof Title));
         client.cosmetics.account(mc.getUser().getName(), mc.getUser().getProfileId().toString(), mc.getUser().getAccessToken());
         if (mc.level != null && ticks % 20 == 0) for (AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
@@ -146,6 +149,15 @@ public final class CairnFabric implements ClientModInitializer {
         } else sprint = false;
         sprintWasDown = down;
         client.input(mc.options.keyUp.isDown(), mc.options.keyDown.isDown(), mc.options.keyLeft.isDown(), mc.options.keyRight.isDown(), mc.options.keyJump.isDown(), mc.mouseHandler.isLeftPressed(), mc.mouseHandler.isRightPressed());
+        if (client.perspectivePressed(InputConstants.isKeyDown(client.keyCode(CairnClient.Bind.PERSPECTIVE)))) mc.options.setCameraType(mc.options.getCameraType().cycle());
+        client.snaplook(InputConstants.isKeyDown(client.keyCode(CairnClient.Bind.SNAPLOOK)));
+        if (client.autoPerspective(mc.player.isFallFlying()) && mc.options.getCameraType().isFirstPerson()) mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_BACK);
+        if (InputConstants.isKeyDown(client.keyCode(CairnClient.Bind.RECONNECT))) client.requestReconnect();
+        if (client.consumeReconnect() && mc.getCurrentServer() != null) {
+            var data = mc.getCurrentServer();
+            mc.disconnect(new net.minecraft.client.gui.screens.TitleScreen(), false);
+            net.minecraft.client.gui.screens.ConnectScreen.startConnecting(new net.minecraft.client.gui.screens.TitleScreen(), mc, net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(data.ip), data, false, null);
+        }
         if (ticks++ % 5 != 0) return;
         if (client.enabled(Module.BLOCK_INDICATOR)) {
             if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit && hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
@@ -166,12 +178,42 @@ public final class CairnFabric implements ClientModInitializer {
         if (client.enabled(Module.DIRECTION)) client.value(Module.DIRECTION, mc.player.getDirection().toString().toUpperCase(Locale.ROOT));
         if (client.enabled(Module.BIOME)) client.value(Module.BIOME, mc.level.getBiome(mc.player.blockPosition()).unwrapKey().map(key -> key.identifier().getPath().replace('_', ' ')).orElse("Unknown biome"));
         if (client.enabled(Module.FOOD)) client.value(Module.FOOD, "Food " + mc.player.getFoodData().getFoodLevel() + " / Sat " + Math.round(mc.player.getFoodData().getSaturationLevel()));
+        client.saturation(mc.player.getFoodData().getSaturationLevel());
+        client.hearts(mc.player.getHealth(), mc.player.getMaxHealth(), mc.player.getAbsorptionAmount());
+        client.armorPoints(mc.player.getArmorValue());
+        client.attackCooldown(mc.player.getAttackStrengthScale(0));
         if (client.enabled(Module.WORLD_TIME)) { long time = (mc.level.getOverworldClockTime() + 6000) % 24000; client.value(Module.WORLD_TIME, time / 1000 + ":" + (time % 1000 * 60 / 1000 < 10 ? "0" : "") + time % 1000 * 60 / 1000); }
         if (client.enabled(Module.SERVER)) client.value(Module.SERVER, mc.getCurrentServer() == null ? "Singleplayer" : mc.getCurrentServer().ip);
         if (client.enabled(Module.HELD_ITEM)) {
             ItemStack item = mc.player.getMainHandItem();
             client.value(Module.HELD_ITEM, item.isEmpty() ? "Empty hand" : item.getHoverName().getString() + (item.isDamageableItem() ? " " + (item.getMaxDamage() - item.getDamageValue()) : " x" + item.getCount()));
         }
+        ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        client.elytra(chest.isEmpty() || !chest.is(net.minecraft.world.item.Items.ELYTRA) ? -1 : chest.getMaxDamage() - chest.getDamageValue(), mc.player.isFallFlying());
+        ItemStack off = mc.player.getOffhandItem(); ItemStack main = mc.player.getMainHandItem();
+        int shield = (!off.isEmpty() && off.is(net.minecraft.world.item.Items.SHIELD)) ? off.getMaxDamage() - off.getDamageValue() : ((!main.isEmpty() && main.is(net.minecraft.world.item.Items.SHIELD)) ? main.getMaxDamage() - main.getDamageValue() : -1);
+        client.shield(shield);
+        int totems = 0; for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) { ItemStack stack = mc.player.getInventory().getItem(i); if (stack.is(net.minecraft.world.item.Items.TOTEM_OF_UNDYING)) totems += stack.getCount(); }
+        client.totems(totems);
+        int emptyHotbar = 0, emptyInv = 0;
+        for (int i = 0; i < 9; i++) if (mc.player.getInventory().getItem(i).isEmpty()) emptyHotbar++;
+        for (int i = 9; i < 36; i++) if (mc.player.getInventory().getItem(i).isEmpty()) emptyInv++;
+        client.inventorySlots(emptyHotbar, emptyInv);
+        client.lightLevel(mc.level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, mc.player.blockPosition()), mc.level.getBrightness(net.minecraft.world.level.LightLayer.SKY, mc.player.blockPosition()));
+        if (mc.player.getVehicle() instanceof net.minecraft.world.entity.LivingEntity mount) client.horse(mount.getHealth(), mount.getMaxHealth(), 0);
+        else client.clearHorse();
+        String packs = mc.getResourcePackRepository().getSelectedPacks().stream().map(net.minecraft.server.packs.repository.Pack::getId).reduce((a, b) -> a + ", " + b).orElse("");
+        client.packNames(packs);
+        int nearestTnt = -1; String itemName = null; int itemAge = 0;
+        for (var entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof net.minecraft.world.entity.item.PrimedTnt tnt) {
+                int fuse = tnt.getFuse();
+                if (nearestTnt < 0 || fuse < nearestTnt) nearestTnt = fuse;
+            } else if (entity instanceof net.minecraft.world.entity.item.ItemEntity item && mc.player.distanceTo(item) < 6) {
+                itemName = item.getItem().getHoverName().getString(); itemAge = item.getAge();
+            }
+        }
+        client.tntFuse(nearestTnt); client.itemEntity(itemName, itemAge);
         if (client.enabled(Module.ARMOR)) {
         java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<>();
         StringBuilder armor = new StringBuilder("Armor");
@@ -193,6 +235,7 @@ public final class CairnFabric implements ClientModInitializer {
         client.value(Module.EFFECTS, effects.isEmpty() ? "No effects" : effects.toString());
         client.rows(Module.EFFECTS, rows);
         }
+        client.bossBar("", 0);
     }
     public static void click(int button) {
         if (client != null && Minecraft.getInstance().gui.screen() == null) client.mouseClick(button, InputConstants.MOUSE_BUTTON_LEFT, InputConstants.MOUSE_BUTTON_RIGHT);

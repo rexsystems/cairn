@@ -7,6 +7,7 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 ## [Unreleased]
 
 ### Added
+- Expanded the in-game module catalog to seventy modules with shared settings APIs for vitals, combat HUDs, world readouts and visual/control toggles (FOV, brightness, title tweaker, reconnect, perspective, waypoints and more).
 - Reach HUD showing eye-to-hit distance for the current block or entity target.
 - Block Indicator HUD with the real target block's localized name and native item icon, and shared HUD height/padding controls.
 - Draggable numeric sliders across module settings and a visual HSV/alpha color picker with live preview, checkerboard transparency and optional RGBA HEX input.

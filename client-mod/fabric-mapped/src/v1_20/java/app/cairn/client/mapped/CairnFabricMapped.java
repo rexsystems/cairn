@@ -65,7 +65,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         Minecraft mc = Minecraft.getInstance();
         return client != null && mc.player != null && mc.screen == null && key(client.keyCode(CairnClient.Bind.ZOOM));
     }
-    public static double zoomFactor() { return client == null ? 1 : client.zoomFactor(zooming()); }
+    public static double zoomFactor() { return client == null ? 1 : client.zoomFactor(zooming()) / Math.max(0.01f, client.fovFactor()); }
     /** Key events arrive between ticks, so a quick tap of the menu key is never missed. */
     public static boolean keyPress(int key, int action) {
         Minecraft mc = Minecraft.getInstance();
@@ -84,7 +84,9 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
         mc.options.smoothCamera = client.smoothCamera(zooming(), mc.options.smoothCamera);
-        if (mc.screen != null && mc.screen.getClass() == net.minecraft.client.gui.screens.TitleScreen.class) mc.setScreen(new Title());
+        if (client.cairnTitle() && mc.screen != null && mc.screen.getClass() == net.minecraft.client.gui.screens.TitleScreen.class) mc.setScreen(new Title());
+        client.clientTick();
+        client.inventoryOpen(mc.screen != null && !(mc.screen instanceof Menu) && !(mc.screen instanceof Title));
         client.cosmetics.account(mc.getUser().getName(), mc.getUser().getProfileId().toString(), mc.getUser().getAccessToken());
         if (mc.level != null && ticks % 20 == 0) for (net.minecraft.client.player.AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
@@ -120,6 +122,9 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (client.enabled(Module.DIRECTION)) client.value(Module.DIRECTION, mc.player.getDirection().toString().toUpperCase(Locale.ROOT));
         if (client.enabled(Module.BIOME)) client.value(Module.BIOME, mc.level.getBiome(mc.player.blockPosition()).unwrapKey().map(key -> key.location().getPath().replace('_', ' ')).orElse("Unknown biome"));
         if (client.enabled(Module.FOOD)) client.value(Module.FOOD, "Food " + mc.player.getFoodData().getFoodLevel() + " / Sat " + Math.round(mc.player.getFoodData().getSaturationLevel()));
+        client.saturation(mc.player.getFoodData().getSaturationLevel());
+        client.hearts(mc.player.getHealth(), mc.player.getMaxHealth(), mc.player.getAbsorptionAmount());
+        client.armorPoints(mc.player.getArmorValue());
         if (client.enabled(Module.WORLD_TIME)) { long time = (mc.level.getDayTime() + 6000) % 24000; client.value(Module.WORLD_TIME, time / 1000 + ":" + (time % 1000 * 60 / 1000 < 10 ? "0" : "") + time % 1000 * 60 / 1000); }
         if (client.enabled(Module.SERVER)) client.value(Module.SERVER, mc.getCurrentServer() == null ? "Singleplayer" : mc.getCurrentServer().ip);
         if (client.enabled(Module.HELD_ITEM)) {

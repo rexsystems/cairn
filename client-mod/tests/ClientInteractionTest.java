@@ -29,8 +29,11 @@ public final class ClientInteractionTest {
         }
         void render(CairnClient client) { labels.clear(); client.renderMenu(this, width, height, 0, 0); }
         void click(CairnClient client, String label) {
-            for (Label item : labels) if (item.text.equals(label)) { client.mouseDown(width, height, item.x + 1, item.y + 1); render(client); return; }
-            throw new AssertionError("Control not visible: " + label);
+            if (!clickIf(client, label)) throw new AssertionError("Control not visible: " + label);
+        }
+        boolean clickIf(CairnClient client, String label) {
+            for (Label item : labels) if (item.text.equals(label)) { client.mouseDown(width, height, item.x + 1, item.y + 1); render(client); return true; }
+            return false;
         }
         void clickAfter(CairnClient client, String label, String preceding) {
             boolean seen = false;
@@ -175,7 +178,7 @@ public final class ClientInteractionTest {
                 Canvas viewport = new Canvas(width, height);
                 for (Module module : Module.values()) {
                     client.select(module); client.enterEditor(); client.editorSettings();
-                    for (int page = 0; page < 20; page++) { viewport.render(client); viewport.click(client, "Down"); }
+                    for (int page = 0; page < 20; page++) { viewport.render(client); if (!viewport.clickIf(client, "Down")) break; }
                     client.escape();
                 }
             }
@@ -219,6 +222,18 @@ public final class ClientInteractionTest {
         check(canvas.labels.stream().anyMatch(item -> item.text.equals("4.25 blocks")), "Enabled reach shows the measured hit distance");
         client.reach(-1); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
         check(canvas.labels.stream().anyMatch(item -> item.text.equals("No target")), "Missing hits clear the reach distance");
+        client.toggle(Module.COMBO); client.comboHit(); client.comboHit(); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().anyMatch(item -> item.text.equals("2 combo")), "Combo counts real hits");
+        client.toggle(Module.DEATH_INFO); client.toggle(Module.WAYPOINTS); client.death("Slain", 10, 64, -3);
+        canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().anyMatch(item -> item.text.equals("Slain")) && canvas.labels.stream().anyMatch(item -> item.text.contains("Death 10")), "Death info and waypoint store the real death");
+        client.toggle(Module.HEARTS); client.hearts(18.5f, 20f, 2f); canvas.labels.clear(); client.renderHud(canvas, 640, 360);
+        check(canvas.labels.stream().anyMatch(item -> item.text.contains("18.5") && item.text.contains("abs")), "Hearts show health and absorption");
+        check(client.fovFactor() == 1f, "FOV changer defaults off");
+        client.toggle(Module.FOV_CHANGER); client.setting(Module.FOV_CHANGER, Setting.FOV_FACTOR, 150);
+        check(Math.abs(client.fovFactor() - 1.5f) < 0.001f, "FOV changer multiplies field of view");
+        check(client.preventDrop() == false, "Drop prevention defaults off");
+        client.toggle(Module.DROP_PREVENTION); check(client.preventDrop(), "Drop prevention arms the drop block");
     }
     private static Label label(Canvas canvas, String text) {
         for (Label label : canvas.labels) if (label.text.equals(text)) return label;
