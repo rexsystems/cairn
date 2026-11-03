@@ -401,6 +401,11 @@ pub fn read_jar(path: &Path) -> Option<ModInfo> {
     Some(read_zip(&mut zip, 0))
 }
 
+pub fn read_bytes(bytes: &[u8]) -> Option<ModInfo> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    Some(read_zip(&mut zip, 0))
+}
+
 #[derive(Serialize, Deserialize, Default)]
 #[serde(default)]
 struct CacheEntry {

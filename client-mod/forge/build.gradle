@@ -1,0 +1,23 @@
+plugins {
+    id 'java'
+    id 'xyz.wagyourtail.unimined' version '1.4.1'
+}
+group = 'app.cairn'
+version = '0.1.0'
+def targetMinecraft = findProperty('minecraftVersion') ?: '1.8.9'
+def forgeVersions = ['1.8': '11.14.4.1577', '1.8.8': '11.15.0.1655', '1.8.9': '11.15.1.2318-1.8.9']
+def mcpVersions = ['1.8': '18-1.8', '1.8.8': '20-1.8.8', '1.8.9': '22-1.8.9']
+if (!forgeVersions.containsKey(targetMinecraft)) throw new GradleException("Unsupported legacy target: $targetMinecraft")
+base { archivesName = "cairn-client-forge-$targetMinecraft" }
+java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
+tasks.withType(JavaCompile).configureEach { options.release = 8 }
+sourceSets.main.java.srcDir('../common/src/main/java')
+unimined.minecraft {
+    version targetMinecraft
+    mappings { mcp('stable', mcpVersions[targetMinecraft]); searge() }
+    minecraftForge { loader forgeVersions[targetMinecraft] }
+}
+processResources {
+    inputs.property 'minecraftVersion', targetMinecraft
+    filesMatching('mcmod.info') { expand minecraftVersion: targetMinecraft }
+}

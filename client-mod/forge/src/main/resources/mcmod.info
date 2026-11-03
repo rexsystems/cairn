@@ -1,0 +1,1 @@
+[{"modid":"cairn_client","name":"Cairn Client","description":"Configurable Cairn HUD and client controls. Right Shift opens the menu.","version":"0.1.0","mcversion":"${minecraftVersion}","clientSideOnly":true,"authorList":["Cairn"]}]

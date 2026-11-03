@@ -132,6 +132,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
     let task = Task::new(&app, format!("Preparing {}", inst.name));
     let prep = async {
         let (java_path, _vid, installed) = prepare(&paths, &settings, &mut inst, &task).await?;
+        crate::cairn_client::sync(&inst.dir(&paths), &inst)?;
         task.stage("Signing in", 0, 0);
         let acc = accs.accounts.iter_mut().find(|a| a.id == active_id).ok_or_else(|| anyhow!("The selected account was removed."))?;
         accounts::fresh_token(acc).await?;
@@ -200,6 +201,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
             }
         }
     }
+    extra.push(format!("-Dcairn.client.enabled={}", inst.use_cairn));
     let memory_mb = profile
         .as_ref()
         .and_then(|p| p.memory_mb)

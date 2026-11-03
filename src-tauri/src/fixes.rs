@@ -26,7 +26,7 @@ impl Report {
 /// Reads every jar (cached) and reports problems. Blocking; call from spawn_blocking.
 pub fn check(paths: &Paths, inst: &Instance) -> Report {
     let dir = inst.dir(paths);
-    let mods = crate::modmeta::scan(&dir);
+    let mods = crate::cairn_client::planned_mods(&dir, inst, crate::modmeta::scan(&dir));
     let index = ContentIndex::load(&dir);
     let ctx = compat::Ctx { loader: &inst.loader, mc_version: &inst.mc_version, loader_version: inst.loader_version.as_deref() };
     let mut issues = compat::analyze(&mods, &index, &ctx);

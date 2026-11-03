@@ -1,4 +1,8 @@
 node_modules/
+client-mod/**/build/
+client-mod/**/.gradle/
+client-mod/**/run/
+client-mod/.cache/
 dist/
 src-tauri/target/
 horizon-mod-src/*/target/

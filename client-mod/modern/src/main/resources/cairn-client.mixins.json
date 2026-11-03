@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "app.cairn.client.modern.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["ClientTickMixin", "HudMixin", "ZoomMixin", "MouseMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

@@ -21,6 +21,7 @@ export function OptionsTab({ inst, onSaved }: { inst: InstanceView; onSaved: (i:
   }, [form.loader, form.mcVersion]);
   const set = <K extends keyof InstanceView>(k: K, v: InstanceView[K]) => setForm((f) => ({ ...f, [k]: v }));
   const dirty = JSON.stringify(form) !== JSON.stringify(inst);
+  const cairnSupported = !form.useHorizon && ((form.loader === "forge" && ["1.8", "1.8.8", "1.8.9"].includes(form.mcVersion)) || (form.loader === "fabric" && ["1.20.1", "1.21.1", "26.3"].includes(form.mcVersion)));
   const save = async () => {
     setSaving(true);
     try { const i = await api.updateInstance(form); onSaved(i); setForm(i); toast("Saved instance options"); } catch (e) { toast(String(e), true); } finally { setSaving(false); }
@@ -30,6 +31,12 @@ export function OptionsTab({ inst, onSaved }: { inst: InstanceView; onSaved: (i:
       <section className="panel settings-section">
         <header><h2>General</h2></header>
         <label className="field"><span>Name</span><input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} /></label>
+        <div className="field">
+          <Switch checked={!!form.useCairn} onChange={(value) => set("useCairn", value)} label="Cairn Client" disabled={!cairnSupported && !form.useCairn} />
+          <small>{cairnSupported
+            ? "Applies on your next launch. Right Shift opens the Cairn menu in game. Your existing mods and Cairn settings stay when this is off."
+            : "Available builds: Forge 1.8 / 1.8.8 / 1.8.9 and Fabric 1.20.1 / 1.21.1 / 26.3. Other versions need their own compatible Cairn build."}</small>
+        </div>
         <div className="field">
           <span>Minecraft version</span>
           <Select

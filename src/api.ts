@@ -37,6 +37,7 @@ export interface Instance {
   activeLaunchProfile?: string | null;
   /** Launch Horizon (Rust client) instead of Java. Vanilla 26.3 only. */
   useHorizon?: boolean;
+  useCairn?: boolean;
 }
 
 export interface InstanceView extends Instance { path: string; iconPath?: string | null; modCount: number; cover?: string | null }

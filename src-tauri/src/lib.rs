@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod app_update;
 pub mod backup;
+pub mod cairn_client;
 pub mod compat;
 pub mod content;
 pub mod crash;
@@ -175,6 +176,8 @@ fn update_instance(state: State<AppState>, inst: Instance) -> R<instance::Instan
         ));
     }
     cur.use_horizon = inst.use_horizon && cur.horizon_allowed();
+    cur.use_cairn = inst.use_cairn;
+    cairn_client::validate(&cur).map_err(ea)?;
     instance::save(&state.paths, &cur).map_err(ea)?;
     Ok(instance::view(&state.paths, cur))
 }

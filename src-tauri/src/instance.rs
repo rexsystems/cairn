@@ -50,6 +50,7 @@ pub struct Instance {
     pub active_launch_profile: Option<String>,
     /// Launch Horizon (Rust client) instead of the Java game. Vanilla 26.3 only.
     pub use_horizon: bool,
+    pub use_cairn: bool,
 }
 
 pub const LOADERS: [&str; 5] = ["vanilla", "fabric", "quilt", "forge", "neoforge"];
@@ -137,6 +138,7 @@ pub fn unique_id(paths: &Paths, name: &str) -> String {
 }
 
 pub fn create(paths: &Paths, mut inst: Instance) -> Result<Instance> {
+    crate::cairn_client::validate(&inst)?;
     if inst.name.trim().is_empty() {
         bail!("Give the instance a name");
     }

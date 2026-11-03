@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "cairn_client",
+  "version": "0.1.0",
+  "name": "Cairn Client",
+  "description": "Cairn HUD, module menu and client controls. Right Shift opens the menu.",
+  "environment": "client",
+  "license": "AGPL-3.0-or-later",
+  "entrypoints": { "client": ["app.cairn.client.modern.CairnFabric"] },
+  "mixins": ["cairn-client.mixins.json"],
+  "depends": { "fabricloader": ">=0.20.1", "minecraft": "26.3", "java": ">=25" }
+}
