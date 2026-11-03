@@ -54,6 +54,7 @@ public final class CairnForge {
         if (event.phase != TickEvent.Phase.END) return;
         client.cosmetics.account(mc.getSession().getUsername(), mc.getSession().getPlayerID(), mc.getSession().getToken());
         client.cosmetics.tick();
+        client.friends.activity(net.minecraftforge.fml.common.Loader.MC_VERSION, mc.theWorld != null, mc.theWorld == null || mc.getCurrentServerData() == null ? null : mc.getCurrentServerData().serverIP);
         if (mc.thePlayer == null) return;
         if (mc.theWorld != null && mc.getNetHandler() != null) for (Object value : mc.theWorld.playerEntities) capes((net.minecraft.entity.player.EntityPlayer) value);
         mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);

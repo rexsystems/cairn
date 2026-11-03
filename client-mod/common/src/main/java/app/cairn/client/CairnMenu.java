@@ -14,7 +14,9 @@ final class CairnMenu {
     private final List<Control> controls = new ArrayList<Control>();
     private final List<Module> modules = new ArrayList<Module>();
     private String query = "", category = "All", hex = "";
-    private boolean searchFocus, hexFocus, hexSelected, details, cosmetics;
+    private boolean searchFocus, hexFocus, hexSelected, details, cosmetics, friends, friendFocus, friendSettings;
+    private String friendField = "";
+    private int friendsScroll;
     private Setting colorSetting;
     private String colorError;
     private int listScroll, settingsScroll, cosmeticsScroll, focus = -1, mouseX, panelX, panelWidth, listCapacity = 1, listColumns = 1;
@@ -24,12 +26,22 @@ final class CairnMenu {
         final Runnable action;
         Control(int x, int y, int w, int h, Runnable action) { this.x = x; this.y = y; this.w = w; this.h = h; this.action = action; }
     }
-    CairnMenu(CairnClient client) { this.client = client; }
-    boolean typing() { return searchFocus || hexFocus; }
+    CairnMenu(CairnClient client) {
+        this.client = client;
+        // Reopening the menu lands on the page the player last used.
+        String page = client.option("menu.page", "modules");
+        cosmetics = page.equals("cosmetics");
+        friends = page.equals("friends");
+    }
+    boolean typing() { return searchFocus || hexFocus || friendFocus; }
     String query() { return query; }
-    void focusSearch() { searchFocus = true; hexFocus = false; details = false; colorSetting = null; }
-    void blur() { searchFocus = hexFocus = false; }
+    void focusSearch() { searchFocus = true; hexFocus = friendFocus = false; details = false; colorSetting = null; }
+    void blur() { searchFocus = hexFocus = friendFocus = false; }
     void type(char c) {
+        if (friendFocus) {
+            if ((Character.isLetterOrDigit(c) && c < 128 || c == '_' || c == '-') && friendField.length() < 36) friendField += c;
+            return;
+        }
         if (hexFocus && Character.digit(c, 16) >= 0) {
             if (hexSelected) { hex = ""; hexSelected = false; }
             if (hex.length() < 6) hex += Character.toUpperCase(c);
@@ -38,6 +50,7 @@ final class CairnMenu {
         else if (searchFocus && c >= 32 && c != 127 && query.length() < 64) { query += c; listScroll = 0; }
     }
     void backspace() {
+        if (friendFocus) { if (!friendField.isEmpty()) friendField = friendField.substring(0, friendField.length() - 1); return; }
         if (hexFocus && hexSelected) { hex = ""; hexSelected = false; }
         else if (hexFocus && !hex.isEmpty()) hex = hex.substring(0, hex.length() - 1);
         else if (searchFocus && !query.isEmpty()) { query = query.substring(0, query.length() - 1); listScroll = 0; }
@@ -46,11 +59,16 @@ final class CairnMenu {
         if (typing()) { blur(); return true; }
         if (colorSetting != null) { colorSetting = null; return true; }
         if (details) { details = false; settingsScroll = 0; return true; }
-        if (cosmetics) { cosmetics = false; return true; }
+        if (cosmetics || friends) { page("modules"); return true; }
         return false;
     }
-    void openCosmetics() { cosmetics = true; details = false; colorSetting = null; cosmeticsScroll = 0; blur(); focus = -1; }
-    void openSettings(Module module) { client.select(module); details = true; cosmetics = false; colorSetting = null; settingsScroll = 0; blur(); focus = -1; }
+    private void page(String name) {
+        cosmetics = name.equals("cosmetics"); friends = name.equals("friends");
+        if (!name.equals(client.option("menu.page", "modules"))) client.setOption("menu.page", name);
+    }
+    void openCosmetics() { page("cosmetics"); details = false; colorSetting = null; cosmeticsScroll = 0; blur(); focus = -1; }
+    void openFriends() { page("friends"); details = false; colorSetting = null; friendsScroll = 0; blur(); focus = -1; client.friends.wantList(); }
+    void openSettings(Module module) { client.select(module); details = true; page("modules"); colorSetting = null; settingsScroll = 0; blur(); focus = -1; }
     List<Module> filtered() {
         String key = query + "|" + category;
         if (category.equals("Enabled")) for (Module module : MODULES) key += client.enabled(module) ? "1" : "0";
@@ -68,6 +86,7 @@ final class CairnMenu {
     void key(int direction, boolean activate) {
         if (activate) {
             if (hexFocus) { applyColor(); return; }
+            if (friendFocus) { addFriend(); return; }
             if (colorSetting != null && focus < 0) { applyColor(); return; }
             if (searchFocus) { searchFocus = false; return; }
             if (focus >= 0 && focus < controls.size()) controls.get(focus).action.run();
@@ -89,6 +108,7 @@ final class CairnMenu {
     void wheel(int amount) {
         if (colorSetting != null) return;
         if (cosmetics) { cosmeticsScroll = Math.max(0, cosmeticsScroll + amount); return; }
+        if (friends) { friendsScroll = Math.max(0, friendsScroll + amount); return; }
         if (details || panelWidth >= 620 && mouseX >= panelX + panelWidth - 216) settingsScroll = Math.max(0, settingsScroll + amount);
         else listScroll = Math.max(0, listScroll + amount);
     }
@@ -125,8 +145,12 @@ final class CairnMenu {
         if (client.keysManaged() && w >= 400) bindButton(canvas, Bind.MENU, x + w - 248, top + 7, 150, 26);
         boolean headerCosmetics = w >= 480 || w < 400 && w >= 330;
         int cosmeticsX = client.keysManaged() && w >= 400 ? x + w - 334 : x + w - 180;
-        if (headerCosmetics) button(canvas, "Cosmetics", cosmeticsX, top + 7, 80, 26, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) cosmetics = false; else openCosmetics(); });
+        if (headerCosmetics) button(canvas, "Cosmetics", cosmeticsX, top + 7, 80, 26, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) page("modules"); else openCosmetics(); });
+        int friendsX = cosmeticsX - 72;
+        boolean headerFriends = headerCosmetics && friendsX >= x + 140;
+        if (headerFriends) button(canvas, friendsLabel(), friendsX, top + 7, 66, 26, friends ? 0xff3c4835 : 0xff303a2d, friends ? ACCENT : TEXT, () -> { if (friends) page("modules"); else openFriends(); });
         if (cosmetics && colorSetting == null) { cosmeticsPage(canvas, x + 12, top + 47, w - 24, bottom - top - 59); return; }
+        if (friends && colorSetting == null) { friendsPage(canvas, x + 12, top + 47, w - 24, bottom - top - 59); return; }
         if (colorSetting != null) { colorPicker(canvas, x + 12, top + 48, w - 24, bottom - top - 60); return; }
         if (details) {
             button(canvas, "Back to modules", x + 12, top + 47, 116, 22, 0xff303a2d, ACCENT, () -> { details = false; settingsScroll = 0; });
@@ -162,7 +186,105 @@ final class CairnMenu {
         int presetsEnd = x + 54 + 3 * (presetW + 3);
         int footerButton = w < 330 ? 70 : 82;
         if (!headerCosmetics && x + w - 12 - footerButton >= presetsEnd) button(canvas, "Cosmetics", x + w - 12 - footerButton, footerY, footerButton, 22, 0xff3c4835, ACCENT, () -> openCosmetics());
+        int friendsFooterX = x + w - 12 - footerButton - (headerCosmetics ? 0 : footerButton + 4);
+        if (!headerFriends && friendsFooterX >= presetsEnd) button(canvas, friendsLabel(), friendsFooterX, footerY, footerButton, 22, 0xff3c4835, ACCENT, () -> openFriends());
         if (client.saveError() != null) canvas.text(fit(canvas, "Could not save settings. Check the log.", w - 24), x + 12, contentBottom - 10, 0xffffb9a4);
+    }
+    private String friendsLabel() {
+        int pending = client.friends.incoming().size();
+        return pending > 0 ? "Friends " + pending : "Friends";
+    }
+    private void addFriend() {
+        client.friends.add(friendField);
+        friendField = ""; friendFocus = false;
+    }
+    private static final String[] SHARE = { "full", "game", "status" }, SHARE_LABELS = { "Share: game + server", "Share: game, hide server", "Share: online only" };
+    private void friendsPage(Canvas canvas, int x, int y, int w, int h) {
+        final Friends social = client.friends;
+        social.wantList();
+        button(canvas, "Back to modules", x, y, 116, 22, 0xff303a2d, ACCENT, () -> page("modules"));
+        boolean dnd = social.dnd();
+        button(canvas, dnd ? "DND: ON" : "DND: OFF", x + w - 150, y, 86, 22, dnd ? 0xff4a3a2a : 0xff303a2d, dnd ? 0xfff2bc71 : MUTED, () -> social.dnd(!social.dnd()));
+        button(canvas, "Refresh", x + w - 58, y, 58, 22, 0xff303a2d, MUTED, () -> { social.wantList(); client.cosmetics.refresh(); });
+        canvas.text(fit(canvas, social.message(), Math.max(0, w - 278)), x + 124, y + 7, social.available() ? TEXT : MUTED);
+        int row = y + 28;
+        String hint = friendField.isEmpty() && !friendFocus ? "Add a friend by Minecraft name..." : friendField + (friendFocus ? "_" : "");
+        // Short screens fold the privacy and toast rows away so the list keeps room.
+        boolean compact = h < 300, settings = !compact || friendSettings;
+        int fieldW = w - 66 - (compact ? 70 : 0);
+        button(canvas, hint, x, row, fieldW, 24, friendFocus ? 0xff3c4835 : 0xff141b16, friendField.isEmpty() && !friendFocus ? MUTED : TEXT, () -> friendFocus = true);
+        button(canvas, "Add", x + fieldW + 6, row, 60, 24, 0xff3c4835, ACCENT, this::addFriend);
+        if (compact) button(canvas, friendSettings ? "List" : "Privacy", x + w - 64, row, 64, 24, 0xff303a2d, friendSettings ? ACCENT : TEXT, () -> { friendSettings = !friendSettings; friendsScroll = 0; });
+        row += 30;
+        if (settings) row = friendSettings(canvas, social, x, row, w, dnd);
+        if (compact && friendSettings) return;
+        friendRows(canvas, social, x, row, w, y + h - row);
+    }
+    private int friendSettings(Canvas canvas, final Friends social, int x, int row, int w, boolean dnd) {
+        int third = (w - 8) / 3;
+        int share = Math.max(0, Arrays.asList(SHARE).indexOf(social.share()));
+        button(canvas, SHARE_LABELS[share], x, row, third, 22, 0xff303a2d, share == 0 ? TEXT : ACCENT, () -> social.share(SHARE[(share + 1) % SHARE.length]));
+        button(canvas, social.appearOffline() ? "Appear offline: ON" : "Appear offline: OFF", x + third + 4, row, third, 22, 0xff303a2d, social.appearOffline() ? ACCENT : MUTED, () -> social.appearOffline(!social.appearOffline()));
+        boolean open = !"none".equals(social.requests());
+        button(canvas, open ? "Requests: everyone" : "Requests: no one", x + 2 * (third + 4), row, w - 2 * (third + 4), 22, 0xff303a2d, open ? MUTED : ACCENT, () -> social.requests(open ? "none" : "everyone"));
+        row += 28;
+        canvas.text("Toasts", x, row + 7, MUTED);
+        int toastW = (w - 48) / Friends.TOASTS.length;
+        for (int i = 0; i < Friends.TOASTS.length; i++) {
+            final String type = Friends.TOASTS[i];
+            boolean on = social.toast(type);
+            button(canvas, Friends.TOAST_LABELS[i], x + 48 + i * toastW, row, toastW - 4, 22, 0xff303a2d, on && !dnd ? ACCENT : MUTED, () -> social.toast(type, !social.toast(type)));
+        }
+        return row + 30;
+    }
+    private void friendRows(Canvas canvas, final Friends social, int x, int row, int w, int height) {
+        List<Object> rows = new ArrayList<Object>();
+        if (!social.incoming().isEmpty()) { rows.add("Friend requests"); rows.addAll(social.incoming()); }
+        rows.add(social.friends().isEmpty() ? "No friends yet. Add someone who plays with Cairn Client." : "Friends");
+        rows.addAll(social.friends());
+        if (!social.outgoing().isEmpty()) { rows.add("Sent requests"); for (Friends.Person p : social.outgoing()) rows.add(new Object[] { "out", p }); }
+        if (!social.blocked().isEmpty()) { rows.add("Blocked"); for (Friends.Person p : social.blocked()) rows.add(new Object[] { "blocked", p }); }
+        int rowH = 26, capacity = Math.max(1, height / rowH);
+        friendsScroll = clamp(friendsScroll, 0, Math.max(0, rows.size() - capacity));
+        for (int i = friendsScroll; i < Math.min(rows.size(), friendsScroll + capacity); i++) {
+            int cy = row + (i - friendsScroll) * rowH;
+            Object item = rows.get(i);
+            if (item instanceof String) { canvas.text(fit(canvas, (String) item, w), x, cy + 9, TEXT); continue; }
+            canvas.rect(x, cy, w, rowH - 3, 0xff2a3229);
+            if (item instanceof Friends.Friend) friendRow(canvas, social, (Friends.Friend) item, x, cy, w);
+            else if (item instanceof Friends.Person) {
+                final Friends.Person p = (Friends.Person) item;
+                canvas.text(fit(canvas, p.name + " wants to be friends", w - 190), x + 8, cy + 7, TEXT);
+                button(canvas, "Accept", x + w - 178, cy + 2, 60, 19, 0xff3c4835, ACCENT, () -> social.accept(p));
+                button(canvas, "Decline", x + w - 114, cy + 2, 60, 19, 0xff303a2d, MUTED, () -> social.decline(p));
+                button(canvas, "Block", x + w - 50, cy + 2, 48, 19, 0xff303a2d, MUTED, () -> social.block(p.uuid, p.name));
+            } else {
+                Object[] pair = (Object[]) item;
+                final Friends.Person p = (Friends.Person) pair[1];
+                boolean out = pair[0].equals("out");
+                canvas.text(fit(canvas, p.name.isEmpty() ? p.uuid : p.name, w - 80), x + 8, cy + 7, MUTED);
+                if (out) button(canvas, "Cancel", x + w - 62, cy + 2, 60, 19, 0xff303a2d, MUTED, () -> social.cancel(p));
+                else button(canvas, "Unblock", x + w - 62, cy + 2, 60, 19, 0xff303a2d, MUTED, () -> social.unblock(p));
+            }
+        }
+        if (rows.size() > capacity) {
+            int bar = Math.max(6, height * capacity / rows.size()), position = friendsScroll * Math.max(0, height - bar) / Math.max(1, rows.size() - capacity);
+            canvas.rect(x + w + 2, row + position, 2, bar, ACCENT);
+        }
+    }
+    private void friendRow(Canvas canvas, Friends social, Friends.Friend f, int x, int cy, int w) {
+        int dot = !f.online() ? 0xff6b7067 : "dnd".equals(f.status) ? 0xfff2bc71 : ACCENT;
+        canvas.rect(x + 8, cy + 8, 6, 6, dot);
+        boolean join = social.canJoin(f);
+        int buttons = (join ? 48 : 0) + 112;
+        String name = fit(canvas, f.name, Math.max(0, Math.min(110, w - buttons - 30)));
+        canvas.text(name, x + 20, cy + 7, f.online() ? TEXT : MUTED);
+        int activityX = x + 28 + Math.max(canvas.textWidth(name), 0);
+        canvas.text(fit(canvas, f.activity(), Math.max(0, x + w - buttons - activityX - 6)), activityX, cy + 7, MUTED);
+        int bx = x + w - buttons;
+        if (join) { button(canvas, "Join", bx, cy + 2, 44, 19, 0xff3c4835, ACCENT, () -> social.join(f)); bx += 48; }
+        button(canvas, "Remove", bx, cy + 2, 58, 19, 0xff303a2d, MUTED, () -> social.remove(f));
+        button(canvas, "Block", bx + 62, cy + 2, 48, 19, 0xff303a2d, MUTED, () -> social.block(f.uuid, f.name));
     }
     private static String capeName(Cosmetics cosmetics, String id) {
         if (id.equals("none")) return "None";

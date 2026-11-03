@@ -61,8 +61,9 @@ public final class Cosmetics {
     private volatile String equippedCape, equippedBadge, customHash, customStatus, moderation;
     private volatile int customFrames = 1, customFrameMs = 100, online = -1, peak = -1, total = -1, failures;
     private volatile Set<String> unlockedCapes = Collections.emptySet(), unlockedBadges = Collections.emptySet();
-    private volatile long lookupsAfter, nextLookup, nextStats;
+    private volatile long lookupsAfter, nextLookup, nextStats, lastBeat;
     private volatile boolean busy;
+    private final java.util.concurrent.atomic.AtomicBoolean beatQueued = new java.util.concurrent.atomic.AtomicBoolean();
     private long generation;
 
     Cosmetics(CairnClient client) {
@@ -121,6 +122,16 @@ public final class Cosmetics {
     public String server() { return base; }
     public String status() { return status; }
     public boolean signedIn() { return token != null; }
+    String token() { return token; }
+    String uuid() { return uuid; }
+    /** Another part of the client got a 401; sign in again on the current session. */
+    void expired() {
+        if (token == null) return;
+        token = null;
+        final long session;
+        synchronized (this) { session = generation; }
+        run(() -> signIn(session), 0);
+    }
     public boolean busy() { return busy; }
     public String role() { return role; }
     public int online() { return online; }
@@ -210,6 +221,7 @@ public final class Cosmetics {
             run(() -> signIn(session), expires - 120_000);
             loadMe();
             heartbeat(session);
+            client.friends.signedIn();
         } catch (IOException e) { fail(session, "Cosmetics server unreachable. Retrying in " + backoff() / 1000 + " s.", true); }
     }
     static boolean realToken(String token) {
@@ -224,13 +236,29 @@ public final class Cosmetics {
     }
     private void heartbeat(long session) {
         if (!current(session) || token == null) return;
-        try {
-            Reply reply = post("/v1/heartbeat", token, "{}");
-            if (reply.code == 401) { token = null; run(() -> signIn(session), 0); return; }
-            if (reply.code == 200) online = Json.integer(reply.json().get("online"), online);
-            stats();
-        } catch (IOException ignored) { }
+        if (beat(session) == 401) return;
+        stats();
         run(() -> heartbeat(session), HEARTBEAT);
+    }
+    /** The only place presence comes from: what this game is doing, sent while it runs. */
+    private int beat(long session) {
+        String bearer = token;
+        if (bearer == null) return 0;
+        lastBeat = System.currentTimeMillis();
+        try {
+            Reply reply = post("/v1/heartbeat", bearer, client.friends.activityJson());
+            if (reply.code == 401) { token = null; run(() -> signIn(session), 0); }
+            else if (reply.code == 200) online = Json.integer(reply.json().get("online"), online);
+            return reply.code;
+        } catch (IOException e) { return 0; }
+    }
+    /** Activity changed: tell friends now instead of at the next minute, at most every 5 s. */
+    void beatSoon() {
+        if (base == null || token == null || !beatQueued.compareAndSet(false, true)) return;
+        final long session;
+        synchronized (this) { session = generation; }
+        long wait = Math.max(0, lastBeat + 5000 - System.currentTimeMillis());
+        run(() -> { beatQueued.set(false); if (current(session)) beat(session); }, wait);
     }
     private void stats() {
         try {
@@ -435,12 +463,13 @@ public final class Cosmetics {
     private Reply post(String path, String bearer, String json) throws IOException {
         return http("POST", base + path, bearer, "application/json", json.getBytes(StandardCharsets.UTF_8), 1 << 16);
     }
-    private static HttpURLConnection open(String method, String url, String bearer) throws IOException {
+    private static HttpURLConnection open(String method, String url, String bearer) throws IOException { return open(method, url, bearer, 8000); }
+    private static HttpURLConnection open(String method, String url, String bearer, int readTimeout) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         // A redirect could carry the bearer token to another host, so none are followed.
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(5000);
-        connection.setReadTimeout(8000);
+        connection.setReadTimeout(readTimeout);
         connection.setRequestMethod(method);
         connection.setRequestProperty("User-Agent", "CairnClient");
         connection.setRequestProperty("Accept", "application/json");
@@ -448,7 +477,10 @@ public final class Cosmetics {
         return connection;
     }
     static Reply http(String method, String url, String bearer, String type, byte[] body, int limit) throws IOException {
-        HttpURLConnection connection = open(method, url, bearer);
+        return http(method, url, bearer, type, body, limit, 8000);
+    }
+    static Reply http(String method, String url, String bearer, String type, byte[] body, int limit, int readTimeout) throws IOException {
+        HttpURLConnection connection = open(method, url, bearer, readTimeout);
         try {
             if (body != null) {
                 connection.setDoOutput(true);

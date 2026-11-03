@@ -116,6 +116,9 @@ public final class CairnFabric implements ClientModInitializer {
         Minecraft mc = Minecraft.getInstance();
         return client != null && client.enabled(Module.ZOOM) && mc.player != null && mc.gui.screen() == null && InputConstants.isKeyDown(client.keyCode(CairnClient.Bind.ZOOM));
     }
+    private static final String GAME_VERSION = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("minecraft").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
+    private static final java.util.function.Consumer<String> JOIN = address -> net.minecraft.client.gui.screens.ConnectScreen.startConnecting(new net.minecraft.client.gui.screens.TitleScreen(), Minecraft.getInstance(),
+        net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), new net.minecraft.client.multiplayer.ServerData(address, address, net.minecraft.client.multiplayer.ServerData.Type.OTHER), false, null);
     public static void tick() {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
@@ -123,6 +126,9 @@ public final class CairnFabric implements ClientModInitializer {
         client.cosmetics.account(mc.getUser().getName(), mc.getUser().getProfileId().toString(), mc.getUser().getAccessToken());
         if (mc.level != null && ticks % 20 == 0) for (AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
+        client.friends.activity(GAME_VERSION, mc.level != null, mc.level == null || mc.getCurrentServer() == null ? null : mc.getCurrentServer().ip);
+        // Joining from inside a world would need a disconnect first, so Join is offered from the title screen only.
+        client.friends.joinHandler(mc.level == null ? JOIN : null);
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.gui.screen() == null) {

@@ -71,5 +71,6 @@ if (target === 'all' || target === 'test') {
     run(executable('java'), ['-cp', classes, 'ClientCoreTest']);
     run(executable('java'), ['-cp', classes, 'app.cairn.client.ClientInteractionTest']);
     run(executable('java'), ['-cp', [classes, path.join(root, 'common/src/main/resources')].join(path.delimiter), '-Djava.awt.headless=true', 'app.cairn.client.CosmeticsTest']);
+    run(executable('java'), ['-cp', classes, '-Djava.awt.headless=true', 'app.cairn.client.FriendsTest']);
 }
 console.log(`Cairn Client ${target}: complete.`);

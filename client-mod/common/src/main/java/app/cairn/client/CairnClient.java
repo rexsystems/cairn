@@ -93,6 +93,7 @@ public final class CairnClient {
     private final Date date = new Date();
     private final CairnMenu menu;
     public final Cosmetics cosmetics;
+    public final Friends friends;
     private final long sessionStart = System.nanoTime();
     private long nextCounters, nextClock;
     private int leftCps, rightCps;
@@ -128,6 +129,7 @@ public final class CairnClient {
             if (module == Module.CROSSHAIR) state.placed = Boolean.parseBoolean(config.getProperty("CROSSHAIR.placed", "false"));
         }
         cosmetics = new Cosmetics(this);
+        friends = new Friends(this, cosmetics);
         menu = new CairnMenu(this);
     }
     String option(String key, String fallback) { return config.getProperty(key, fallback); }
@@ -405,6 +407,7 @@ public final class CairnClient {
                 canvas.rect(x + w - 6, y + h - 6, 6, 6, ACCENT);
             }
         }
+        friends.render(canvas, width, height);
     }
     public void renderMenu(Canvas canvas, int width, int height, int mouseX, int mouseY) {
         if (editing) {
@@ -419,7 +422,7 @@ public final class CairnClient {
             }
             canvas.rect(0, height - 26, width, 26, 0xf21c211c);
             canvas.text(fit(canvas, selected.title + " / " + setting(selected, Setting.SCALE) + "% / Tab: select / Arrows: move / +/-: size / Enter: settings", width - 24), 12, height - 17, TEXT);
-        } else menu.render(canvas, width, height, mouseX, mouseY);
+        } else { menu.render(canvas, width, height, mouseX, mouseY); friends.render(canvas, width, height); }
     }
     public void editorKey(int dx, int dy, int scale) {
         if (scale != 0) setting(selected, Setting.SCALE, setting(selected, Setting.SCALE) + scale * 10);

@@ -119,6 +119,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         Minecraft mc = Minecraft.getInstance();
         client.input(mc.options.keyUp.isDown(), mc.options.keyDown.isDown(), mc.options.keyLeft.isDown(), mc.options.keyRight.isDown(), mc.options.keyJump.isDown(), mc.mouseHandler.isLeftPressed(), mc.mouseHandler.isRightPressed());
     }
+    private static final String GAME_VERSION = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("minecraft").map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
     public static void tick() {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
@@ -126,6 +127,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         client.cosmetics.account(mc.getUser().getName(), mc.getUser().getProfileId().toString(), mc.getUser().getAccessToken());
         if (mc.level != null && ticks % 20 == 0) for (AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
+        client.friends.activity(GAME_VERSION, mc.level != null, mc.level == null || mc.getCurrentServer() == null ? null : mc.getCurrentServer().ip);
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.screen == null) {
