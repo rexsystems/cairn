@@ -454,6 +454,7 @@ pub fn write_ms_session_file(game_home: &Path, acc: &crate::accounts::Account) -
 }
 
 /// Binary, args, and game home (`HORIZON_HOME`) for spawning the client.
+#[allow(clippy::too_many_arguments)]
 pub async fn prepare_launch(
     paths: &Paths,
     settings: &Settings,
