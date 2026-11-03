@@ -151,7 +151,9 @@ impl AppState {
         lock(&self.challenges).retain(|_, (_, at)| at.elapsed() < CHALLENGE_TTL);
         let window = Duration::from_secs(self.cfg.online_window_secs);
         lock(&self.presence).retain(|_, p| p.at.elapsed() < window);
-        self.social.sweep();
+        if let Err(err) = self.social.sweep(&self.db()) {
+            tracing::error!("notification cleanup failed: {err}");
+        }
     }
 
     fn online(&self) -> i64 {

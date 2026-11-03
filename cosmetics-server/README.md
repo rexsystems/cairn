@@ -73,8 +73,10 @@ launcher can list friends and change settings, but never reports activity.
   fields are never put in a reply or a notice. The public `/v1/players` lookup never includes activity.
 - **Blocking** removes the friendship and any requests both ways and drops queued notices between
   the two. Requests from a blocked player look sent to them but never arrive.
-- **Notifications** (`request`, `accepted`, `online`, `server`) are kept in memory: the last 50 per
-  player for 10 minutes. They are lost on restart, which is fine for toasts.
+- **Notifications** are stored in SQLite: the last 50 per player for 10 minutes. Events and
+  cursors survive server restarts. Connecting without a cursor skips the backlog. Blocking or
+  removing a friend deletes queued notices between both players; privacy changes revoke queued
+  activity notices before friends can retrieve them.
 
 ## Self-hosting
 

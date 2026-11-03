@@ -58,6 +58,15 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
              created INTEGER NOT NULL,
              PRIMARY KEY (owner, blocked)
          );
+         CREATE TABLE IF NOT EXISTS social_events (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             recipient TEXT NOT NULL,
+             sender TEXT NOT NULL,
+             created INTEGER NOT NULL,
+             body TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS social_events_recipient ON social_events(recipient, id);
+         CREATE INDEX IF NOT EXISTS social_events_created ON social_events(created);
          CREATE TABLE IF NOT EXISTS social_settings (
              uuid TEXT PRIMARY KEY,
              share TEXT NOT NULL DEFAULT 'full',

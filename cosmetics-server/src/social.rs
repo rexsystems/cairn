@@ -7,8 +7,8 @@ use axum::{body::Bytes, Json};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::Notify;
@@ -34,64 +34,62 @@ pub struct Presence {
     pub activity: Option<Activity>,
 }
 
-struct Event {
-    id: u64,
-    from: String,
-    at: Instant,
-    body: Value,
-}
-
-#[derive(Default)]
-struct Inbox {
-    events: VecDeque<Event>,
-    notify: Arc<Notify>,
-}
-
 #[derive(Default)]
 pub struct Social {
-    inboxes: Mutex<HashMap<String, Inbox>>,
-    next_id: AtomicU64,
+    notifiers: Mutex<HashMap<String, Arc<Notify>>>,
     waiters: AtomicUsize,
 }
 
 impl Social {
-    fn push(&self, to: &str, from: &str, body: Value) {
-        // Ids are taken under the lock so a reader's cursor never skips an event still being queued.
-        let mut inboxes = lock(&self.inboxes);
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let inbox = inboxes.entry(to.to_owned()).or_default();
-        let mut body = body;
-        body["id"] = json!(id);
-        inbox.events.push_back(Event { id, from: from.to_owned(), at: Instant::now(), body });
-        while inbox.events.len() > INBOX_SIZE {
-            inbox.events.pop_front();
+    fn push(&self, conn: &Connection, to: &str, from: &str, body: Value) -> rusqlite::Result<()> {
+        conn.execute(
+            "INSERT INTO social_events (recipient, sender, created, body) VALUES (?1, ?2, ?3, ?4)",
+            params![to, from, now(), body.to_string()],
+        )?;
+        conn.execute(
+            "DELETE FROM social_events WHERE recipient = ?1 AND id NOT IN
+             (SELECT id FROM social_events WHERE recipient = ?1 ORDER BY id DESC LIMIT ?2)",
+            params![to, INBOX_SIZE as i64],
+        )?;
+        if let Some(notify) = lock(&self.notifiers).get(to) {
+            notify.notify_waiters();
         }
-        inbox.notify.notify_waiters();
+        Ok(())
     }
 
-    /// Drops queued events between two players, e.g. a pending request toast after a block.
-    fn purge(&self, a: &str, b: &str) {
-        let mut inboxes = lock(&self.inboxes);
-        for (owner, other) in [(a, b), (b, a)] {
-            if let Some(inbox) = inboxes.get_mut(owner) {
-                inbox.events.retain(|e| e.from != other);
-            }
+    /// Blocking and removal must also erase notifications saved before a restart.
+    fn purge(&self, conn: &Connection, a: &str, b: &str) -> rusqlite::Result<()> {
+        conn.execute(
+            "DELETE FROM social_events WHERE (recipient = ?1 AND sender = ?2) OR (recipient = ?2 AND sender = ?1)",
+            [a, b],
+        )?;
+        Ok(())
+    }
+
+    pub fn sweep(&self, conn: &Connection) -> rusqlite::Result<()> {
+        conn.execute("DELETE FROM social_events WHERE created <= ?1", [now() - EVENT_TTL.as_secs() as i64])?;
+        lock(&self.notifiers).retain(|_, notify| Arc::strong_count(notify) > 1);
+        Ok(())
+    }
+
+    fn newer(&self, conn: &Connection, uuid: &str, after: u64) -> rusqlite::Result<(Vec<Value>, u64, Arc<Notify>)> {
+        let notify = lock(&self.notifiers).entry(uuid.to_owned()).or_default().clone();
+        // sqlite_sequence survives pruning every event, so cursors never go backwards on restart.
+        let latest: u64 = conn.query_row("SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'social_events'), 0)", [], |r| r.get(0))?;
+        let mut stmt = conn.prepare("SELECT id, body FROM social_events WHERE recipient = ?1 AND id > ?2 AND created > ?3 ORDER BY id")?;
+        let rows = stmt.query_map(params![uuid, after.min(i64::MAX as u64) as i64, now() - EVENT_TTL.as_secs() as i64], |r| {
+            let id: u64 = r.get(0)?;
+            let body: String = r.get(1)?;
+            Ok((id, body))
+        })?;
+        let mut events = Vec::new();
+        for row in rows {
+            let (id, body) = row?;
+            let mut body: Value = serde_json::from_str(&body).map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
+            body["id"] = json!(id);
+            events.push(body);
         }
-    }
-
-    pub fn sweep(&self) {
-        lock(&self.inboxes).retain(|_, inbox| {
-            inbox.events.retain(|e| e.at.elapsed() < EVENT_TTL);
-            !inbox.events.is_empty() || Arc::strong_count(&inbox.notify) > 1
-        });
-    }
-
-    fn newer(&self, uuid: &str, after: u64) -> (Vec<Value>, u64, Arc<Notify>) {
-        let mut inboxes = lock(&self.inboxes);
-        let inbox = inboxes.entry(uuid.to_owned()).or_default();
-        let latest = self.next_id.load(Ordering::Relaxed);
-        let events = inbox.events.iter().filter(|e| e.id > after && e.at.elapsed() < EVENT_TTL).map(|e| e.body.clone()).collect();
-        (events, latest, inbox.notify.clone())
+        Ok((events, latest, notify))
     }
 }
 
@@ -215,11 +213,11 @@ pub fn heartbeat(state: &Shared, uuid: &str, name: &str, activity: Option<Activi
     }
     for friend in friend_ids(&conn, uuid)? {
         if !was {
-            state.social.push(&friend, uuid, json!({ "type": "online", "from": person(uuid, name), "dnd": s.dnd }));
+            state.social.push(&conn, &friend, uuid, json!({ "type": "online", "from": person(uuid, name), "dnd": s.dnd }))?;
         }
         if joined {
             let version = activity.as_ref().map(|a| a.version.clone());
-            state.social.push(&friend, uuid, json!({ "type": "server", "from": person(uuid, name), "server": new_server, "version": version }));
+            state.social.push(&conn, &friend, uuid, json!({ "type": "server", "from": person(uuid, name), "server": new_server, "version": version }))?;
         }
     }
     Ok(())
@@ -317,7 +315,7 @@ pub async fn send_request(State(state): State<Shared>, headers: HeaderMap, Json(
     }
     let added = conn.execute("INSERT OR IGNORE INTO friend_requests (sender, target, created) VALUES (?1, ?2, ?3)", params![user.uuid, target, now()])?;
     if added > 0 {
-        state.social.push(&target, &user.uuid, json!({ "type": "request", "from": person(&user.uuid, &user.name) }));
+        state.social.push(&conn, &target, &user.uuid, json!({ "type": "request", "from": person(&user.uuid, &user.name) }))?;
     }
     Ok(Json(json!({ "status": "sent", "uuid": target, "name": name })))
 }
@@ -334,7 +332,7 @@ fn accept_from(state: &Shared, me: &str, my_name: &str, sender: &str) -> ApiResu
     let t = now();
     conn.execute("DELETE FROM friend_requests WHERE (sender = ?1 AND target = ?2) OR (sender = ?2 AND target = ?1)", [me, sender])?;
     conn.execute("INSERT OR IGNORE INTO friends (owner, friend, since) VALUES (?1, ?2, ?3), (?2, ?1, ?3)", params![me, sender, t])?;
-    state.social.push(sender, me, json!({ "type": "accepted", "from": person(me, my_name) }));
+    state.social.push(&conn, sender, me, json!({ "type": "accepted", "from": person(me, my_name) }))?;
     Ok(())
 }
 
@@ -353,7 +351,7 @@ pub async fn answer_request(State(state): State<Shared>, headers: HeaderMap, Pat
         accept_from(&state, &user.uuid, &user.name, &other)?;
     } else {
         state.db().execute("DELETE FROM friend_requests WHERE sender = ?1 AND target = ?2", [sender, target])?;
-        state.social.purge(sender, target);
+        state.social.purge(&state.db(), sender, target)?;
     }
     Ok(Json(json!({ "ok": true })))
 }
@@ -367,7 +365,7 @@ pub async fn remove(State(state): State<Shared>, headers: HeaderMap, Path(other)
     let user = session(&state, &headers)?;
     let other = normalize_uuid(&other).ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Invalid UUID."))?;
     unfriend(&state.db(), &user.uuid, &other)?;
-    state.social.purge(&user.uuid, &other);
+    state.social.purge(&state.db(), &user.uuid, &other)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -385,7 +383,7 @@ pub async fn block(State(state): State<Shared>, headers: HeaderMap, Path(other):
     unfriend(&conn, &user.uuid, &other)?;
     conn.execute("DELETE FROM friend_requests WHERE (sender = ?1 AND target = ?2) OR (sender = ?2 AND target = ?1)", [&user.uuid, &other])?;
     conn.execute("INSERT OR IGNORE INTO blocks (owner, blocked, created) VALUES (?1, ?2, ?3)", params![user.uuid, other, now()])?;
-    state.social.purge(&user.uuid, &other);
+    state.social.purge(&conn, &user.uuid, &other)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -433,9 +431,15 @@ pub async fn put_settings(State(state): State<Shared>, headers: HeaderMap, Json(
          ON CONFLICT(uuid) DO UPDATE SET share = excluded.share, appear_offline = excluded.appear_offline, requests = excluded.requests, dnd = excluded.dnd",
         params![user.uuid, new.share, new.appear_offline as i64, new.requests, new.dnd as i64],
     )?;
+    if old.share != new.share || old.appear_offline != new.appear_offline {
+        conn.execute(
+            "DELETE FROM social_events WHERE sender = ?1 AND json_extract(body, '$.type') IN ('online', 'server', 'presence')",
+            [&user.uuid],
+        )?;
+    }
     if old.json() != new.json() {
         // The player's other clients (launcher, a second game) learn DND/privacy changes without polling.
-        state.social.push(&user.uuid, &user.uuid, json!({ "type": "settings", "settings": new.json() }));
+        state.social.push(&conn, &user.uuid, &user.uuid, json!({ "type": "settings", "settings": new.json() }))?;
     }
     let presence = lock(&state.presence).get(&user.uuid).cloned();
     let (was, now) = (visible(presence.as_ref(), window, &old), visible(presence.as_ref(), window, &new));
@@ -449,7 +453,7 @@ pub async fn put_settings(State(state): State<Shared>, headers: HeaderMap, Json(
     };
     if let Some(event) = event {
         for friend in friend_ids(&conn, &user.uuid)? {
-            state.social.push(&friend, &user.uuid, event.clone());
+            state.social.push(&conn, &friend, &user.uuid, event.clone())?;
         }
     }
     Ok(Json(new.json()))
@@ -467,13 +471,13 @@ pub async fn events(State(state): State<Shared>, headers: HeaderMap, Query(q): Q
     let user = session(&state, &headers)?;
     let wait = Duration::from_secs(q.wait.unwrap_or(0).min(MAX_WAIT_SECS));
     let Some(after) = q.after else {
-        let (_, latest, _) = state.social.newer(&user.uuid, u64::MAX);
+        let (_, latest, _) = state.social.newer(&state.db(), &user.uuid, u64::MAX)?;
         return Ok(Json(json!({ "events": [], "cursor": latest })));
     };
     let deadline = Instant::now() + wait;
     loop {
-        let (events, latest, notify) = state.social.newer(&user.uuid, after);
-        // A cursor from before a server restart is ahead of the counter; restart from now.
+        let (events, latest, notify) = state.social.newer(&state.db(), &user.uuid, after)?;
+        // Reset cursors from a different database or a restored backup.
         if !events.is_empty() || after > latest || Instant::now() >= deadline {
             return Ok(Json(json!({ "events": events, "cursor": latest })));
         }
@@ -485,7 +489,7 @@ pub async fn events(State(state): State<Shared>, headers: HeaderMap, Query(q): Q
         tokio::pin!(notified);
         notified.as_mut().enable();
         // Re-check after registering, so an event pushed in between is not missed.
-        let raced = !state.social.newer(&user.uuid, after).0.is_empty();
+        let raced = !state.social.newer(&state.db(), &user.uuid, after)?.0.is_empty();
         if !raced {
             let _ = tokio::time::timeout(deadline.saturating_duration_since(Instant::now()), notified).await;
         }

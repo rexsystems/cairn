@@ -71,6 +71,13 @@ async fn harness(tweak: impl FnOnce(&mut Config)) -> Harness {
 }
 
 impl Harness {
+    fn restart(&mut self) {
+        let cfg = self.state.cfg.clone();
+        self.app = Router::new();
+        self.state = AppState::new(cfg).unwrap();
+        self.app = router(self.state.clone());
+    }
+
     async fn call(&self, method: &str, uri: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
         let mut req = Request::builder().method(method).uri(uri);
         if let Some(token) = token {
@@ -582,4 +589,74 @@ async fn appearing_offline_sends_no_online_toast() {
     let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
     assert_eq!(got["events"].as_array().unwrap().len(), 1);
     assert_eq!(got["events"][0]["type"], "online");
+}
+
+#[tokio::test]
+async fn notifications_and_cursors_survive_restart_and_pruning() {
+    let mut h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    let (_, initial) = h.call("GET", "/v1/events", Some(&bob), None).await;
+    let cursor = initial["cursor"].as_u64().unwrap();
+    h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "Bob" }))).await;
+    let (_, before) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
+    h.restart();
+    let (status, after) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(before, after);
+    assert_eq!(after["events"][0]["type"], "request");
+    let id = after["cursor"].as_u64().unwrap();
+    h.state.db().execute("UPDATE social_events SET created = 0", []).unwrap();
+    let (_, expired) = h.call("GET", "/v1/events?after=0", Some(&bob), None).await;
+    assert!(expired["events"].as_array().unwrap().is_empty(), "expiry applies even before cleanup");
+    h.state.sweep();
+    h.restart();
+    let (_, empty) = h.call("GET", "/v1/events", Some(&bob), None).await;
+    assert_eq!(empty["cursor"], id, "pruning must not rewind the cursor");
+    h.call("POST", &format!("/v1/friends/requests/{ALEX}/accept"), Some(&bob), None).await;
+    let (_, accepted) = h.call("GET", &format!("/v1/events?after={id}"), Some(&alex), None).await;
+    assert_eq!(accepted["events"][0]["type"], "accepted");
+    assert!(accepted["events"][0]["id"].as_u64().unwrap() > id);
+}
+
+#[tokio::test]
+async fn notification_retention_is_bounded_and_blocks_survive_restart() {
+    let mut h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    befriend(&h, &alex, &bob, "Bob", BOB, ALEX).await;
+    for n in 0..60 {
+        let (status, _) = h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some(&format!("server{n}.example"))))).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    h.restart();
+    let (_, events) = h.call("GET", "/v1/events?after=0", Some(&bob), None).await;
+    let events = events["events"].as_array().unwrap();
+    assert_eq!(events.len(), 50);
+    assert!(events.windows(2).all(|pair| pair[0]["id"].as_u64() < pair[1]["id"].as_u64()));
+    let (status, _) = h.call("PUT", &format!("/v1/blocks/{ALEX}"), Some(&bob), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    h.restart();
+    let (_, events) = h.call("GET", "/v1/events?after=0", Some(&bob), None).await;
+    assert!(events["events"].as_array().unwrap().is_empty());
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    assert!(friend(&list, ALEX).is_none());
+}
+
+#[tokio::test]
+async fn privacy_changes_revoke_queued_activity_before_and_after_restart() {
+    for setting in [json!({ "share": "game" }), json!({ "share": "status" }), json!({ "appearOffline": true })] {
+        let mut h = harness(|_| {}).await;
+        let alex = h.login("Alex", ALEX).await;
+        let bob = h.login("Bob", BOB).await;
+        befriend(&h, &alex, &bob, "Bob", BOB, ALEX).await;
+        h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("private.example")))).await;
+        h.call("PUT", "/v1/me/social", Some(&alex), Some(setting)).await;
+        for restarted in [false, true] {
+            if restarted { h.restart(); }
+            let (_, events) = h.call("GET", "/v1/events?after=0", Some(&bob), None).await;
+            assert!(!events.to_string().contains("private.example"));
+            assert!(events["events"].as_array().unwrap().iter().all(|e| e["type"] != "online" && e["type"] != "server"));
+        }
+    }
 }
