@@ -126,6 +126,42 @@ fn png(width: u32, height: u32) -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn staff_grants_by_name_require_admin_and_a_verified_identity() {
+    let mut h = harness(|_| {}).await;
+    let token = h.login("Alex", ALEX).await;
+    let path = "/v1/admin/players/aLeX/role";
+    assert_eq!(h.call("PUT", path, Some(&token), Some(json!({"role":"staff"}))).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(h.call("PUT", "/v1/admin/players/Unknown/role", Some(ADMIN), Some(json!({"role":"staff"}))).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.call("PUT", path, Some(ADMIN), Some(json!({"role":"staff"}))).await.0, StatusCode::OK);
+    let (status, _) = h.call("PUT", "/v1/me/equipped", Some(&token), Some(json!({"cape":"staff","badge":"gold"}))).await;
+    assert_eq!(status, StatusCode::OK);
+    h.restart();
+    assert_eq!(h.call("GET", "/v1/me", Some(&token), None).await.1["role"], "staff");
+    assert_eq!(h.call("PUT", path, Some(ADMIN), Some(json!({"role":"player"}))).await.0, StatusCode::OK);
+    assert_eq!(h.call("PUT", "/v1/me/equipped", Some(&token), Some(json!({"badge":"gold"}))).await.0, StatusCode::BAD_REQUEST);
+    assert_ne!(h.call("GET", &format!("/v1/players?uuids={ALEX}"), None, None).await.1["players"][ALEX]["badge"], "gold");
+}
+
+#[tokio::test]
+async fn offline_names_and_legacy_unverified_roles_cannot_unlock_staff_cosmetics() {
+    let h = harness(|cfg| cfg.dev_insecure_auth = true).await;
+    let (_, start) = h.call("POST", "/v1/auth/start", None, Some(json!({"name":"Alex"}))).await;
+    let (_, login) = h.call("POST", "/v1/auth/finish", None, Some(json!({"name":"Alex","serverId":start["serverId"]}))).await;
+    let uuid = login["uuid"].as_str().unwrap();
+    let token = login["token"].as_str().unwrap();
+    assert_eq!(h.call("PUT", "/v1/admin/players/Alex/role", Some(ADMIN), Some(json!({"role":"staff"}))).await.0, StatusCode::NOT_FOUND);
+    h.state.db().execute("UPDATE users SET role='staff', badge='gold', cape='staff' WHERE uuid=?1", [uuid]).unwrap();
+    let (_, me) = h.call("GET", "/v1/me", Some(token), None).await;
+    assert_eq!(me["role"], "player");
+    assert!(!me["unlocked"]["badges"].as_array().unwrap().contains(&json!("gold")));
+    assert_eq!(h.call("PUT", "/v1/me/equipped", Some(token), Some(json!({"cape":"staff","badge":"gold"}))).await.0, StatusCode::BAD_REQUEST);
+    let (_, lookup) = h.call("GET", &format!("/v1/players?uuids={uuid}"), None, None).await;
+    assert_eq!(lookup["players"][uuid]["role"], "player");
+    assert!(lookup["players"][uuid]["cape"].is_null());
+    assert_ne!(lookup["players"][uuid]["badge"], "gold");
+}
+
+#[tokio::test]
 async fn sign_in_needs_a_mojang_join_and_a_fresh_challenge() {
     let h = harness(|_| {}).await;
     let token = h.login("Alex", ALEX).await;

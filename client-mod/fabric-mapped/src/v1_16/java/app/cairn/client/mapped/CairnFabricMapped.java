@@ -25,6 +25,8 @@ public final class CairnFabricMapped implements ClientModInitializer {
     private static final java.util.Map<String, net.minecraft.resources.ResourceLocation> TEXTURES = new java.util.HashMap<String, net.minecraft.resources.ResourceLocation>();
     /** Uploads cosmetics PNGs lazily on the render thread; a broken image is remembered so it isn't decoded every frame. */
     private static net.minecraft.resources.ResourceLocation texture(String key) {
+        if ("preview/world".equals(key)) return net.minecraft.resources.ResourceLocation.tryParse("minecraft:textures/gui/title/background/panorama_0.png");
+        if (key != null && key.startsWith("effect/")) { String[] parts = key.split("/", 3); return net.minecraft.resources.ResourceLocation.tryParse(parts[1] + ":textures/mob_effect/" + parts[2] + ".png"); }
         if (client == null || key == null) return null;
         if (TEXTURES.containsKey(key)) return TEXTURES.get(key);
         byte[] png = client.cosmetics.texture(key);
@@ -88,6 +90,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
         mc.options.smoothCamera = client.smoothCamera(zooming(), mc.options.smoothCamera);
+        if (mc.screen != null && mc.screen.getClass() == net.minecraft.client.gui.screens.TitleScreen.class) mc.setScreen(new Title());
         client.cosmetics.account(mc.getUser().getName(), mc.getUser().getUuid(), mc.getUser().getAccessToken());
         if (mc.level != null && ticks % 20 == 0) for (net.minecraft.client.player.AbstractClientPlayer player : mc.level.players()) look(player);
         client.cosmetics.tick();
@@ -123,20 +126,25 @@ public final class CairnFabricMapped implements ClientModInitializer {
             client.value(Module.HELD_ITEM, item.isEmpty() ? "Empty hand" : item.getHoverName().getString() + (item.isDamageableItem() ? " " + (item.getMaxDamage() - item.getDamageValue()) : " x" + item.getCount()));
         }
         if (client.enabled(Module.ARMOR)) {
+            java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<CairnClient.HudRow>();
             StringBuilder armor = new StringBuilder("Armor");
             for (EquipmentSlot slot : new EquipmentSlot[] { EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD }) {
                 ItemStack item = mc.player.getItemBySlot(slot);
-                if (!item.isEmpty()) armor.append(" ").append(item.getMaxDamage() - item.getDamageValue());
+                if (!item.isEmpty()) { armor.append(" ").append(item.getMaxDamage() - item.getDamageValue()); rows.add(new CairnClient.HudRow(item.copy(), String.valueOf(item.getMaxDamage() - item.getDamageValue()))); }
             }
             client.value(Module.ARMOR, armor.toString());
+            client.rows(Module.ARMOR, rows);
         }
         if (client.enabled(Module.EFFECTS)) {
+            java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<CairnClient.HudRow>();
             StringBuilder effects = new StringBuilder();
             for (net.minecraft.world.effect.MobEffectInstance effect : mc.player.getActiveEffects()) {
                 if (effects.length() > 0) effects.append(" / ");
                 effects.append(I18n.get(effect.getDescriptionId())).append(" ").append(effect.getDuration() / 20).append("s");
+                rows.add(new CairnClient.HudRow(CairnClient.effectIcon(effect.getDescriptionId()), I18n.get(effect.getDescriptionId()) + " " + (effect.getAmplifier() + 1) + " / " + effect.getDuration() / 20 + "s"));
             }
             client.value(Module.EFFECTS, effects.length() == 0 ? "No effects" : effects.toString());
+            client.rows(Module.EFFECTS, rows);
         }
     }
     private static String biome(Minecraft mc) {
@@ -157,6 +165,12 @@ public final class CairnFabricMapped implements ClientModInitializer {
                 pose.popPose();
             }
             public int textWidth(String value) { return Minecraft.getInstance().font.width(CairnFabricMapped.text(value)); }
+            public void icon(Object icon, int x, int y, int size) {
+                if (!(icon instanceof ItemStack)) { CairnClient.Canvas.super.icon(icon, x, y, size); return; }
+                com.mojang.blaze3d.systems.RenderSystem.pushMatrix(); com.mojang.blaze3d.systems.RenderSystem.translatef(x, y, 0); com.mojang.blaze3d.systems.RenderSystem.scalef(size / 16f, size / 16f, 1);
+                Minecraft.getInstance().getItemRenderer().renderAndDecorateItem((ItemStack) icon, 0, 0);
+                com.mojang.blaze3d.systems.RenderSystem.popMatrix();
+            }
             public void image(String key, int x, int y, int width, int height, float u0, float v0, float u1, float v1) {
                 net.minecraft.resources.ResourceLocation id = texture(key);
                 // This blit takes whole texels, so normalized UVs become a virtual texture size.
@@ -175,9 +189,36 @@ public final class CairnFabricMapped implements ClientModInitializer {
             client.renderHud(canvas(graphics), mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
         }
     }
+    private static final class Title extends net.minecraft.client.gui.screens.TitleScreen {
+        private app.cairn.client.CairnTitle view;
+        private final net.minecraft.client.renderer.PanoramaRenderer panorama = new net.minecraft.client.renderer.PanoramaRenderer(CUBE_MAP);
+        @Override protected void init() {
+            super.init(); view = new app.cairn.client.CairnTitle();
+            nativeAction("menu.singleplayer", "Singleplayer"); nativeAction("menu.multiplayer", "Multiplayer");
+            view.add("Cairn Settings", () -> { minecraft.setScreen(new Menu()); client.openModules(); }, true);
+            view.add("Cosmetics", () -> { minecraft.setScreen(new Menu()); client.openCosmetics(); }, true);
+            view.add("Friends", () -> { minecraft.setScreen(new Menu()); client.openFriends(); }, true);
+            nativeAction("menu.options", "Minecraft settings"); nativeAction("menu.quit", "Quit game");
+            client.cosmetics.badgeTexture("classic");
+        }
+        private void nativeAction(String key, String label) {
+            for (net.minecraft.client.gui.components.events.GuiEventListener child : children()) if (child instanceof net.minecraft.client.gui.components.Button) {
+                net.minecraft.client.gui.components.Button button = (net.minecraft.client.gui.components.Button) child;
+                if (button.getMessage().getString().equals(I18n.get(key))) view.add(label, button::onPress, button.active);
+            }
+        }
+        @Override public void render(PoseStack graphics, int x, int y, float delta) { panorama.render(delta, 1); view.render(canvas(graphics), width, height, x, y); }
+        @Override public boolean mouseClicked(double x, double y, int button) { if (button == 0) view.click((int) x, (int) y); return true; }
+        @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
+            if (client.menuKey(key)) { minecraft.setScreen(new Menu()); return true; }
+            if (key == GLFW.GLFW_KEY_TAB || key == GLFW.GLFW_KEY_DOWN || key == GLFW.GLFW_KEY_UP) { view.key(false, key == GLFW.GLFW_KEY_UP || (modifiers & 1) != 0); return true; }
+            if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_SPACE) { view.key(true, false); return true; }
+            return false;
+        }
+    }
     private static final class Menu extends Screen {
         @Override public void tick() { if (client.consumeMenuClose()) onClose(); }
-        Menu() { super(new TextComponent("Cairn Client")); }
+        Menu() { super(new TextComponent("Cairn Client")); client.enterEditor(); }
         @Override public void render(PoseStack graphics, int x, int y, float delta) { client.renderMenu(canvas(graphics), width, height, x, y); }
         @Override public boolean mouseClicked(double x, double y, int button) { if (button == 0) { client.mouseDown(width, height, (int) x, (int) y); return true; } return false; }
         @Override public boolean mouseDragged(double x, double y, int button, double dx, double dy) { if (button == 0) { client.drag(width, height, (int) x, (int) y); return true; } return false; }

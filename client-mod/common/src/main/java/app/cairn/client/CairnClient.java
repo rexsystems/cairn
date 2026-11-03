@@ -13,6 +13,16 @@ public final class CairnClient {
         int textWidth(String text);
         /** Draws part of a cosmetics texture key; adapters without image support skip it. */
         default void image(String texture, int x, int y, int width, int height, float u0, float v0, float u1, float v1) { }
+        default void icon(Object icon, int x, int y, int size) { if (icon instanceof String) image((String) icon, x, y, size, size, 0, 0, 1, 1); }
+    }
+    public static final class HudRow {
+        public final Object icon;
+        public final String label;
+        public HudRow(Object icon, String label) { this.icon = icon; this.label = label; }
+    }
+    public static String effectIcon(String description) {
+        String[] parts = description.split("\\.", 3);
+        return parts.length == 3 ? "effect/" + parts[1] + "/" + parts[2] : null;
     }
     public enum Module {
         FPS("FPS", "Frame counter", "HUD", true, true),
@@ -44,9 +54,9 @@ public final class CairnClient {
     public enum Setting {
         SCALE("Scale", 100, 50, 250, 10), WIDTH("Panel width", 150, 80, 320, 20),
         OPACITY("Background opacity", 80, 0, 100, 10), BACKGROUND("Background", 1, 0, 1, 1),
-        SHADOW("Text shadow", 0, 0, 1, 1), BORDER("Accent edge", 1, 0, 1, 1),
+        SHADOW("Text shadow", 0, 0, 1, 1), BORDER("Accent edge", 0, 0, 1, 1),
         ALIGN("Text alignment", 0, 0, 2, 1),
-        TEXT_COLOR("Text color", 0xfff1f0e8, 0, 0, 0), BG_COLOR("Background color", 0xff1c211c, 0, 0, 0),
+        TEXT_COLOR("Text color", 0xffeeeeee, 0, 0, 0), BG_COLOR("Background color", 0xff15181e, 0, 0, 0),
         ACCENT_COLOR("Accent / pressed color", 0xffc6db82, 0, 0, 0),
         KEY_SIZE("Key size", 22, 16, 36, 2), KEY_GAP("Key spacing", 3, 1, 8, 1),
         MOUSE_KEYS("Mouse buttons", 1, 0, 1, 1), SPACE_KEY("Space bar", 1, 0, 1, 1),
@@ -84,6 +94,7 @@ public final class CairnClient {
         int clippedWidth = -1;
         int textWidth;
         int pressedTextColor;
+        List<HudRow> rows = Collections.emptyList();
     }
     private final State[] states = new State[MODULES.length];
     private final Properties config = new Properties();
@@ -122,6 +133,11 @@ public final class CairnClient {
                 int value = number(module.name() + "." + setting.name(), setting.initial);
                 state.settings[setting.ordinal()] = setting.color() ? value | 0xff000000 : clamp(value, setting.min, setting.max);
             }
+            if (!config.containsKey("hud.style.version")) {
+                if (state.settings[Setting.ACCENT_COLOR.ordinal()] == 0xffc6db82) state.settings[Setting.BORDER.ordinal()] = 0;
+                if (state.settings[Setting.BG_COLOR.ordinal()] == 0xff1c211c) state.settings[Setting.BG_COLOR.ordinal()] = Setting.BG_COLOR.initial;
+                if (state.settings[Setting.TEXT_COLOR.ordinal()] == 0xfff1f0e8) state.settings[Setting.TEXT_COLOR.ordinal()] = Setting.TEXT_COLOR.initial;
+            }
             state.pressedTextColor = readable(state.settings[Setting.ACCENT_COLOR.ordinal()]);
             state.x = number(module.name() + ".x", -1);
             state.y = number(module.name() + ".y", -1);
@@ -129,6 +145,7 @@ public final class CairnClient {
             if (module == Module.CROSSHAIR) state.placed = Boolean.parseBoolean(config.getProperty("CROSSHAIR.placed", "false"));
         }
         cosmetics = new Cosmetics(this);
+        config.setProperty("hud.style.version", "2");
         friends = new Friends(this, cosmetics);
         menu = new CairnMenu(this);
     }
@@ -161,6 +178,10 @@ public final class CairnClient {
     }
     public void toggle(Module module) { state(module).enabled = !enabled(module); save(); }
     public void value(Module module, String value) { state(module).value = value == null ? "" : value; }
+    public void rows(Module module, List<HudRow> rows) {
+        state(module).rows = Collections.unmodifiableList(new ArrayList<HudRow>(rows.subList(0, Math.min(8, rows.size()))));
+        state(module).measured = null;
+    }
     public void input(boolean forward, boolean back, boolean left, boolean right, boolean space, boolean mouseLeft, boolean mouseRight) {
         this.forward = forward; this.back = back; this.left = left; this.right = right; this.space = space; this.mouseLeft = mouseLeft; this.mouseRight = mouseRight;
     }
@@ -251,7 +272,10 @@ public final class CairnClient {
     public boolean editing() { return editing; }
     public void requestMenuClose() { menuCloseRequested = true; }
     public boolean consumeMenuClose() { boolean close = menuCloseRequested; menuCloseRequested = false; return close; }
-    public void enterEditor() { editing = true; editorTools = true; menu.blur(); }
+    public void enterEditor() { editing = true; editorTools = true; menu.blur(); menu.clearControls(); }
+    public void openModules() { editing = false; dragging = null; menu.openModules(); }
+    public void openCosmetics() { editing = false; dragging = null; menu.openCosmetics(); }
+    public void openFriends() { editing = false; dragging = null; menu.openFriends(); }
     public void leaveEditor() { dragging = null; editing = false; menuCloseRequested = false; save(); }
     public boolean escape() {
         if (listening != null) { listening = null; return true; }
@@ -307,6 +331,7 @@ public final class CairnClient {
     static int autoWidth(int textWidth) { return Math.min(Setting.WIDTH.max, (Math.max(24, textWidth) + 12 + 5) / 6 * 6); }
     private int widgetHeight(Module module) {
         if (module == Module.CROSSHAIR) return widgetWidth(module);
+        if (!state(module).rows.isEmpty()) return Math.round(state(module).rows.size() * 20 * scale(module));
         if (module != Module.KEYSTROKES) return Math.round(TEXT_HEIGHT * scale(module));
         int size = Math.round(setting(module, Setting.KEY_SIZE) * scale(module)), gap = Math.max(1, Math.round(setting(module, Setting.KEY_GAP) * scale(module)));
         int height = size * 2 + gap;
@@ -338,6 +363,10 @@ public final class CairnClient {
             if (module != Module.KEYSTROKES) {
                 String source = state.value.isEmpty() ? module.title : state.value;
                 if (!source.equals(state.measured)) { state.contentWidth = canvas.textWidth(source); state.measured = source; }
+                if (!state.rows.isEmpty()) {
+                    state.contentWidth = 0;
+                    for (HudRow row : state.rows) state.contentWidth = Math.max(state.contentWidth, canvas.textWidth(row.label) + 22);
+                }
             }
             if (state.placed) continue;
             int w = widgetWidth(module), h = widgetHeight(module);
@@ -384,6 +413,41 @@ public final class CairnClient {
         canvas.rect(cx - t / 2, cy - gap - t / 2 - size, t, size, c); canvas.rect(cx - t / 2, cy + gap + (t + 1) / 2, t, size, c);
         if (setting(module, Setting.CROSS_DOT) == 1) canvas.rect(cx - t / 2, cy - t / 2, t, t, c);
     }
+    void renderPreview(Canvas canvas, Module module, int x, int y, int width, int height) {
+        float scale = scale(module);
+        String value = state(module).value.isEmpty() ? module.title : state(module).value;
+        int contentWidth = canvas.textWidth(value);
+        if (!state(module).rows.isEmpty()) { contentWidth = 0; for (HudRow row : state(module).rows) contentWidth = Math.max(contentWidth, canvas.textWidth(row.label) + 22); }
+        int w = module == Module.CROSSHAIR || module == Module.KEYSTROKES ? widgetWidth(module)
+            : Math.round((setting(module, Setting.AUTO_WIDTH) == 1 ? autoWidth(contentWidth) : setting(module, Setting.WIDTH)) * scale);
+        int h = widgetHeight(module);
+        float fit = Math.min(1, Math.min(width / (float) Math.max(1, w), height / (float) Math.max(1, h)));
+        scale *= fit; w = Math.round(w * fit); h = Math.round(h * fit);
+        x += (width - w) / 2; y += (height - h) / 2;
+        if (module == Module.CROSSHAIR) crosshair(canvas, x, y, scale);
+        else if (module == Module.KEYSTROKES) keystrokes(canvas, x, y, module, scale);
+        else if (!state(module).rows.isEmpty()) renderRows(canvas, module, x, y, w, h, scale);
+        else {
+            if (setting(module, Setting.BACKGROUND) == 1) canvas.rect(x, y, w, h, background(module));
+            if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, w), h, color(module, Setting.ACCENT_COLOR));
+            String label = fit(canvas, value, Math.max(0, (int) (w / scale) - 12));
+            int align = setting(module, Setting.ALIGN);
+            int tx = align == 0 ? Math.round(6 * scale) : align == 1 ? (w - Math.round(canvas.textWidth(label) * scale)) / 2 : w - Math.round((canvas.textWidth(label) + 6) * scale);
+            canvas.textScaled(label, x + Math.max(0, tx), y + Math.max(0, (h - Math.round(8 * scale)) / 2), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
+        }
+    }
+    private void renderRows(Canvas canvas, Module module, int x, int y, int width, int height, float scale) {
+        if (setting(module, Setting.BACKGROUND) == 1) canvas.rect(x, y, width, height, background(module));
+        if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, width), height, color(module, Setting.ACCENT_COLOR));
+        int rowHeight = Math.max(1, Math.round(20 * scale)), iconSize = Math.max(1, Math.round(16 * scale));
+        for (HudRow row : state(module).rows) {
+            if (y + rowHeight > viewportHeight || height < rowHeight) break;
+            canvas.icon(row.icon, x + Math.round(3 * scale), y + Math.round(2 * scale), iconSize);
+            String label = fit(canvas, row.label, Math.max(0, (int) (width / scale) - 28));
+            canvas.textScaled(label, x + Math.round(23 * scale), y + Math.round(6 * scale), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
+            y += rowHeight; height -= rowHeight;
+        }
+    }
     public void renderHud(Canvas canvas, int width, int height) {
         viewportWidth = width; viewportHeight = height;
         counters();
@@ -395,6 +459,7 @@ public final class CairnClient {
             int w = Math.min(width - x, widgetWidth(module)), h = Math.min(height - y, widgetHeight(module));
             if (module == Module.CROSSHAIR) crosshair(canvas, x, y, scale);
             else if (module == Module.KEYSTROKES) keystrokes(canvas, x, y, module, scale);
+            else if (!state(module).rows.isEmpty()) renderRows(canvas, module, x, y, w, h, scale);
             else {
                 if (setting(module, Setting.BACKGROUND) == 1) canvas.rect(x, y, w, h, background(module));
                 if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, w), h, color(module, Setting.ACCENT_COLOR));
@@ -419,8 +484,6 @@ public final class CairnClient {
         if (editing) {
             renderHud(canvas, width, height);
             if (!editorTools) return;
-            canvas.rect(0, 0, width, 30, 0xf21c211c);
-            canvas.text(fit(canvas, "HUD / Drag: move. Corner: resize. G: snap " + (snap ? "ON" : "OFF") + ". H: hide tools. Esc: modules", width - 24), 12, 11, TEXT);
             if (dragging != null) {
                 int x = x(dragging, width), y = y(dragging, height);
                 canvas.rect(x, 30, 1, Math.max(0, height - 30), 0x554a6042);
@@ -428,6 +491,7 @@ public final class CairnClient {
             }
             canvas.rect(0, height - 26, width, 26, 0xf21c211c);
             canvas.text(fit(canvas, selected.title + " / " + setting(selected, Setting.SCALE) + "% / Tab: select / Arrows: move / +/-: size / Enter: settings", width - 24), 12, height - 17, TEXT);
+            menu.editorControls(canvas, width, height, mouseX, mouseY);
         } else { menu.render(canvas, width, height, mouseX, mouseY); friends.render(canvas, width, height); }
     }
     public void editorKey(int dx, int dy, int scale) {
@@ -441,6 +505,7 @@ public final class CairnClient {
     public void editorSettings() { editing = false; menu.openSettings(selected); }
     public void mouseDown(int width, int height, int mouseX, int mouseY) {
         if (!editing) { menu.mouseDown(width, height, mouseX, mouseY); return; }
+        if (editorTools && menu.editorClick(mouseX, mouseY)) return;
         if (editorTools && (mouseY < 30 || mouseY >= height - 26)) return;
         for (int i = MODULES.length - 1; i >= 0; i--) {
             Module module = MODULES[i];
@@ -462,7 +527,7 @@ public final class CairnClient {
         } else {
             int x = mouseX - dragX, y = mouseY - dragY;
             if (snap) { x = Math.round(x / 4f) * 4; y = Math.round(y / 4f) * 4; }
-            int top = editorTools ? 30 : 0, bottom = editorTools ? 26 : 0;
+            int top = 0, bottom = editorTools ? 26 : 0;
             place(dragging, clamp(x, 0, Math.max(0, width - widgetWidth(dragging))), clamp(y, top, Math.max(top, height - bottom - widgetHeight(dragging))));
         }
     }

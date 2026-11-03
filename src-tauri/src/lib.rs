@@ -1068,13 +1068,6 @@ async fn cosmetics_overview(state: State<'_, AppState>, id: Option<String>) -> R
 }
 
 #[tauri::command]
-async fn cosmetics_equip(state: State<'_, AppState>, id: Option<String>, cape: Option<String>, badge: Option<String>) -> R<Value> {
-    let base = cosmetics_base(&state)?;
-    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
-    cosmetics::equip(&base, &acc, cape.as_deref(), badge.as_deref()).await.map_err(ea)
-}
-
-#[tauri::command]
 async fn cosmetics_upload(state: State<'_, AppState>, id: Option<String>, png: Vec<u8>, frame_ms: u32) -> R<Value> {
     let base = cosmetics_base(&state)?;
     let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
@@ -1647,7 +1640,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info, get_settings, save_settings,
-            cosmetics_overview, cosmetics_equip, cosmetics_upload, cosmetics_remove_cape, cosmetics_cape_image,
+            cosmetics_overview, cosmetics_upload, cosmetics_remove_cape, cosmetics_cape_image,
             cairn_friends, cairn_friend_action, cairn_social_settings,
             list_instances, get_instance, create_instance, update_instance, delete_instance, duplicate_instance, set_instance_icon,
             import_mrpack, import_modpack, export_mrpack,

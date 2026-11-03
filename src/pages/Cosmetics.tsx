@@ -47,7 +47,6 @@ export function Cosmetics() {
       setBusy(false);
     }
   };
-  const equip = (cape: string | null, badge: string | null) => apply(() => api.cosmeticsEquip(active?.id, cape, badge));
 
   const pick = async (file: File | undefined) => {
     if (!file) return;
@@ -64,9 +63,8 @@ export function Cosmetics() {
   const upload = async () => {
     if (!draft || draft.error) return;
     await apply(async () => {
-      await api.cosmeticsUpload(active?.id, draft.bytes, draft.frameMs);
-      return api.cosmeticsEquip(active?.id, "custom", me?.equipped.badge ?? null);
-    }, "Cape uploaded");
+      return api.cosmeticsUpload(active?.id, draft.bytes, draft.frameMs);
+    }, "Cape uploaded. Equip it from Cosmetics in Minecraft.");
     setDraft(null);
   };
 
@@ -99,28 +97,30 @@ export function Cosmetics() {
 
       {!me && <p className="notice">{view.error ?? "Sign in to an account to wear cosmetics."} Everyone's cosmetics still show in game.</p>}
       {me?.role === "banned" && <p className="notice">This account is banned from cosmetics on this server.</p>}
+      <p className="notice">Choose your cape and badge in Minecraft: Right Shift → Cosmetics. This page previews the catalog and uploads custom capes. Staff cosmetics are granted by an administrator to a verified Minecraft account.</p>
 
       <section className="panel stack" aria-labelledby="c-capes">
         <h2 id="c-capes">Capes</h2>
         <div className="cosmetic-grid">
-          <button className="cosmetic" aria-pressed={!equipped.cape} disabled={!me || busy} onClick={() => equip(null, equipped.badge)}>
+          <div className="cosmetic" aria-label={!equipped.cape ? "No cape equipped" : "No cape"}>
             <span className="cosmetic-art empty">None</span>
             <span>No cape</span>
-          </button>
+          </div>
           {me?.customCape && (
-            <button className="cosmetic" aria-pressed={equipped.cape === "custom"} disabled={busy || me.customCape.status === "rejected"} onClick={() => equip("custom", equipped.badge)}>
+            <div className="cosmetic">
               {customSrc ? <CapePreview src={customSrc} frames={me.customCape.frames} frameMs={me.customCape.frameMs} label="Your cape" /> : <span className="cosmetic-art empty">…</span>}
               <span>Your cape</span>
               {me.customCape.frames > 1 && <span className="chip">Animated</span>}
-            </button>
+            </div>
           )}
           {capes.map((c) => (
-            <button key={c.id} className="cosmetic" aria-pressed={equipped.cape === c.id} disabled={!me || c.locked || busy} onClick={() => equip(c.id, equipped.badge)}>
+            <div key={c.id} className="cosmetic">
               <img className="cosmetic-art" src={`/cosmetics/cape-${c.id}.png`} alt="" draggable={false} />
               <span>{c.name}</span>
+              {equipped.cape === c.id && <span className="chip">Equipped</span>}
               {c.frames > 1 && <span className="chip chip-moss">Animated</span>}
               {c.locked && <span className="chip">{c.role === "staff" ? "Staff only" : "Locked"}</span>}
-            </button>
+            </div>
           ))}
         </div>
       </section>
@@ -128,16 +128,17 @@ export function Cosmetics() {
       <section className="panel stack" aria-labelledby="c-badges">
         <h2 id="c-badges">Nametag badge</h2>
         <div className="cosmetic-grid small">
-          <button className="cosmetic" aria-pressed={!equipped.badge} disabled={!me || busy} onClick={() => equip(equipped.cape, null)}>
+          <div className="cosmetic">
             <span className="cosmetic-art empty">None</span>
             <span>No badge</span>
-          </button>
+          </div>
           {badges.map((b) => (
-            <button key={b.id} className="cosmetic" aria-pressed={equipped.badge === b.id} disabled={!me || b.locked || busy} onClick={() => equip(equipped.cape, b.id)}>
+            <div key={b.id} className="cosmetic">
               <img className="cosmetic-art" src={`/cosmetics/badge-${b.id}.png`} alt="" draggable={false} />
               <span>{b.name}</span>
+              {equipped.badge === b.id && <span className="chip">Equipped</span>}
               {b.locked && <span className="chip">{b.role === "staff" ? "Staff only" : "Locked"}</span>}
-            </button>
+            </div>
           ))}
         </div>
       </section>
@@ -167,7 +168,7 @@ export function Cosmetics() {
                 </label>
               )}
               <div className="row" style={{ gap: "var(--space-2)" }}>
-                <button className="btn" disabled={!draft || !!draft.error || busy} onClick={() => void upload()}><Icon name="upload" /> Upload and wear</button>
+                <button className="btn" disabled={!draft || !!draft.error || busy} onClick={() => void upload()}><Icon name="upload" /> Upload cape</button>
                 {me.customCape && (
                   <button className="btn btn-quiet" disabled={busy} onClick={() => void apply(() => api.cosmeticsRemoveCape(active?.id), "Cape removed")}>
                     <Icon name="trash" /> Remove my cape

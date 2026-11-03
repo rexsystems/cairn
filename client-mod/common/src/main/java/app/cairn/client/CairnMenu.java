@@ -125,7 +125,7 @@ final class CairnMenu {
         int index = controls.size();
         boolean hover = mouseX >= x && mouseX < x + w && lastMouseY >= y && lastMouseY < y + h;
         boolean accent = bg == 0xff3c4835;
-        rounded(canvas, x, y, w, h, 3, hover ? 0xff3a424e : accent ? 0xff44252c : SURFACE);
+        rounded(canvas, x, y, w, h, 3, hover ? 0xff3a424e : bg == PRIMARY ? PRIMARY : accent ? 0xff44252c : SURFACE);
         canvas.text(fit(canvas, label, w - 12), x + 6, y + Math.max(0, (h - 9) / 2), hover && fg == MUTED ? TEXT : fg);
         controls.add(new Control(x, y, w, h, action));
         if (focus == index) {
@@ -133,7 +133,7 @@ final class CairnMenu {
             canvas.rect(x, y, 1, h, ACCENT); canvas.rect(x + w - 1, y, 1, h, ACCENT);
         }
     }
-    private void rounded(Canvas canvas, int x, int y, int w, int h, int radius, int color) {
+    static void rounded(Canvas canvas, int x, int y, int w, int h, int radius, int color) {
         int r = Math.min(radius, Math.min(w, h) / 2);
         if (w <= 0 || h <= 0) return;
         canvas.rect(x + r, y, w - r * 2, h, color);
@@ -152,7 +152,29 @@ final class CairnMenu {
         controls.add(new Control(x, y, w, 24, action));
         if (focus == index) canvas.rect(x + 3, y + 21, w - 6, 2, ACCENT);
     }
-    private void openModules() { page("modules"); details = false; colorSetting = null; blur(); focus = -1; }
+    void openModules() { page("modules"); details = false; colorSetting = null; blur(); focus = -1; }
+    void editorControls(Canvas canvas, int width, int height, int mx, int my) {
+        controls.clear(); mouseX = mx; lastMouseY = my;
+        int w = Math.min(190, width - 24), x = (width - w) / 2, y = Math.max(42, height / 2 - 30);
+        canvas.text("CAIRN", (width - canvas.textWidth("CAIRN")) / 2, y - 20, TEXT);
+        button(canvas, "Cairn Settings", x, y, w, 26, PRIMARY, TEXT, () -> client.openModules());
+        int half = (w - 6) / 2;
+        button(canvas, "Cosmetics", x, y + 32, half, 24, SURFACE, TEXT, () -> client.openCosmetics());
+        button(canvas, "Friends", x + half + 6, y + 32, half, 24, SURFACE, TEXT, () -> client.openFriends());
+        for (final Module module : MODULES) {
+            if (!module.hud || !client.enabled(module)) continue;
+            int[] b = client.bounds(module);
+            int bx = clamp(b[0] + b[2] + 2, 0, width - 26), by = clamp(b[1], 0, height - 38);
+            rounded(canvas, bx, by, 12, 12, 2, SURFACE); gear(canvas, bx + 1, by, MUTED);
+            controls.add(new Control(bx, by, 12, 12, () -> { client.select(module); client.editorSettings(); }));
+            button(canvas, "-", bx + 14, by, 12, 12, SURFACE, ACCENT, () -> client.toggle(module));
+        }
+    }
+    boolean editorClick(int x, int y) {
+        for (Control control : controls) if (x >= control.x && x < control.x + control.w && y >= control.y && y < control.y + control.h) { control.action.run(); return true; }
+        return false;
+    }
+    void clearControls() { controls.clear(); }
     private int lastMouseY;
     void render(Canvas canvas, int width, int height, int mx, int my) {
         controls.clear(); mouseX = mx; lastMouseY = my;
@@ -349,9 +371,9 @@ final class CairnMenu {
             // The cape's outer face sits at (1,1) and is 10x16 in the 64x32 layout.
             if (texture != null) canvas.image(texture, cx + 13, cy + 6, 30, 48, 1 / 64f, 1 / 32f, 11 / 64f, 17 / 32f);
             canvas.text(fit(canvas, capeName(cosmetics, id), cardW - 6), cx + 3, cy + 59, selected ? ACCENT : TEXT);
-            String note = selected ? "Worn" : id.equals("custom") && "pending".equals(cosmetics.customStatus()) ? "In review" : "";
+            String note = !cosmetics.signedIn() ? "Preview" : selected ? "Worn" : id.equals("custom") && "pending".equals(cosmetics.customStatus()) ? "In review" : "";
             if (!note.isEmpty()) canvas.text(fit(canvas, note, cardW - 6), cx + 3, cy + 71, MUTED);
-            controls.add(new Control(cx, cy, cardW, cardH, () -> cosmetics.equip(id.equals("none") ? null : id, cosmetics.equippedBadge())));
+            if (cosmetics.signedIn() && !cosmetics.busy()) controls.add(new Control(cx, cy, cardW, cardH, () -> cosmetics.equip(id.equals("none") ? null : id, cosmetics.equippedBadge())));
         }
         int badgeY = gridTop + rowsVisible * (cardH + gap) + 2;
         if (badgeY + 44 > y + h - 12) return;
@@ -370,7 +392,7 @@ final class CairnMenu {
             String texture = cosmetics.badgeTexture(id);
             if (texture != null) canvas.image(texture, bx + 4, by + 4, 20, 20, 0, 0, 1, 1);
             else if (id.equals("none")) canvas.text("-", bx + 11, by + 10, MUTED);
-            controls.add(new Control(bx, by, cell, cell, () -> cosmetics.equip(cosmetics.equippedCape(), id)));
+            if (cosmetics.signedIn() && !cosmetics.busy()) controls.add(new Control(bx, by, cell, cell, () -> cosmetics.equip(cosmetics.equippedCape(), id)));
         }
         canvas.text(fit(canvas, "Upload your own cape, animated strips too, in the Cairn launcher.", w), x, y + h - 10, MUTED);
     }
@@ -547,10 +569,29 @@ final class CairnMenu {
     }
     private void settings(Canvas canvas, int x, int y, int w, int height) {
         Module module = client.selected();
-        canvas.text(fit(canvas, module.title + " settings", w), x, y + 2, TEXT);
+        boolean compact = height < 180;
+        boolean side = !compact && w >= 500;
+        int fullWidth = w;
+        if (side) w -= Math.max(196, w / 3) + 16;
+        canvas.text(fit(canvas, module.title + " settings", compact ? w - 80 : w), x, y + 2, TEXT);
         button(canvas, client.enabled(module) ? "Enabled" : "Disabled", x, y + 18, w, 22, 0xff303a2d, client.enabled(module) ? ACCENT : MUTED, () -> client.toggle(module));
+        int previewHeight = compact || side ? 0 : height >= 240 ? 88 : 44;
+        int px = side ? x + w + 16 : compact ? x + w - 72 : x + 8, py = side ? y + 20 : compact ? y : y + 64;
+        int pw = side ? fullWidth - w - 16 : compact ? 72 : w - 16, ph = side ? height - 44 : compact ? 14 : previewHeight - 24;
+        if (side) {
+            canvas.text("Mod preview", px, y + 2, TEXT);
+            float inset = module == Module.ZOOM ? (1 - 1f / client.setting(module, Setting.ZOOM_FACTOR)) / 2 : 0;
+            canvas.image("preview/world", px, py, pw, ph, inset, inset, 1 - inset, 1 - inset);
+            canvas.rect(px, py, pw, ph, 0x3306090d);
+        }
+        if (!compact && !side) {
+            rounded(canvas, x, y + 44, w, previewHeight, 3, 0xff090c10);
+            canvas.text("Preview", x + 8, y + 50, MUTED);
+        }
+        if (module.hud) client.renderPreview(canvas, module, px, py, pw, ph);
+        else preview(canvas, module, px, py, pw, ph);
         List<Setting> options = options(module);
-        int rowHeight = 28, first = y + 40, reserved = 66;
+        int rowHeight = 28, first = y + (compact || side ? 40 : 50 + previewHeight), reserved = compact || side ? 66 : 76 + previewHeight;
         if (module == Module.ZOOM && client.keysManaged()) { bindButton(canvas, Bind.ZOOM, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
         int capacity = Math.max(1, (height - reserved) / rowHeight);
         settingsScroll = clamp(settingsScroll, 0, Math.max(0, options.size() - capacity));
@@ -562,7 +603,7 @@ final class CairnMenu {
                 canvas.rect(x + w - 76, cy + 6, 12, 12, value);
                 button(canvas, "Change", x + w - 59, cy, 59, 23, 0xff303a2d, TEXT, () -> { colorSetting = setting; hex = String.format(Locale.ROOT, "%06X", client.setting(module, setting) & 0xffffff); hexFocus = false; colorError = null; });
             } else if (setting.toggle()) {
-                button(canvas, value == 1 ? "ON" : "OFF", x + w - 54, cy, 54, 23, 0xff303a2d, value == 1 ? ACCENT : MUTED, () -> { client.setting(module, setting, value == 1 ? 0 : 1); client.save(); });
+                settingToggle(canvas, value == 1, x + w - 64, cy, () -> { client.setting(module, setting, value == 1 ? 0 : 1); client.save(); });
             } else {
                 button(canvas, "-", x + w - 78, cy, 20, 23, 0xff303a2d, TEXT, () -> { client.setting(module, setting, client.setting(module, setting) - setting.step); client.save(); });
                 String label = setting == Setting.ALIGN ? new String[] { "Left", "Center", "Right" }[value] : String.valueOf(value) + (setting == Setting.SCALE || setting == Setting.OPACITY ? "%" : "");
@@ -576,6 +617,16 @@ final class CairnMenu {
             button(canvas, "Down", x + 35, foot, 43, 22, 0xff303a2d, MUTED, () -> settingsScroll++);
         }
         button(canvas, "Reset", x + w - 57, foot, 57, 22, 0xff303a2d, MUTED, () -> client.reset(module));
+    }
+    private void settingToggle(Canvas canvas, boolean enabled, int x, int y, Runnable action) {
+        int index = controls.size();
+        boolean hover = mouseX >= x && mouseX < x + 64 && lastMouseY >= y && lastMouseY < y + 23;
+        rounded(canvas, x, y, 64, 23, 3, hover ? 0xff303741 : SURFACE);
+        canvas.text(enabled ? "ON" : "OFF", x + 4, y + 7, TEXT);
+        rounded(canvas, x + 32, y + 5, 28, 14, 7, enabled ? 0xff285d39 : 0xff414750);
+        rounded(canvas, x + (enabled ? 47 : 35), y + 7, 10, 10, 5, enabled ? 0xffa4e3b4 : 0xffdce1e7);
+        if (focus == index) canvas.rect(x + 2, y + 21, 60, 2, ACCENT);
+        controls.add(new Control(x, y, 64, 23, action));
     }
     private void applyColor() {
         if (hex.length() != 6) { colorError = "Enter six hex digits."; return; }

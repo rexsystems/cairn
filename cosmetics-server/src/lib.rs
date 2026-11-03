@@ -208,6 +208,7 @@ pub fn router(state: Shared) -> Router {
         .route("/v1/admin/capes/{hash}/{action}", post(admin_review))
         .route("/v1/admin/users/{uuid}", get(admin_user))
         .route("/v1/admin/users/{uuid}/role", put(admin_role))
+        .route("/v1/admin/players/{name}/role", put(admin_role_by_name))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .merge(upload)
         .layer(middleware::from_fn_with_state(state.clone(), rate_limit))
@@ -390,7 +391,7 @@ async fn auth_finish(State(state): State<Shared>, Json(body): Json<FinishBody>) 
         return Err(ApiError::new(StatusCode::FORBIDDEN, "This account is banned from cosmetics."));
     }
     let now = now();
-    db::upsert_user(&conn, &uuid, &name, now)?;
+    db::upsert_user(&conn, &uuid, &name, now, !state.cfg.dev_insecure_auth)?;
     conn.execute(
         "INSERT INTO sessions (token_hash, uuid, expires) VALUES (?1, ?2, ?3)",
         rusqlite::params![sha256_hex(token.as_bytes()), uuid, now + state.cfg.token_ttl_secs],
@@ -414,9 +415,11 @@ async fn me(State(state): State<Shared>, headers: HeaderMap) -> ApiResult<Json<V
     };
     let capes: Vec<&str> = state.catalog.capes.iter().filter(|c| role_allows(c.role.as_deref(), &user.role)).map(|c| c.id.as_str()).collect();
     let badges: Vec<&str> = state.catalog.badges.iter().filter(|b| role_allows(b.role.as_deref(), &user.role)).map(|b| b.id.as_str()).collect();
+    let equipped_cape = user.cape.as_deref().filter(|id| *id == "custom" || state.cape_allowed(id, &user.role).is_some());
+    let equipped_badge = user.badge.as_deref().filter(|id| state.badge_allowed(id, &user.role));
     Ok(Json(json!({
         "uuid": user.uuid, "name": user.name, "role": user.role,
-        "equipped": { "cape": user.cape, "badge": user.badge },
+        "equipped": { "cape": equipped_cape, "badge": equipped_badge },
         "customCape": custom,
         "unlocked": { "capes": capes, "badges": badges },
         "moderation": if state.cfg.moderation == Moderation::Instant { "instant" } else { "approval" },
@@ -629,6 +632,17 @@ async fn admin_user(State(state): State<Shared>, headers: HeaderMap, Path(uuid):
 #[derive(Deserialize)]
 struct RoleBody {
     role: String,
+}
+
+async fn admin_role_by_name(State(state): State<Shared>, headers: HeaderMap, Path(name): Path<String>, Json(body): Json<RoleBody>) -> ApiResult<Json<Value>> {
+    require_admin(&state, &headers)?;
+    if !valid_name(&name) || !db::ROLES.contains(&body.role.as_str()) {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "Use a Minecraft name and a valid role."));
+    }
+    let conn = state.db();
+    let uuid = db::verified_uuid_by_name(&conn, &name)?.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Player must sign in with Mojang first; offline or ambiguous names cannot receive roles."))?;
+    db::set_role(&conn, &uuid, &body.role, now())?;
+    Ok(Json(json!({ "uuid": uuid, "name": name, "role": body.role })))
 }
 
 async fn admin_role(State(state): State<Shared>, headers: HeaderMap, Path(uuid): Path<String>, Json(body): Json<RoleBody>) -> ApiResult<Json<Value>> {

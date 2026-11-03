@@ -373,7 +373,6 @@ export const api = {
   removeAccount: (id: string) => invoke<Account[]>("remove_account", { id }),
   addOfflineAccount: (name: string) => invoke<Account[]>("add_offline_account", { name }),
   cosmeticsOverview: (id?: string) => invoke<CosmeticsOverview>("cosmetics_overview", { id }),
-  cosmeticsEquip: (id: string | undefined, cape: string | null, badge: string | null) => invoke<CosmeticsMe>("cosmetics_equip", { id, cape, badge }),
   cosmeticsUpload: (id: string | undefined, png: Uint8Array, frameMs: number) => invoke<CosmeticsMe>("cosmetics_upload", { id, png: Array.from(png), frameMs }),
   cosmeticsRemoveCape: (id?: string) => invoke<CosmeticsMe>("cosmetics_remove_cape", { id }),
   cairnFriends: () => invoke<CairnFriendList>("cairn_friends", {}),

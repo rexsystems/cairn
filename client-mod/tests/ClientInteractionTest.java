@@ -16,8 +16,11 @@ public final class ClientInteractionTest {
         final int width, height;
         int measures;
         final List<Label> labels = new ArrayList<Label>();
+        final List<Integer> colors = new ArrayList<Integer>();
+        int icons;
         Canvas(int width, int height) { this.width = width; this.height = height; }
-        public void rect(int x, int y, int w, int h, int color) { check(x >= 0 && y >= 0 && w >= 0 && h >= 0 && x + w <= width && y + h <= height, "Rectangle outside " + width + "x" + height + ": " + x + "," + y + "," + w + "," + h); }
+        public void rect(int x, int y, int w, int h, int color) { check(x >= 0 && y >= 0 && w >= 0 && h >= 0 && x + w <= width && y + h <= height, "Rectangle outside " + width + "x" + height + ": " + x + "," + y + "," + w + "," + h); colors.add(color); }
+        public void icon(Object icon, int x, int y, int size) { icons++; check(x >= 0 && y >= 0 && x + size <= width && y + size <= height, "Icon outside viewport"); }
         public int textWidth(String text) { measures++; return text.length() * 6; }
         public void text(String text, int x, int y, int color) { textScaled(text, x, y, color, 1, false); }
         public void textScaled(String text, int x, int y, int color, float scale, boolean shadow) {
@@ -131,6 +134,7 @@ public final class ClientInteractionTest {
     public static void main(String[] args) throws Exception {
         Path directory = Files.createTempDirectory("cairn-interaction-test-");
         try {
+            previewsAndOverlay(directory);
             CairnClient client = new CairnClient(directory);
             client.focusSearch();
             for (char c : "keySTROKES".toCharArray()) client.type(c);
@@ -192,5 +196,34 @@ public final class ClientInteractionTest {
         } finally {
             try (java.util.stream.Stream<Path> paths = Files.walk(directory)) { paths.sorted(Comparator.reverseOrder()).forEach(path -> { try { Files.delete(path); } catch (Exception e) { throw new RuntimeException(e); } }); }
         }
+    }
+    private static void previewsAndOverlay(Path parent) throws Exception {
+        CairnClient client = new CairnClient(Files.createTempDirectory(parent, "previews-"));
+        check(client.setting(Module.FPS, Setting.BORDER) == 0, "New HUDs have no colored edge");
+        client.value(Module.FPS, "Preview FPS");
+        Canvas preview = new Canvas(400, 300);
+        client.setting(Module.FPS, Setting.BG_COLOR, 0x123456);
+        client.setting(Module.FPS, Setting.OPACITY, 50);
+        client.renderPreview(preview, Module.FPS, 10, 10, 160, 100);
+        check(preview.colors.contains(0x7f123456), "Preview uses custom background and opacity");
+        client.setting(Module.FPS, Setting.BACKGROUND, 0); preview.colors.clear();
+        client.renderPreview(preview, Module.FPS, 10, 10, 160, 100);
+        check(preview.colors.isEmpty(), "Preview reacts immediately to background being disabled");
+        client.rows(Module.ARMOR, Arrays.asList(new CairnClient.HudRow(new Object(), "363"), new CairnClient.HudRow(new Object(), "528")));
+        client.renderPreview(preview, Module.ARMOR, 10, 10, 160, 100);
+        check(preview.icons == 2 && preview.labels.stream().anyMatch(label -> label.text.equals("528")), "Row previews render item icons and durability");
+        client.enterEditor(); preview.render(client); preview.click(client, "Cairn Settings");
+        check(!client.editing() && preview.labels.stream().anyMatch(label -> label.text.equals("Modules")), "Editor opens the module gallery through Cairn Settings");
+        for (int[] size : new int[][] {{320, 240}, {640, 360}, {960, 540}}) {
+            Canvas canvas = new Canvas(size[0], size[1]);
+            CairnTitle title = new CairnTitle(); final int[] calls = {0};
+            for (String name : new String[] {"Singleplayer", "Multiplayer", "Cairn Settings", "Cosmetics", "Friends", "Minecraft settings", "Quit game"}) title.add(name, () -> calls[0]++, true);
+            title.render(canvas, size[0], size[1], 0, 0);
+            for (Label label : canvas.labels) if (label.text.equals("Singleplayer")) title.click(label.x + 1, label.y + 1);
+            title.key(false, false); title.key(true, false);
+            check(calls[0] == 2, "Title actions work with mouse and keyboard");
+        }
+        client.cosmetics.equip("ember", "classic");
+        check(client.cosmetics.status().startsWith("No cosmetics server"), "Selection preserves the missing-server diagnosis");
     }
 }

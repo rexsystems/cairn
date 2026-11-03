@@ -52,6 +52,7 @@ public final class CairnForge {
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        if (mc.currentScreen != null && mc.currentScreen.getClass() == net.minecraft.client.gui.GuiMainMenu.class) mc.displayGuiScreen(new Title());
         client.cosmetics.account(mc.getSession().getUsername(), mc.getSession().getPlayerID(), mc.getSession().getToken());
         client.cosmetics.tick();
         client.friends.activity(net.minecraftforge.fml.common.Loader.MC_VERSION, mc.theWorld != null, mc.theWorld == null || mc.getCurrentServerData() == null ? null : mc.getCurrentServerData().serverIP);
@@ -88,21 +89,27 @@ public final class CairnForge {
         }
         if (client.enabled(Module.ARMOR)) {
         StringBuilder armor = new StringBuilder("Armor");
-        for (ItemStack item : mc.thePlayer.inventory.armorInventory) if (item != null) armor.append(" ").append(item.getMaxDamage() - item.getItemDamage());
+        java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<CairnClient.HudRow>();
+        for (ItemStack item : mc.thePlayer.inventory.armorInventory) if (item != null) { armor.append(" ").append(item.getMaxDamage() - item.getItemDamage()); rows.add(new CairnClient.HudRow(item.copy(), String.valueOf(item.getMaxDamage() - item.getItemDamage()))); }
         client.value(Module.ARMOR, armor.toString());
+        client.rows(Module.ARMOR, rows);
         }
         if (client.enabled(Module.EFFECTS)) {
+        java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<CairnClient.HudRow>();
         StringBuilder effects = new StringBuilder();
         for (Object value : mc.thePlayer.getActivePotionEffects()) {
             PotionEffect effect = (PotionEffect) value;
             if (effects.length() > 0) effects.append(" / ");
             effects.append(net.minecraft.client.resources.I18n.format(effect.getEffectName())).append(" ").append(effect.getDuration() / 20).append("s");
+            rows.add(new CairnClient.HudRow(effect, net.minecraft.client.resources.I18n.format(effect.getEffectName()) + " " + (effect.getAmplifier() + 1) + " / " + effect.getDuration() / 20 + "s"));
         }
         client.value(Module.EFFECTS, effects.length() == 0 ? "No effects" : effects.toString());
+        client.rows(Module.EFFECTS, rows);
         }
     }
     /** Uploads cosmetics PNGs lazily on the render thread; a broken image is remembered so it isn't decoded every frame. */
     private net.minecraft.util.ResourceLocation texture(String key) {
+        if ("preview/world".equals(key)) return new net.minecraft.util.ResourceLocation("textures/gui/title/background/panorama_0.png");
         if (key == null) return null;
         if (textures.containsKey(key)) return textures.get(key);
         byte[] png = client.cosmetics.texture(key);
@@ -192,6 +199,24 @@ public final class CairnForge {
             net.minecraft.client.renderer.GlStateManager.popMatrix();
         }
         public int textWidth(String text) { return mc.fontRendererObj.getStringWidth(text); }
+        public void icon(Object icon, int x, int y, int size) {
+            net.minecraft.client.renderer.GlStateManager.pushMatrix();
+            net.minecraft.client.renderer.GlStateManager.translate(x, y, 0); net.minecraft.client.renderer.GlStateManager.scale(size / 16f, size / 16f, 1);
+            if (icon instanceof ItemStack) {
+                net.minecraft.client.renderer.RenderHelper.enableGUIStandardItemLighting();
+                mc.getRenderItem().renderItemAndEffectIntoGUI((ItemStack) icon, 0, 0);
+                net.minecraft.client.renderer.RenderHelper.disableStandardItemLighting();
+            } else if (icon instanceof PotionEffect) {
+                net.minecraft.potion.Potion potion = net.minecraft.potion.Potion.potionTypes[((PotionEffect) icon).getPotionID()];
+                if (potion != null && potion.hasStatusIcon()) {
+                    int index = potion.getStatusIconIndex();
+                    mc.getTextureManager().bindTexture(new net.minecraft.util.ResourceLocation("textures/gui/container/inventory.png"));
+                    net.minecraft.client.renderer.GlStateManager.color(1, 1, 1, 1);
+                    Gui.drawScaledCustomSizeModalRect(0, 0, index % 8 * 18, 198 + index / 8 * 18, 18, 18, 16, 16, 256, 256);
+                }
+            }
+            net.minecraft.client.renderer.GlStateManager.popMatrix();
+        }
         public void image(String key, int x, int y, int width, int height, float u0, float v0, float u1, float v1) {
             net.minecraft.util.ResourceLocation id = texture(key);
             if (id == null) return;
@@ -210,7 +235,38 @@ public final class CairnForge {
     @SubscribeEvent public void crosshair(RenderGameOverlayEvent.Pre event) {
         if (event.type == RenderGameOverlayEvent.ElementType.CROSSHAIRS && client.enabled(Module.CROSSHAIR) && client.setting(Module.CROSSHAIR, CairnClient.Setting.CROSS_HIDE_VANILLA) == 1) event.setCanceled(true);
     }
+    private final class Title extends net.minecraft.client.gui.GuiMainMenu {
+        private app.cairn.client.CairnTitle view;
+        @Override public void initGui() {
+            super.initGui(); view = new app.cairn.client.CairnTitle();
+            nativeAction(1, "Singleplayer"); nativeAction(2, "Multiplayer");
+            view.add("Cairn Settings", () -> { mc.displayGuiScreen(new Menu()); client.openModules(); }, true);
+            view.add("Cosmetics", () -> { mc.displayGuiScreen(new Menu()); client.openCosmetics(); }, true);
+            view.add("Friends", () -> { mc.displayGuiScreen(new Menu()); client.openFriends(); }, true);
+            nativeAction(0, "Minecraft settings"); nativeAction(4, "Quit game");
+            client.cosmetics.badgeTexture("classic");
+        }
+        private void nativeAction(int id, String label) {
+            for (Object value : buttonList) {
+                final net.minecraft.client.gui.GuiButton button = (net.minecraft.client.gui.GuiButton) value;
+                if (button.id == id) view.add(label, () -> { try { super.actionPerformed(button); } catch (IOException e) { throw new RuntimeException(e); } }, button.enabled);
+            }
+        }
+        @Override public void drawScreen(int x, int y, float delta) {
+            net.minecraft.client.renderer.GlStateManager.color(1, 1, 1, 1);
+            mc.getTextureManager().bindTexture(new net.minecraft.util.ResourceLocation("textures/gui/title/background/panorama_0.png"));
+            Gui.drawScaledCustomSizeModalRect(0, 0, 0, 0, 256, 256, width, height, 256, 256);
+            view.render(canvas, width, height, x, y);
+        }
+        @Override protected void mouseClicked(int x, int y, int button) { if (button == 0) view.click(x, y); }
+        @Override protected void keyTyped(char c, int key) {
+            if (key == menu.getKeyCode()) { mc.displayGuiScreen(new Menu()); return; }
+            if (key == Keyboard.KEY_TAB || key == Keyboard.KEY_DOWN || key == Keyboard.KEY_UP) view.key(false, key == Keyboard.KEY_UP || isShiftKeyDown());
+            else if (key == Keyboard.KEY_RETURN || key == Keyboard.KEY_SPACE) view.key(true, false);
+        }
+    }
     private final class Menu extends GuiScreen {
+        Menu() { client.enterEditor(); }
         @Override public void updateScreen() { if (client.consumeMenuClose()) mc.displayGuiScreen(null); }
         @Override public void drawScreen(int mouseX, int mouseY, float delta) { client.renderMenu(canvas, width, height, mouseX, mouseY); }
         @Override protected void mouseClicked(int x, int y, int button) throws IOException { if (button == 0) client.mouseDown(width, height, x, y); }

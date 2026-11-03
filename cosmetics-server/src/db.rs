@@ -75,6 +75,10 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
              dnd INTEGER NOT NULL DEFAULT 0
          );",
     )?;
+    let has_verified: bool = conn.prepare("PRAGMA table_info(users)")?.query_map([], |r| r.get::<_, String>(1))?.collect::<rusqlite::Result<Vec<_>>>()?.iter().any(|column| column == "verified");
+    if !has_verified {
+        conn.execute("ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 0", [])?;
+    }
     Ok(conn)
 }
 
@@ -83,6 +87,7 @@ pub struct User {
     pub uuid: String,
     pub name: String,
     pub role: String,
+    pub verified: bool,
     pub cape: Option<String>,
     pub badge: Option<String>,
     pub custom_cape: Option<String>,
@@ -102,19 +107,28 @@ pub struct CapeRow {
 }
 
 pub fn user(conn: &Connection, uuid: &str) -> rusqlite::Result<Option<User>> {
-    conn.query_row("SELECT uuid, name, role, cape, badge, custom_cape FROM users WHERE uuid = ?1", [uuid], |r| {
-        Ok(User { uuid: r.get(0)?, name: r.get(1)?, role: r.get(2)?, cape: r.get(3)?, badge: r.get(4)?, custom_cape: r.get(5)? })
+    conn.query_row("SELECT uuid, name, role, cape, badge, custom_cape, verified FROM users WHERE uuid = ?1", [uuid], |r| {
+        let verified: bool = r.get(6)?;
+        let mut role: String = r.get(2)?;
+        if !verified && matches!(role.as_str(), "staff" | "admin") { role = "player".into(); }
+        Ok(User { uuid: r.get(0)?, name: r.get(1)?, role, cape: r.get(3)?, badge: r.get(4)?, custom_cape: r.get(5)?, verified })
     })
     .optional()
 }
 
-pub fn upsert_user(conn: &Connection, uuid: &str, name: &str, now: i64) -> rusqlite::Result<()> {
+pub fn upsert_user(conn: &Connection, uuid: &str, name: &str, now: i64, verified: bool) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO users (uuid, name, first_seen, last_seen) VALUES (?1, ?2, ?3, ?3)
-         ON CONFLICT(uuid) DO UPDATE SET name = excluded.name, last_seen = excluded.last_seen",
-        params![uuid, name, now],
+        "INSERT INTO users (uuid, name, first_seen, last_seen, verified) VALUES (?1, ?2, ?3, ?3, ?4)
+         ON CONFLICT(uuid) DO UPDATE SET name = excluded.name, last_seen = excluded.last_seen, verified = excluded.verified",
+        params![uuid, name, now, verified],
     )?;
     Ok(())
+}
+
+pub fn verified_uuid_by_name(conn: &Connection, name: &str) -> rusqlite::Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT uuid FROM users WHERE name = ?1 COLLATE NOCASE AND verified = 1 ORDER BY last_seen DESC LIMIT 2")?;
+    let ids = stmt.query_map([name], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(if ids.len() == 1 { ids.into_iter().next() } else { None })
 }
 
 pub fn set_role(conn: &Connection, uuid: &str, role: &str, now: i64) -> rusqlite::Result<()> {

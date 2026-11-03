@@ -304,7 +304,9 @@ public final class Cosmetics {
 
     /** Equips a cape ("custom", a catalog id or null) and badge ("none", an id or null) in one request, as the server expects. */
     public void equip(String cape, String badge) {
+        if (base == null) { status = "No cosmetics server set. Add one in the Cairn launcher settings."; return; }
         if (token == null) { status = "Sign in with a Microsoft account to change cosmetics."; return; }
+        if (busy) return;
         busy = true;
         status = "Saving...";
         final long session;

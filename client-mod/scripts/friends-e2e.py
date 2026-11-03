@@ -116,6 +116,7 @@ def bob_from_alice():
 
 # E2E_FRIENDS fixes GUI scale at 2, so these are game pixels, independent of the desktop size.
 key(alice_window, "Shift_R")
+click(alice_window, 730, 388)
 capture(alice_window, "initial-" + version)
 click(alice_window, 150, 241)
 xdo("type", "--clearmodifiers", "--delay", 60, "CairnBob")
@@ -124,6 +125,7 @@ capture(alice_window, "sent-" + version)
 wait(lambda: friends(b)["incoming"], "The in-game Add button did not send a request")
 capture(bob_window, "toast-" + version)
 key(bob_window, "Shift_R")
+click(bob_window, 730, 388)
 click(bob_window, 910, 351)
 wait(bob_from_alice, "The in-game Accept button did not create the friendship")
 wait(lambda: (bob_from_alice().get("activity") or {}).get("server"), "Bob must be connected to the local Minecraft server")

@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 const USAGE: &str =
-    "usage: cairn-cosmetics-server [serve | role <uuid> <player|staff|admin|banned> | capes [pending|approved|rejected] | approve <hash> | reject <hash>]";
+    "usage: cairn-cosmetics-server [serve | role <uuid|verified-name> <player|staff|admin|banned> | capes [pending|approved|rejected] | approve <hash> | reject <hash>]";
 
 fn main() -> ExitCode {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
@@ -35,8 +35,11 @@ fn admin(cfg: Config, cmd: &str, args: &[String]) -> Result<(), String> {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let err = |e: rusqlite::Error| e.to_string();
     match (cmd, args) {
-        ("role", [uuid, role]) => {
-            let uuid = normalize_uuid(uuid).ok_or("invalid UUID")?;
+        ("role", [target, role]) => {
+            let uuid = match normalize_uuid(target) {
+                Some(uuid) => uuid,
+                None => db::verified_uuid_by_name(&conn, target).map_err(err)?.ok_or("Player must sign in with Mojang first; use their verified name or UUID.")?,
+            };
             if !db::ROLES.contains(&role.as_str()) {
                 return Err(USAGE.into());
             }

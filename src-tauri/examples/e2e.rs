@@ -51,7 +51,8 @@ async fn main() -> anyhow::Result<()> {
     if std::env::var("E2E_FRIENDS").as_deref() == Ok("1") {
         std::fs::create_dir_all(inst.dir(&paths).join("config"))?;
         let binding = std::env::var("E2E_MENU_KEY").ok().map(|key| format!("key.MENU={key}\nkey.MENU.name=M\n")).unwrap_or_default();
-        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), format!("menu.page=friends\n{binding}"))?;
+        let hud = if std::env::var("E2E_HUD").as_deref() == Ok("1") { "ARMOR.enabled=true\nEFFECTS.enabled=true\n" } else { "" };
+        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), format!("menu.page=friends\n{binding}{hud}"))?;
         std::fs::write(inst.dir(&paths).join("options.txt"), "guiScale:2\nmaxFps:30\nrenderDistance:3\nsimulationDistance:3\npauseOnLostFocus:false\n")?;
     }
     eprintln!("prepared {vid} with {java} in {:?}", t0.elapsed());

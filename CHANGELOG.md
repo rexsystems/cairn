@@ -7,6 +7,8 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 ## [Unreleased]
 
 ### Added
+- Cairn title screen, Right Shift HUD overview, live module settings previews, stateful switches and item/effect icons in the armor and potion HUDs.
+- Administrator role grants by verified Minecraft name, tied to the account UUID and unavailable to offline/dev identities.
 - In-game Join controls for shared friend server addresses on all supported Fabric and Forge versions, available outside a world.
 - Stable and beta update channels, picked under Settings → About.
 - SHA-256 checks for Java runtimes, Forge/NeoForge installers and Horizon downloads.
@@ -30,6 +32,8 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - A **Friends** page lists the people you played with, with Invite again and Join again.
 
 ### Changed
+- HUDs default to neutral backgrounds without colored accent edges; old default colors migrate while custom colors remain available.
+- Cosmetic equipping is available in Minecraft; the launcher retains catalog previews and custom cape upload.
 - Rebuilt the in-game Cairn menu as a dark module gallery with red navigation, module previews, large Enabled/Disabled switches, separate settings controls and a working close button.
 - Mod descriptions are sanitized with DOMPurify, and the app ships a Content Security Policy.
 - The CurseForge API key is no longer in the source. Builds take it from `CAIRN_CURSEFORGE_API_KEY`, and Settings can override it.

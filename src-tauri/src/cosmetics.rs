@@ -138,6 +138,7 @@ pub async fn me(base: &str, acc: &Account) -> Result<Value> {
     authed(base, acc, |t| HTTP.get(format!("{base}/v1/me")).bearer_auth(t)).await
 }
 
+#[cfg(test)]
 pub async fn equip(base: &str, acc: &Account, cape: Option<&str>, badge: Option<&str>) -> Result<Value> {
     let body = json!({ "cape": cape, "badge": badge });
     authed(base, acc, |t| HTTP.put(format!("{base}/v1/me/equipped")).bearer_auth(t).json(&body)).await?;
