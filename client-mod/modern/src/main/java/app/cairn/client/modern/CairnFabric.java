@@ -16,7 +16,7 @@ import java.util.Locale;
 
 public final class CairnFabric implements ClientModInitializer {
     private static CairnClient client;
-    private static boolean menuWasDown, sprintWasDown, sprint;
+    private static boolean sprintWasDown, sprint;
     private static int ticks;
     private static final java.util.Map<String, Component> TEXT_CACHE = new java.util.LinkedHashMap<String, Component>(128, .75f, true) {
         @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, Component> entry) { return size() > 256; }
@@ -33,17 +33,25 @@ public final class CairnFabric implements ClientModInitializer {
     public void onInitializeClient() {
         if ("false".equals(System.getProperty("cairn.client.enabled"))) return;
         client = new CairnClient(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir());
+        client.manageKeys(InputConstants.KEY_RSHIFT, "Right Shift", InputConstants.KEY_C, "C");
     }
+    /** Key events arrive between ticks, so a quick tap of the menu key is never missed. */
+    public static boolean keyPress(int key, int action) {
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = mc.gui.screen();
+        if (client == null || action != 1 || !client.menuKey(key) || !(screen == null || screen instanceof net.minecraft.client.gui.screens.TitleScreen)) return false;
+        mc.gui.setScreen(new Menu());
+        return true;
+    }
+    public static boolean scroll(double amount) { return client != null && client.zoomScroll(zooming(), amount); }
     public static boolean zooming() {
         Minecraft mc = Minecraft.getInstance();
-        return client != null && client.enabled(Module.ZOOM) && mc.player != null && mc.gui.screen() == null && InputConstants.isKeyDown(InputConstants.KEY_C);
+        return client != null && client.enabled(Module.ZOOM) && mc.player != null && mc.gui.screen() == null && InputConstants.isKeyDown(client.keyCode(CairnClient.Bind.ZOOM));
     }
     public static void tick() {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
-        boolean menuDown = InputConstants.isKeyDown(InputConstants.KEY_RSHIFT);
-        if (menuDown && !menuWasDown && (mc.gui.screen() == null || mc.gui.screen() instanceof net.minecraft.client.gui.screens.TitleScreen)) mc.gui.setScreen(new Menu());
-        menuWasDown = menuDown;
+        mc.options.smoothCamera = client.smoothCamera(zooming(), mc.options.smoothCamera);
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.gui.screen() == null) {
@@ -114,7 +122,8 @@ public final class CairnFabric implements ClientModInitializer {
         @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { client.wheel(vertical < 0 ? 1 : -1); return true; }
         @Override public boolean keyPressed(KeyEvent event) {
             int key = event.key();
-            if (key == InputConstants.KEY_ESCAPE || key == InputConstants.KEY_RSHIFT) { if (!client.escape()) onClose(); return true; }
+            if (client.binding()) { client.bind(key == InputConstants.KEY_ESCAPE ? -1 : key, InputConstants.getKey(event).getDisplayName().getString()); return true; }
+            if (key == InputConstants.KEY_ESCAPE || key == client.keyCode(CairnClient.Bind.MENU)) { if (!client.escape()) onClose(); return true; }
             if (client.typing()) {
                 if (key == InputConstants.KEY_BACKSPACE) client.backspace();
                 else if (key == InputConstants.KEY_RETURN) client.key(0, true);

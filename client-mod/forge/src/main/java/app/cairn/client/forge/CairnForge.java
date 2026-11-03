@@ -48,6 +48,7 @@ public final class CairnForge {
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || mc.thePlayer == null) return;
+        mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);
         boolean left = Mouse.isButtonDown(0), right = Mouse.isButtonDown(1);
         boolean down = mc.gameSettings.keyBindSprint.isKeyDown();
         if (client.enabled(Module.SPRINT) && mc.currentScreen == null) {
@@ -88,10 +89,13 @@ public final class CairnForge {
         }
     }
     @SubscribeEvent public void fov(FOVUpdateEvent event) {
-        event.newfov /= client.zoomFactor(zoom.isKeyDown() && mc.currentScreen == null);
+        event.newfov /= client.zoomFactor(zooming());
     }
+    private boolean zooming() { return zoom.isKeyDown() && mc.currentScreen == null && mc.thePlayer != null; }
     @SubscribeEvent public void mouse(net.minecraftforge.client.event.MouseEvent event) {
         if (event.buttonstate && mc.currentScreen == null && (event.button == 0 || event.button == 1)) client.click(event.button == 1);
+        // While zoomed, the wheel changes zoom instead of the hotbar slot.
+        if (event.dwheel != 0 && client.zoomScroll(zooming(), event.dwheel)) event.setCanceled(true);
     }
     private final CairnClient.Canvas canvas = new CairnClient.Canvas() {
         public void rect(int x, int y, int width, int height, int color) { Gui.drawRect(x, y, x + width, y + height, color); }

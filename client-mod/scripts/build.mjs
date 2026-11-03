@@ -39,7 +39,7 @@ if (target === 'all' || target === 'forge') {
 if (target === 'all' || target === 'mapped') {
     const env = { ...process.env };
     if (process.env.CAIRN_LEGACY_JAVA_HOME) env.JAVA_HOME = process.env.CAIRN_LEGACY_JAVA_HOME;
-    for (const version of ['1.20.1', '1.21.1']) {
+    for (const version of ['1.16.5', '1.20.1', '1.20.4', '1.21.1', '1.21.11']) {
         const args = ['-p', path.join(root, 'fabric-mapped'), `-PminecraftVersion=${version}`, 'build', '--console=plain'];
         if (process.env.CAIRN_JAVA_INSTALLATIONS) args.push(`-Porg.gradle.java.installations.paths=${process.env.CAIRN_JAVA_INSTALLATIONS}`);
         run(process.env.CAIRN_GRADLE ?? 'gradle', args, { env });

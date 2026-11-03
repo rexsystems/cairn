@@ -4,19 +4,31 @@ plugins {
 }
 group = 'app.cairn'
 version = '0.1.0'
+// Each target names its bytecode level, the oldest Fabric Loader released for that game
+// version (the launcher enforces it) and the adapter family whose game APIs it shares.
+def targets = [
+    '1.16.5': [java: 8, loader: '0.14.21', family: 'v1_16'],
+    '1.20.1': [java: 17, loader: '0.14.21', family: 'v1_20'],
+    '1.20.4': [java: 17, loader: '0.15.0', family: 'v1_20'],
+    '1.21.1': [java: 21, loader: '0.15.11', family: 'v1_20'],
+    '1.21.11': [java: 21, loader: '0.17.0', family: 'v1_21_9'],
+]
 def targetMinecraft = findProperty('minecraftVersion') ?: '1.21.1'
-if (!['1.20.1', '1.21.1'].contains(targetMinecraft)) throw new GradleException("Unsupported mapped Fabric target: $targetMinecraft")
+def target = targets[targetMinecraft]
+if (target == null) throw new GradleException("Unsupported mapped Fabric target: $targetMinecraft")
 base { archivesName = "cairn-client-fabric-$targetMinecraft" }
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
-tasks.withType(JavaCompile).configureEach { options.release = targetMinecraft == '1.20.1' ? 17 : 21 }
+tasks.withType(JavaCompile).configureEach { options.release = target.java; options.compilerArgs << '-Xlint:-options' }
 sourceSets.main.java.srcDir('../common/src/main/java')
-sourceSets.main.java.srcDir("src/$targetMinecraft/java")
+sourceSets.main.java.srcDir("src/${target.family}/java")
+if (file("src/$targetMinecraft/java").exists()) sourceSets.main.java.srcDir("src/$targetMinecraft/java")
 unimined.minecraft {
     version targetMinecraft
     mappings { mojmap() }
     fabric { loader '0.20.1' }
 }
 processResources {
-    inputs.property 'minecraftVersion', targetMinecraft
-    filesMatching('fabric.mod.json') { expand minecraftVersion: targetMinecraft, javaVersion: targetMinecraft == '1.20.1' ? '17' : '21' }
+    def props = [minecraftVersion: targetMinecraft, loaderVersion: target.loader, javaVersion: String.valueOf(target.java), mixinLevel: target.java == 8 ? 'JAVA_8' : 'JAVA_17']
+    inputs.properties props
+    filesMatching(['fabric.mod.json', '*.mixins.json']) { expand props }
 }

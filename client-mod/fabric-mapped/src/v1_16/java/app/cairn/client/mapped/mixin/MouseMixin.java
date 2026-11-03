@@ -9,4 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MouseMixin {
     @Inject(method = "onPress", at = @At("HEAD"))
     private void cairn$click(long window, int button, int action, int modifiers, CallbackInfo ci) { if (action == 1) CairnFabricMapped.click(button); }
+    // While zoomed, the wheel changes zoom instead of the hotbar slot.
+    @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
+    private void cairn$scroll(long window, double horizontal, double vertical, CallbackInfo ci) { if (CairnFabricMapped.scroll(vertical)) ci.cancel(); }
 }
