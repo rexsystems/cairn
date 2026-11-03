@@ -107,7 +107,7 @@ public final class CairnClient {
     private float zoom = 1, scrollZoom = 1;
     private final int[] keyCodes = new int[Bind.values().length];
     private final String[] keyNames = new String[Bind.values().length];
-    private boolean keysManaged;
+    private boolean keysManaged, menuCloseRequested;
     private Bind listening;
     private String saveError;
 
@@ -169,6 +169,9 @@ public final class CairnClient {
         clicks(queue);
         if (queue.size() < 4096) queue.addLast(System.nanoTime());
     }
+    public void mouseClick(int button, int leftButton, int rightButton) {
+        if (button == leftButton || button == rightButton) click(button == rightButton);
+    }
     private int clicks(Deque<Long> queue) {
         long oldest = System.nanoTime() - 1_000_000_000L;
         while (!queue.isEmpty() && queue.peekFirst() < oldest) queue.removeFirst();
@@ -221,7 +224,7 @@ public final class CairnClient {
         return cinematicActive || current;
     }
     public boolean menuKey(int code) { return keysManaged && listening == null && code == keyCode(Bind.MENU); }
-    public boolean menuCloseKey(int code, int tabCode) { return code != tabCode && menuKey(code); }
+    public boolean menuCloseKey(int code, int tabCode) { return !typing() && code != tabCode && menuKey(code); }
     /** Adapters that read raw key codes call this once; Forge keeps vanilla's own Controls screen instead. */
     public void manageKeys(int menuCode, String menuName, int zoomCode, String zoomName) {
         keysManaged = true;
@@ -246,8 +249,10 @@ public final class CairnClient {
         listening = null;
     }
     public boolean editing() { return editing; }
+    public void requestMenuClose() { menuCloseRequested = true; }
+    public boolean consumeMenuClose() { boolean close = menuCloseRequested; menuCloseRequested = false; return close; }
     public void enterEditor() { editing = true; editorTools = true; menu.blur(); }
-    public void leaveEditor() { dragging = null; editing = false; save(); }
+    public void leaveEditor() { dragging = null; editing = false; menuCloseRequested = false; save(); }
     public boolean escape() {
         if (listening != null) { listening = null; return true; }
         if (editing) { leaveEditor(); return true; }

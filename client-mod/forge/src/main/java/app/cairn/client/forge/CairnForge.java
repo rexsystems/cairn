@@ -211,13 +211,14 @@ public final class CairnForge {
         if (event.type == RenderGameOverlayEvent.ElementType.CROSSHAIRS && client.enabled(Module.CROSSHAIR) && client.setting(Module.CROSSHAIR, CairnClient.Setting.CROSS_HIDE_VANILLA) == 1) event.setCanceled(true);
     }
     private final class Menu extends GuiScreen {
+        @Override public void updateScreen() { if (client.consumeMenuClose()) mc.displayGuiScreen(null); }
         @Override public void drawScreen(int mouseX, int mouseY, float delta) { client.renderMenu(canvas, width, height, mouseX, mouseY); }
         @Override protected void mouseClicked(int x, int y, int button) throws IOException { if (button == 0) client.mouseDown(width, height, x, y); }
         @Override protected void mouseClickMove(int x, int y, int button, long elapsed) { if (button == 0) client.drag(width, height, x, y); }
         @Override protected void mouseReleased(int x, int y, int button) { client.mouseUp(); }
         @Override public void handleMouseInput() throws IOException { super.handleMouseInput(); int wheel = Mouse.getEventDWheel(); if (wheel != 0) client.wheel(wheel < 0 ? 1 : -1); }
         @Override protected void keyTyped(char character, int key) throws IOException {
-            if (key == Keyboard.KEY_ESCAPE || key == Keyboard.KEY_RSHIFT) {
+            if (key == Keyboard.KEY_ESCAPE || key == menu.getKeyCode() && key != Keyboard.KEY_TAB && !client.typing()) {
                 if (!client.escape()) mc.displayGuiScreen(null);
             } else if (key == Keyboard.KEY_TAB) client.tab();
             else if (client.typing()) {

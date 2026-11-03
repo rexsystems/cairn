@@ -29,8 +29,47 @@ public final class ClientInteractionTest {
             for (Label item : labels) if (item.text.equals(label)) { client.mouseDown(width, height, item.x + 1, item.y + 1); render(client); return; }
             throw new AssertionError("Control not visible: " + label);
         }
+        void clickAfter(CairnClient client, String label, String preceding) {
+            boolean seen = false;
+            for (Label item : labels) {
+                if (seen && item.text.equals(label)) { client.mouseDown(width, height, item.x + 1, item.y + 1); render(client); return; }
+                if (item.text.equals(preceding)) seen = true;
+            }
+            throw new AssertionError("Control not visible: " + label + " after " + preceding);
+        }
     }
     private static boolean overlaps(int[] a, int[] b) { return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]; }
+    private static void mouseButtonsAndCards(Path parent) throws Exception {
+        for (int[] buttons : new int[][] { { 0, 1 }, { 1, 3 } }) {
+            CairnClient client = new CairnClient(Files.createTempDirectory(parent, "mouse-"));
+            for (int i = 0; i < 2; i++) client.mouseClick(buttons[0], buttons[0], buttons[1]);
+            for (int i = 0; i < 3; i++) client.mouseClick(buttons[1], buttons[0], buttons[1]);
+            client.mouseClick(42, buttons[0], buttons[1]);
+            client.setting(Module.KEYSTROKES, Setting.KEY_SIZE, 36);
+            Canvas hud = new Canvas(960, 540);
+            client.renderHud(hud, 960, 540);
+            check(client.state(Module.CPS).value.equals("2 / 3 CPS"), "Native mouse codes preserve independent left/right counters");
+            Label left = null, right = null;
+            for (Label label : hud.labels) {
+                if (label.text.equals("2 CPS")) left = label;
+                if (label.text.equals("3 CPS")) right = label;
+            }
+            check(left != null && right != null && left.x < right.x, "CPS labels stay under the matching mouse button");
+        }
+        for (int[] size : new int[][] { { 320, 240 }, { 427, 240 }, { 640, 360 }, { 960, 540 } }) {
+            CairnClient client = new CairnClient(Files.createTempDirectory(parent, "cards-"));
+            Canvas canvas = new Canvas(size[0], size[1]);
+            canvas.render(client);
+            canvas.clickAfter(client, "Enabled", "FPS");
+            check(!client.enabled(Module.FPS), "The first card's switch disables FPS");
+            canvas.clickAfter(client, "Disabled", "FPS");
+            check(client.enabled(Module.FPS), "The switch enables FPS again");
+            canvas.click(client, "FPS");
+            check(canvas.labels.stream().anyMatch(label -> label.text.startsWith("Scale")), "Clicking the card opens settings instead of silently selecting it");
+            canvas.click(client, "X");
+            check(client.consumeMenuClose() && !client.consumeMenuClose(), "Close is a one-shot action for the game adapter");
+        }
+    }
     private static void layoutAndKeys(Path parent) throws Exception {
         Path directory = Files.createTempDirectory(parent, "layout-");
         Files.createDirectories(directory.resolve("config"));
@@ -147,6 +186,7 @@ public final class ClientInteractionTest {
             Canvas hud = new Canvas(800, 600); client.renderHud(hud, 800, 600); int measurements = hud.measures;
             client.renderHud(hud, 800, 600); check(hud.measures == measurements, "Stable HUD text does not repeat layout measurement");
             layoutAndKeys(directory);
+            mouseButtonsAndCards(directory);
             check(client.saveError() == null, "No settings errors");
             System.out.println("PASS: search, per-widget colors and sizes, presets, snapping, resize handles, all settings pages at 12 viewport sizes, contrast, stable HUD layout caching, overlap-free presets, legacy position migration, key rebinding and scroll zoom.");
         } finally {

@@ -8,6 +8,8 @@ import app.cairn.client.CairnClient.Bind;
 import static app.cairn.client.CairnClient.*;
 
 final class CairnMenu {
+    private static final int ACCENT = 0xffff858c, TEXT = 0xffeeeeee, MUTED = 0xffaeb5bf;
+    private static final int PANEL = 0xff101318, SURFACE = 0xff191e25, EDGE = 0xff2a3039, PRIMARY = 0xffbf303d;
     private static final String[] CATEGORIES = { "All", "HUD", "Controls", "Visuals", "Enabled" };
     private static final int[] SWATCHES = { 0xc6db82, 0xf1f0e8, 0x171c18, 0xf2bc71, 0xf28c82, 0x82c8d8, 0xa9b4ef, 0xe8a7ce };
     private final CairnClient client;
@@ -122,7 +124,8 @@ final class CairnMenu {
     private void button(Canvas canvas, String label, int x, int y, int w, int h, int bg, int fg, Runnable action) {
         int index = controls.size();
         boolean hover = mouseX >= x && mouseX < x + w && lastMouseY >= y && lastMouseY < y + h;
-        canvas.rect(x, y, w, h, hover ? 0xff46513d : bg);
+        boolean accent = bg == 0xff3c4835;
+        rounded(canvas, x, y, w, h, 3, hover ? 0xff3a424e : accent ? 0xff44252c : SURFACE);
         canvas.text(fit(canvas, label, w - 12), x + 6, y + Math.max(0, (h - 9) / 2), hover && fg == MUTED ? TEXT : fg);
         controls.add(new Control(x, y, w, h, action));
         if (focus == index) {
@@ -130,32 +133,45 @@ final class CairnMenu {
             canvas.rect(x, y, 1, h, ACCENT); canvas.rect(x + w - 1, y, 1, h, ACCENT);
         }
     }
+    private void rounded(Canvas canvas, int x, int y, int w, int h, int radius, int color) {
+        int r = Math.min(radius, Math.min(w, h) / 2);
+        if (w <= 0 || h <= 0) return;
+        canvas.rect(x + r, y, w - r * 2, h, color);
+        canvas.rect(x, y + r, w, h - r * 2, color);
+        for (int row = 0; row < r; row++) {
+            int inset = r - (int) Math.sqrt(r * r - (r - row - 1) * (r - row - 1));
+            canvas.rect(x + inset, y + row, w - inset * 2, 1, color);
+            canvas.rect(x + inset, y + h - row - 1, w - inset * 2, 1, color);
+        }
+    }
+    private void navigation(Canvas canvas, String label, int x, int y, int w, boolean selected, Runnable action) {
+        int index = controls.size();
+        boolean hover = mouseX >= x && mouseX < x + w && lastMouseY >= y && lastMouseY < y + 24;
+        rounded(canvas, x, y, w, 24, 3, selected ? PRIMARY : hover ? 0xff303741 : SURFACE);
+        canvas.text(fit(canvas, label, w - 16), x + 8, y + 8, selected ? TEXT : MUTED);
+        controls.add(new Control(x, y, w, 24, action));
+        if (focus == index) canvas.rect(x + 3, y + 21, w - 6, 2, ACCENT);
+    }
+    private void openModules() { page("modules"); details = false; colorSetting = null; blur(); focus = -1; }
     private int lastMouseY;
     void render(Canvas canvas, int width, int height, int mx, int my) {
         controls.clear(); mouseX = mx; lastMouseY = my;
-        int w = Math.min(760, width - 24), x = (width - w) / 2, top = 12, bottom = height - 12;
+        int w = Math.min(680, width - 24), x = (width - w) / 2, top = Math.max(12, (height - 440) / 2), bottom = height - top;
         panelX = x; panelWidth = w;
-        canvas.rect(0, 0, width, height, 0xd9101411);
-        canvas.rect(x, top, w, bottom - top, 0xff20261f);
-        canvas.rect(x, top, 3, 38, ACCENT);
-        canvas.textScaled("CAIRN", x + 14, top + 6, TEXT, 1.5f, false);
+        canvas.rect(0, 0, width, height, 0x9906090d);
+        canvas.textScaled("CAIRN", x + 2, top + 4, TEXT, 1.25f, false);
         int enabled = 0; for (Module module : MODULES) if (client.enabled(module)) enabled++;
-        canvas.text(MODULES.length + " modules / " + enabled + " enabled", x + 14, top + 25, MUTED);
-        button(canvas, "Edit HUD", x + w - 94, top + 7, 80, 26, 0xff3c4835, ACCENT, () -> client.enterEditor());
-        if (client.keysManaged() && w >= 620) bindButton(canvas, Bind.MENU, x + w - 248, top + 7, 150, 26);
-        boolean headerCosmetics = w >= 392;
-        int cosmeticsX = client.keysManaged() && w >= 620 ? x + w - 334 : x + w - 180;
-        if (headerCosmetics) button(canvas, "Cosmetics", cosmeticsX, top + 7, 80, 26, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) page("modules"); else openCosmetics(); });
-        int friendsX = cosmeticsX - 72;
-        boolean headerFriends = headerCosmetics && friendsX >= x + 140;
-        if (headerFriends) button(canvas, friendsLabel(), friendsX, top + 7, 66, 26, friends ? 0xff3c4835 : 0xff303a2d, friends ? ACCENT : TEXT, () -> { if (friends) page("modules"); else openFriends(); });
-        int navigationHeight = headerFriends ? 0 : 30;
-        if (navigationHeight > 0) {
-            button(canvas, friendsLabel(), x + 12, top + 46, 80, 24, friends ? 0xff3c4835 : 0xff303a2d, friends ? ACCENT : TEXT, () -> { if (friends) page("modules"); else openFriends(); });
-            button(canvas, "Cosmetics", x + 98, top + 46, 80, 24, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) page("modules"); else openCosmetics(); });
-            if (client.keysManaged()) bindButton(canvas, Bind.MENU, x + 184, top + 46, w - 196, 24);
-        }
-        int pageTop = top + 47 + navigationHeight;
+        canvas.text(enabled + " / " + MODULES.length + " enabled", x + 68, top + 7, MUTED);
+        button(canvas, "Edit HUD", x + w - 112, top, 80, 22, SURFACE, TEXT, () -> client.enterEditor());
+        button(canvas, "X", x + w - 26, top, 26, 22, SURFACE, ACCENT, () -> client.requestMenuClose());
+        if (client.keysManaged() && w >= 500) bindButton(canvas, Bind.MENU, x + w - 268, top, 150, 22);
+        int navY = top + 28, navWidth = Math.min(102, (w - 8) / 3);
+        navigation(canvas, "Modules", x, navY, navWidth, !friends && !cosmetics, this::openModules);
+        navigation(canvas, friendsLabel(), x + navWidth + 4, navY, navWidth, friends, this::openFriends);
+        navigation(canvas, "Cosmetics", x + (navWidth + 4) * 2, navY, navWidth, cosmetics, this::openCosmetics);
+        int bodyTop = navY + 32;
+        rounded(canvas, x, bodyTop, w, bottom - bodyTop, 5, PANEL);
+        int pageTop = bodyTop + 10;
         if (cosmetics && colorSetting == null) { cosmeticsPage(canvas, x + 12, pageTop, w - 24, bottom - pageTop - 12); return; }
         if (friends && colorSetting == null) { friendsPage(canvas, x + 12, pageTop, w - 24, bottom - pageTop - 12); return; }
         if (colorSetting != null) { colorPicker(canvas, x + 12, pageTop + 1, w - 24, bottom - pageTop - 13); return; }
@@ -164,33 +180,34 @@ final class CairnMenu {
             settings(canvas, x + 12, pageTop + 28, w - 24, bottom - pageTop - 40);
             return;
         }
-        int searchY = top + 46 + navigationHeight;
-        button(canvas, (searchFocus ? "> " : "Search: ") + (query.isEmpty() ? "Find a module..." : query) + (searchFocus ? "_" : ""), x + 12, searchY, w - 74, 25, searchFocus ? 0xff3c4835 : 0xff141b16, TEXT, () -> focusSearch());
-        button(canvas, "Clear", x + w - 58, searchY, 46, 25, 0xff2c342b, MUTED, () -> { query = ""; listScroll = 0; });
-        int tabsY = searchY + 31, tabWidth = (w - 24) / CATEGORIES.length;
+        boolean wide = w >= 540;
+        int searchY = pageTop, searchWidth = wide ? 174 : w - 74;
+        int searchX = wide ? x + w - 232 : x + 12;
+        button(canvas, (searchFocus ? "> " : "Search: ") + (query.isEmpty() ? "Find a module..." : query) + (searchFocus ? "_" : ""), searchX, searchY, searchWidth, 22, searchFocus ? 0xff3c4835 : SURFACE, TEXT, () -> focusSearch());
+        button(canvas, "Clear", x + w - 54, searchY, 42, 22, SURFACE, MUTED, () -> { query = ""; listScroll = 0; });
+        int tabsY = wide ? searchY : searchY + 28;
+        int tabWidth = (wide ? w - 250 : w - 24) / CATEGORIES.length;
         for (int i = 0; i < CATEGORIES.length; i++) {
             final String name = CATEGORIES[i];
             button(canvas, name, x + 12 + i * tabWidth, tabsY, tabWidth - 3, 22, name.equals(category) ? 0xff3c4835 : 0xff292f27, name.equals(category) ? ACCENT : MUTED, () -> { category = name; listScroll = settingsScroll = 0; details = false; });
         }
-        int contentTop = tabsY + 30, contentBottom = bottom - (colorSetting != null || details ? 12 : 43);
+        int contentTop = tabsY + 30, contentBottom = bottom - 42;
         if (colorSetting != null) { colorPicker(canvas, x + 12, contentTop, w - 24, contentBottom - contentTop); }
         else if (details) {
             button(canvas, "Back to modules", x + 12, contentTop, 116, 22, 0xff303a2d, ACCENT, () -> { details = false; settingsScroll = 0; });
             settings(canvas, x + 12, contentTop + 28, w - 24, contentBottom - contentTop - 28);
         } else {
-            int listW = w >= 620 ? w - 238 : w - 24;
-            moduleList(canvas, x + 12, contentTop, listW, contentBottom - contentTop);
-            if (w >= 620) settings(canvas, x + w - 212, contentTop, 200, contentBottom - contentTop);
+            moduleList(canvas, x + 12, contentTop, w - 24, contentBottom - contentTop);
         }
         if (colorSetting != null || details) return;
-        int footerY = bottom - 32, presetW = w < 330 ? Math.max(36, (w - 150) / 3) : Math.max(42, Math.min(78, (w - 40) / 4));
+        int footerY = bottom - 30, presetW = w < 330 ? Math.max(36, (w - 168) / 3) : Math.max(42, Math.min(68, (w - 40) / 4));
         canvas.text("Preset", x + 12, footerY + 7, MUTED);
         String[] names = { "Minimal", "Combat", "Explore" };
         for (int i = 0; i < 3; i++) {
             final int preset = i;
             button(canvas, names[i], x + 54 + i * (presetW + 3), footerY, presetW, 22, 0xff303a2d, TEXT, () -> client.preset(preset));
         }
-        if (client.keysManaged() && headerFriends && w < 620) {
+        if (client.keysManaged() && w < 500) {
             int bindWidth = Math.min(150, w - 66 - 3 * (presetW + 3));
             bindButton(canvas, Bind.MENU, x + w - 12 - bindWidth, footerY, bindWidth, 22);
         }
@@ -360,8 +377,12 @@ final class CairnMenu {
     private void moduleList(Canvas canvas, int x, int y, int w, int height) {
         List<Module> list = filtered();
         if (list.isEmpty()) { canvas.text(fit(canvas, "No modules match. Try another search.", w - 12), x + 6, y + 10, MUTED); return; }
-        int columns = w >= 330 ? 2 : 1, cellWidth = (w - (columns - 1) * 8) / columns, rowHeight = 51;
-        int rows = (list.size() + columns - 1) / columns, capacity = Math.max(1, height / rowHeight);
+        int columns = w >= 540 ? 4 : w >= 400 ? 3 : 2;
+        int cellWidth = (w - (columns - 1) * 7) / columns;
+        int fittedHeight = height >= 280 && height < 360 ? (height - 16) / 3 : height >= 160 && height < 216 ? (height - 8) / 2 : height;
+        int cardHeight = Math.min(102, Math.max(48, fittedHeight));
+        int rowHeight = cardHeight + 8;
+        int rows = (list.size() + columns - 1) / columns, capacity = Math.max(1, (height + 8) / rowHeight);
         listCapacity = capacity; listColumns = columns;
         listScroll = clamp(listScroll, 0, Math.max(0, rows - capacity));
         if (list.indexOf(client.selected()) < 0) client.select(list.get(0));
@@ -369,20 +390,144 @@ final class CairnMenu {
         if (focus == -1 && !typing() && selectedRow < listScroll) client.select(list.get(Math.min(list.size() - 1, listScroll * columns)));
         for (int i = listScroll * columns; i < Math.min(list.size(), (listScroll + capacity) * columns); i++) {
             final Module module = list.get(i);
-            int cx = x + i % columns * (cellWidth + 8), cy = y + (i / columns - listScroll) * rowHeight;
-            boolean selected = module == client.selected();
-            canvas.rect(cx, cy, cellWidth, 44, selected ? 0xff35412f : 0xff2a3229);
-            if (selected) canvas.rect(cx, cy, 2, 44, ACCENT);
-            canvas.text(fit(canvas, module.title, cellWidth - 52), cx + 9, cy + 7, TEXT);
-            canvas.text(fit(canvas, module.description, cellWidth - 69), cx + 9, cy + 24, MUTED);
-            controls.add(new Control(cx, cy, cellWidth - 43, 44, () -> { client.select(module); settingsScroll = 0; }));
-            if (focus == controls.size() - 1) { canvas.rect(cx, cy, cellWidth - 43, 1, ACCENT); canvas.rect(cx, cy + 43, cellWidth - 43, 1, ACCENT); }
-            button(canvas, client.enabled(module) ? "ON" : "OFF", cx + cellWidth - 39, cy + 4, 35, 17, selected ? 0xff35412f : 0xff2a3229, client.enabled(module) ? ACCENT : MUTED, () -> client.toggle(module));
-            button(canvas, "Settings", cx + cellWidth - 59, cy + 23, 55, 17, selected ? 0xff35412f : 0xff2a3229, MUTED, () -> openSettings(module));
+            int cx = x + i % columns * (cellWidth + 7), cy = y + (i / columns - listScroll) * rowHeight;
+            boolean hover = mouseX >= cx && mouseX < cx + cellWidth && lastMouseY >= cy && lastMouseY < cy + cardHeight;
+            rounded(canvas, cx, cy, cellWidth, cardHeight, 4, hover ? 0xff4a5361 : EDGE);
+            rounded(canvas, cx + 1, cy + 1, cellWidth - 2, cardHeight - 2, 3, hover ? 0xff202730 : 0xff14181e);
+            canvas.text(fit(canvas, module.title, cellWidth - 16), cx + 8, cy + 8, client.enabled(module) ? TEXT : MUTED);
+            int index = controls.size();
+            controls.add(new Control(cx, cy, cellWidth, cardHeight - 26, () -> openSettings(module)));
+            if (focus == index) canvas.rect(cx + 4, cy + 1, cellWidth - 8, 2, ACCENT);
+            if (cardHeight >= 72) preview(canvas, module, cx + 8, cy + 24, cellWidth - 16, cardHeight - 54);
+            int buttonY = cy + cardHeight - 25;
+            int gearIndex = controls.size();
+            button(canvas, "", cx + 6, buttonY, 22, 19, SURFACE, MUTED, () -> openSettings(module));
+            gear(canvas, cx + 12, buttonY + 4, MUTED);
+            if (focus == gearIndex || mouseX >= cx + 6 && mouseX < cx + 28 && lastMouseY >= buttonY && lastMouseY < buttonY + 19) canvas.text("Settings", cx + 8, buttonY - 12, TEXT);
+            int toggleIndex = controls.size();
+            boolean on = client.enabled(module);
+            int tx = cx + 32, tw = cellWidth - 38;
+            boolean toggleHover = mouseX >= tx && mouseX < tx + tw && lastMouseY >= buttonY && lastMouseY < buttonY + 19;
+            rounded(canvas, tx, buttonY, tw, 19, 3, on ? toggleHover ? 0xff2a5a39 : 0xff1d432b : toggleHover ? 0xff3a424e : SURFACE);
+            String label = fit(canvas, on ? "Enabled" : "Disabled", tw - 8);
+            canvas.text(label, tx + (tw - canvas.textWidth(label)) / 2, buttonY + 5, on ? 0xffa4e3b4 : MUTED);
+            controls.add(new Control(tx, buttonY, tw, 19, () -> client.toggle(module)));
+            if (focus == toggleIndex) canvas.rect(tx + 3, buttonY + 16, tw - 6, 2, ACCENT);
         }
         if (rows > capacity) {
             int barHeight = Math.max(6, height * capacity / rows), position = listScroll * Math.max(0, height - barHeight) / Math.max(1, rows - capacity);
             canvas.rect(x + w + 2, y + position, 2, barHeight, ACCENT);
+        }
+    }
+    private void gear(Canvas canvas, int x, int y, int color) {
+        canvas.rect(x + 3, y, 4, 12, color);
+        canvas.rect(x, y + 4, 10, 4, color);
+        canvas.rect(x + 1, y + 2, 8, 8, color);
+        canvas.rect(x + 3, y + 4, 4, 4, SURFACE);
+    }
+    private void preview(Canvas canvas, Module module, int x, int y, int w, int h) {
+        int cx = x + w / 2, cy = y + h / 2;
+        int color = client.enabled(module) ? 0xffdce1e7 : 0xff858e9b;
+        if (module == Module.KEYSTROKES) {
+            int size = Math.min(14, Math.max(8, h / 2 - 1));
+            for (int row = 0; row < 2; row++) for (int col = 0; col < 3; col++) {
+                if (row == 0 && col != 1) continue;
+                int kx = cx + (col - 1) * (size + 2) - size / 2, ky = cy + (row - 1) * (size + 2);
+                rounded(canvas, kx, ky, size, size, 2, color);
+            }
+            return;
+        }
+        if (module == Module.CROSSHAIR) {
+            canvas.rect(cx - 14, cy - 1, 10, 2, color); canvas.rect(cx + 4, cy - 1, 10, 2, color);
+            canvas.rect(cx - 1, cy - 14, 2, 10, color); canvas.rect(cx - 1, cy + 4, 2, 10, color);
+            return;
+        }
+        if (module == Module.CPS) {
+            for (int i = 0; i < 2; i++) {
+                int mx = cx - 22 + i * 24;
+                rounded(canvas, mx, cy - 12, 20, 25, 5, color);
+                canvas.rect(mx + 9, cy - 11, 2, 12, 0xff14181e);
+                canvas.rect(mx + 2, cy - 1, 16, 2, 0xff14181e);
+            }
+            return;
+        }
+        if (module == Module.ARMOR) {
+            for (int i = -1; i <= 1; i++) {
+                int ax = cx + i * 20 - 8;
+                canvas.rect(ax, cy - 8, 5, 8, color); canvas.rect(ax + 11, cy - 8, 5, 8, color);
+                canvas.rect(ax + 4, cy - 5, 8, 18, color); canvas.rect(ax + 3, cy - 7, 10, 5, color);
+                canvas.rect(ax + 6, cy - 7, 4, 3, 0xff14181e);
+            }
+            return;
+        }
+        if (module == Module.PING) {
+            for (int i = 0; i < 4; i++) rounded(canvas, cx - 20 + i * 11, cy + 13 - i * 7, 7, 4 + i * 7, 1, color);
+            return;
+        }
+        if (module == Module.CLOCK || module == Module.SESSION || module == Module.WORLD_TIME || module == Module.ZOOM) {
+            int r = Math.min(14, Math.max(7, h / 2 - 2));
+            ring(canvas, cx, cy, r, color);
+            if (module == Module.ZOOM) {
+                for (int i = 0; i < 10; i++) canvas.rect(cx + r - 2 + i, cy + r - 2 + i, 3, 3, color);
+            } else if (module == Module.WORLD_TIME) {
+                canvas.rect(cx - 2, cy - r - 6, 4, 4, color); canvas.rect(cx - 2, cy + r + 3, 4, 4, color);
+                canvas.rect(cx - r - 6, cy - 2, 4, 4, color); canvas.rect(cx + r + 3, cy - 2, 4, 4, color);
+            } else {
+                canvas.rect(cx - 1, cy - r + 4, 2, r - 2, color); canvas.rect(cx, cy - 1, r - 4, 2, color);
+                if (module == Module.SESSION) canvas.rect(cx - 4, cy - r - 5, 8, 3, color);
+            }
+            return;
+        }
+        if (module == Module.MEMORY || module == Module.SERVER) {
+            for (int i = 0; i < 3; i++) {
+                rounded(canvas, cx - 24, cy - 15 + i * 12, 48, 9, 2, color);
+                canvas.rect(cx - 20, cy - 12 + i * 12, 3, 3, 0xff14181e);
+            }
+            return;
+        }
+        if (module == Module.BIOME) {
+            canvas.rect(cx - 3, cy, 6, 17, color);
+            for (int i = 0; i < 3; i++) canvas.rect(cx - 8 - i * 4, cy - 18 + i * 9, 16 + i * 8, 10, color);
+            return;
+        }
+        if (module == Module.HELD_ITEM) {
+            for (int i = 0; i < 25; i++) canvas.rect(cx - 14 + i, cy + 13 - i, 4, 4, color);
+            for (int i = 0; i < 14; i++) canvas.rect(cx - 13 + i, cy - 2 + i, 3, 3, color);
+            return;
+        }
+        String value;
+        switch (module) {
+            case FPS: value = "FPS"; break;
+            case COORDINATES: value = "X Y Z"; break;
+            case PING: value = "ms"; break;
+            case ARMOR: value = "[|||]"; break;
+            case EFFECTS: value = "+"; break;
+            case CLOCK: value = "12:00"; break;
+            case SPEED: value = ">>"; break;
+            case SPRINT: value = ">>>"; break;
+            case ZOOM: value = "4x"; break;
+            case DIRECTION: value = "N"; break;
+            case BIOME: value = "Biome"; break;
+            case HELD_ITEM: value = "Item"; break;
+            case FOOD: value = "Food"; break;
+            case WORLD_TIME: value = "Day"; break;
+            case SESSION: value = "00:00"; break;
+            case MEMORY: value = "RAM"; break;
+            case SERVER: value = "Server"; break;
+            default: value = module.title;
+        }
+        float scale = Math.min(2.4f, Math.min(w / (float) Math.max(1, canvas.textWidth(value)), h / 11f));
+        canvas.textScaled(value, cx - Math.round(canvas.textWidth(value) * scale) / 2, cy - Math.round(9 * scale) / 2, color, scale, false);
+    }
+    private void ring(Canvas canvas, int cx, int cy, int radius, int color) {
+        for (int row = -radius; row <= radius; row++) {
+            int outer = (int) Math.sqrt(radius * radius - row * row);
+            int inner = Math.abs(row) >= radius - 2 ? 0 : (int) Math.sqrt((radius - 2) * (radius - 2) - row * row);
+            if (inner == 0) canvas.rect(cx - outer, cy + row, outer * 2 + 1, 1, color);
+            else {
+                canvas.rect(cx - outer, cy + row, Math.max(1, outer - inner), 1, color);
+                canvas.rect(cx + inner, cy + row, Math.max(1, outer - inner), 1, color);
+            }
         }
     }
     private void bindButton(Canvas canvas, Bind bind, int x, int y, int w, int h) {

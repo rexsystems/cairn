@@ -81,6 +81,9 @@ public final class FriendsTest {
         check(!client.typing(), "Tab leaves a text field and advances to controls");
         client.manageKeys(344, "Right Shift", 67, "C");
         check(client.menuCloseKey(344, 258), "Other menu keys still close the menu");
+        client.focusSearch();
+        check(!client.menuCloseKey(344, 258), "The menu key never interrupts typing in a field");
+        client.tab();
 
         for (int[] size : new int[][] { { 320, 240 }, { 427, 240 }, { 480, 270 }, { 570, 320 }, { 640, 360 }, { 683, 384 }, { 800, 450 }, { 854, 480 }, { 960, 540 }, { 1280, 720 }, { 1600, 900 }, { 1920, 1080 } }) {
             CairnClient navigation = new CairnClient(Files.createTempDirectory(parent, "navigation-"));

@@ -50,7 +50,8 @@ async fn main() -> anyhow::Result<()> {
     cairn_lib::cairn_client::sync(&inst.dir(&paths), &inst)?;
     if std::env::var("E2E_FRIENDS").as_deref() == Ok("1") {
         std::fs::create_dir_all(inst.dir(&paths).join("config"))?;
-        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), "menu.page=friends\n")?;
+        let binding = std::env::var("E2E_MENU_KEY").ok().map(|key| format!("key.MENU={key}\nkey.MENU.name=M\n")).unwrap_or_default();
+        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), format!("menu.page=friends\n{binding}"))?;
         std::fs::write(inst.dir(&paths).join("options.txt"), "guiScale:2\nmaxFps:30\nrenderDistance:3\nsimulationDistance:3\npauseOnLostFocus:false\n")?;
     }
     eprintln!("prepared {vid} with {java} in {:?}", t0.elapsed());
@@ -60,8 +61,8 @@ async fn main() -> anyhow::Result<()> {
     let opts = launch::LaunchOptions {
         memory_mb: 2048,
         extra_jvm_args,
-        width: Some(1280),
-        height: Some(720),
+        width: Some(std::env::var("E2E_WIDTH").ok().and_then(|s| s.parse().ok()).unwrap_or(1280)),
+        height: Some(std::env::var("E2E_HEIGHT").ok().and_then(|s| s.parse().ok()).unwrap_or(720)),
         game_dir: inst.dir(&paths),
         natives_dir: installed.natives_dir.clone(),
         jar_id: installed.jar_id.clone(),

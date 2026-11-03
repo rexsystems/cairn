@@ -202,6 +202,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         }
     }
     private static final class Menu extends Screen {
+        @Override public void tick() { if (client.consumeMenuClose()) onClose(); }
         Menu() { super(Component.literal("Cairn Client")); }
         @Override public void render(GuiGraphics graphics, int x, int y, float delta) { client.renderMenu(canvas(graphics), width, height, x, y); }
         @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) { if (event.button() == 0) { client.mouseDown(width, height, (int) event.x(), (int) event.y()); return true; } return false; }

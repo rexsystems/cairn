@@ -15,6 +15,7 @@ public final class CosmeticsTest {
     private static final class Canvas implements CairnClient.Canvas {
         final int width, height;
         final List<String> labels = new ArrayList<String>(), images = new ArrayList<String>();
+        final Map<String, int[]> positions = new HashMap<String, int[]>();
         Canvas(int width, int height) { this.width = width; this.height = height; }
         public void rect(int x, int y, int w, int h, int color) { check(x >= 0 && y >= 0 && x + w <= width && y + h <= height, "Rectangle outside viewport: " + x + "," + y + "," + w + "," + h); }
         public int textWidth(String text) { return text.length() * 6; }
@@ -22,6 +23,7 @@ public final class CosmeticsTest {
         public void textScaled(String text, int x, int y, int color, float scale, boolean shadow) {
             check(x >= 0 && y >= 0 && x + Math.round(text.length() * 6 * scale) <= width && y + 9 <= height, "Text outside viewport: " + text);
             labels.add(text);
+            positions.put(text, new int[] { x, y });
         }
         public void image(String texture, int x, int y, int w, int h, float u0, float v0, float u1, float v1) {
             check(x >= 0 && y >= 0 && x + w <= width && y + h <= height, "Image outside viewport");
@@ -102,15 +104,12 @@ public final class CosmeticsTest {
     private static void openCosmetics(CairnClient client, Canvas canvas) {
         canvas.labels.clear();
         client.renderMenu(canvas, canvas.width, canvas.height, 0, 0);
-        // The header button sits left of the bind button; find it by scanning the header row.
-        for (int x = 0; x < canvas.width; x += 4) {
-            client.mouseDown(canvas.width, canvas.height, x, 26);
-            canvas.labels.clear();
-            client.renderMenu(canvas, canvas.width, canvas.height, 0, 0);
-            if (canvas.labels.contains("Back to modules") && canvas.labels.contains("Capes")) return;
-            client.escape();
-        }
-        throw new AssertionError("Could not open the cosmetics page");
+        int[] at = canvas.positions.get("Cosmetics");
+        check(at != null, "Cosmetics navigation is visible");
+        client.mouseDown(canvas.width, canvas.height, at[0] + 1, at[1] + 1);
+        canvas.labels.clear();
+        client.renderMenu(canvas, canvas.width, canvas.height, 0, 0);
+        check(canvas.labels.contains("Capes"), "Cosmetics navigation opens the catalog");
     }
 
     private static void server(Path parent) throws Exception {

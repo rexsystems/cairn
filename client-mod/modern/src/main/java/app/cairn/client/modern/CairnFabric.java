@@ -176,16 +176,18 @@ public final class CairnFabric implements ClientModInitializer {
         }
     }
     public static void click(int button) {
-        if (client != null && Minecraft.getInstance().gui.screen() == null && (button == InputConstants.MOUSE_BUTTON_LEFT || button == InputConstants.MOUSE_BUTTON_RIGHT)) client.click(button == InputConstants.MOUSE_BUTTON_RIGHT);
+        if (client != null && Minecraft.getInstance().gui.screen() == null) client.mouseClick(button, InputConstants.MOUSE_BUTTON_LEFT, InputConstants.MOUSE_BUTTON_RIGHT);
     }
     private static CairnClient.Canvas canvas(GuiGraphicsExtractor graphics) {
         return new CairnClient.Canvas() {
             public void rect(int x, int y, int width, int height, int color) { graphics.fill(x, y, x + width, y + height, color); }
             public void text(String value, int x, int y, int color) { graphics.text(Minecraft.getInstance().font, CairnFabric.text(value), x, y, color, false); }
             public void textScaled(String value, int x, int y, int color, float scale, boolean shadow) {
+                graphics.nextStratum();
                 graphics.pose().pushMatrix(); graphics.pose().translate(x, y).scale(scale, scale);
                 graphics.text(Minecraft.getInstance().font, CairnFabric.text(value), 0, 0, color, shadow);
                 graphics.pose().popMatrix();
+                graphics.nextStratum();
             }
             public int textWidth(String value) { return Minecraft.getInstance().font.width(CairnFabric.text(value)); }
             public void image(String key, int x, int y, int width, int height, float u0, float v0, float u1, float v1) {
@@ -200,6 +202,7 @@ public final class CairnFabric implements ClientModInitializer {
     }
     private static final class Menu extends Screen {
         Menu() { super(Component.literal("Cairn Client")); }
+        @Override public void tick() { if (client.consumeMenuClose()) onClose(); }
         @Override public void extractRenderState(GuiGraphicsExtractor graphics, int x, int y, float delta) {
             client.renderMenu(canvas(graphics), width, height, x, y);
             minecraft.textInputManager().onTextInputFocusChange(this, client.typing());
