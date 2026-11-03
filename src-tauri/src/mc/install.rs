@@ -127,11 +127,15 @@ fn extract_natives(jar: &Path, dest: &Path, excludes: &[String]) -> Result<()> {
         // Flatten: LWJGL 3 natives sit in nested folders like linux/x64/org/lwjgl/.
         let file = Path::new(&name).file_name().unwrap().to_owned();
         let out = dest.join(file);
-        let mut w = std::fs::File::create(&out)?;
-        std::io::copy(&mut entry, &mut w)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes)?;
+        if std::fs::read(&out).is_ok_and(|existing| existing == bytes) { continue; }
+        // Running clients may have this inode mapped; never truncate it in place.
+        crate::util::write_bytes_atomic(&out, &bytes)?;
     }
     Ok(())
 }
+
 
 async fn install_assets(paths: &Paths, v: &Value, instance_dir: &Path, task: &Task, concurrency: usize) -> Result<()> {
     let Some(idx) = v.get("assetIndex") else { return Ok(()) };
@@ -187,4 +191,34 @@ async fn install_assets(paths: &Paths, v: &Value, instance_dir: &Path, task: &Ta
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::os::unix::fs::MetadataExt;
+
+    #[test]
+    fn native_extraction_preserves_open_libraries_and_reuses_identical_files() {
+        let dir = std::env::temp_dir().join(format!("cairn-natives-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let library = dir.join("libexample.so");
+        std::fs::write(&library, b"loaded by another client").unwrap();
+        let mut loaded = std::fs::File::open(&library).unwrap();
+        let jar = dir.join("natives.jar");
+        let mut archive = zip::ZipWriter::new(std::fs::File::create(&jar).unwrap());
+        archive.start_file("linux/x64/libexample.so", zip::write::SimpleFileOptions::default()).unwrap();
+        archive.write_all(b"replacement library").unwrap();
+        archive.finish().unwrap();
+        extract_natives(&jar, &dir, &[]).unwrap();
+        let mut original = Vec::new();
+        loaded.read_to_end(&mut original).unwrap();
+        assert_eq!(original, b"loaded by another client");
+        assert_eq!(std::fs::read(&library).unwrap(), b"replacement library");
+        let inode = std::fs::metadata(&library).unwrap().ino();
+        extract_natives(&jar, &dir, &[]).unwrap();
+        assert_eq!(std::fs::metadata(&library).unwrap().ino(), inode);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

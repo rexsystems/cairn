@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
 use sha1::{Digest, Sha1};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 
 pub fn write_json_atomic<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
@@ -12,10 +12,16 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p)?;
     }
-    let tmp = path.with_extension("tmp-write");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+    let tmp = path.with_extension(format!("{}.tmp-write", uuid::Uuid::new_v4()));
+    let result = (|| -> Result<()> {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        file.write_all(bytes)?;
+        drop(file);
+        std::fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))?;
+        Ok(())
+    })();
+    if result.is_err() { let _ = std::fs::remove_file(&tmp); }
+    result
 }
 
 pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
@@ -152,6 +158,28 @@ impl<T> LockExt<T> for std::sync::Mutex<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn concurrent_atomic_writes_do_not_share_temporary_files() {
+        let dir = std::env::temp_dir().join(format!("cairn-atomic-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("profile.json");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let writers: Vec<_> = (0..8).map(|n| {
+            let target = target.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let body = vec![n; 4096];
+                barrier.wait();
+                for _ in 0..40 { write_bytes_atomic(&target, &body).unwrap(); }
+            })
+        }).collect();
+        for writer in writers { writer.join().unwrap(); }
+        let body = std::fs::read(&target).unwrap();
+        assert_eq!(body.len(), 4096);
+        assert!(body.iter().all(|b| *b == body[0]));
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn slug() {
         assert_eq!(slugify("My Cool Pack!! 1.21"), "my-cool-pack-1-21");
