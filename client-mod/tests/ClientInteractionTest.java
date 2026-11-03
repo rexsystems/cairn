@@ -135,6 +135,7 @@ public final class ClientInteractionTest {
         Path directory = Files.createTempDirectory("cairn-interaction-test-");
         try {
             previewsAndOverlay(directory);
+            slidersColorsAndCenter(directory);
             CairnClient client = new CairnClient(directory);
             client.focusSearch();
             for (char c : "keySTROKES".toCharArray()) client.type(c);
@@ -145,8 +146,8 @@ public final class ClientInteractionTest {
             canvas.render(client); canvas.click(client, "Clear");
             check(client.filteredModules().size() == Module.values().length, "Clear restores modules");
             client.select(Module.KEYSTROKES); client.enterEditor(); client.editorSettings();
-            canvas.render(client); canvas.click(client, "+");
-            check(client.setting(Module.KEYSTROKES, Setting.SCALE) == 110, "Scale stepper updates selected widget");
+            canvas.render(client); canvas.click(client, "100%"); client.mouseUp(); client.key(1, false); canvas.render(client);
+            check(client.setting(Module.KEYSTROKES, Setting.SCALE) == 60, "Focused scale slider responds to arrow keys");
             canvas.click(client, "Change");
             String field = null;
             for (Label label : canvas.labels) if (label.text.startsWith("#")) field = label.text;
@@ -157,7 +158,7 @@ public final class ClientInteractionTest {
             check(client.setting(Module.KEYSTROKES, Setting.TEXT_COLOR) == 0xff12ab34, "Arbitrary hex color applied");
             CairnClient restored = new CairnClient(directory);
             check(restored.setting(Module.KEYSTROKES, Setting.TEXT_COLOR) == 0xff12ab34, "Color persists");
-            check(restored.setting(Module.KEYSTROKES, Setting.SCALE) == 110, "Size persists independently");
+            check(restored.setting(Module.KEYSTROKES, Setting.SCALE) == 60, "Size persists independently");
             check(restored.setting(Module.FPS, Setting.SCALE) == 100, "Other widgets remain unchanged");
             canvas.click(client, "Back to modules"); canvas.click(client, "Minimal");
             check(client.enabled(Module.FPS) && !client.enabled(Module.KEYSTROKES), "Preset changes actual enabled modules");
@@ -197,6 +198,61 @@ public final class ClientInteractionTest {
             try (java.util.stream.Stream<Path> paths = Files.walk(directory)) { paths.sorted(Comparator.reverseOrder()).forEach(path -> { try { Files.delete(path); } catch (Exception e) { throw new RuntimeException(e); } }); }
         }
     }
+    private static Label label(Canvas canvas, String text) {
+        for (Label label : canvas.labels) if (label.text.equals(text)) return label;
+        throw new AssertionError("Missing label: " + text);
+    }
+    private static void slidersColorsAndCenter(Path parent) throws Exception {
+        Path dir = Files.createTempDirectory(parent, "sliders-");
+        CairnClient client = new CairnClient(dir);
+        client.save(); client.select(Module.FPS); client.editorSettings();
+        Canvas canvas = new Canvas(800, 600); canvas.render(client);
+        Label value = label(canvas, "100%");
+        client.mouseDown(800, 600, value.x + 107, value.y + 4);
+        check(client.setting(Module.FPS, Setting.SCALE) == 150, "Clicking a slider track selects its midpoint");
+        client.drag(800, 600, 9000, value.y); canvas.render(client);
+        check(client.setting(Module.FPS, Setting.SCALE) == 250, "Slider capture clamps beyond its right edge");
+        check(new CairnClient(dir).setting(Module.FPS, Setting.SCALE) == 100, "Dragging does not write configuration on every mouse movement");
+        client.drag(800, 600, -100, value.y); client.mouseUp();
+        check(new CairnClient(dir).setting(Module.FPS, Setting.SCALE) == 50, "Slider release persists the clamped value");
+        client.key(1, false); canvas.render(client);
+        check(client.setting(Module.FPS, Setting.SCALE) == 60 && client.selected() == Module.FPS, "Slider arrows adjust values without changing modules");
+        canvas.click(client, "Change");
+        Label hue = label(canvas, "Hue"); int hy = hue.y - 1;
+        client.mouseDown(800, 600, hue.x + 113, hy + 4); client.mouseUp();
+        client.mouseDown(800, 600, hue.x + 255, hy - 150); client.mouseUp();
+        Label alpha = label(canvas, "Alpha 100%");
+        client.mouseDown(800, 600, alpha.x + 165, alpha.y + 3); client.mouseUp(); canvas.render(client);
+        check(client.setting(Module.FPS, Setting.TEXT_COLOR) == Setting.TEXT_COLOR.initial, "Visual color selection stays a draft before Apply");
+        canvas.click(client, "Apply color");
+        check((client.setting(Module.FPS, Setting.TEXT_COLOR) & 0xffffff) == 0x00ff00 && client.setting(Module.FPS, Setting.TEXT_ALPHA) == 50, "Visual HSV/alpha selection: " + Integer.toHexString(client.setting(Module.FPS, Setting.TEXT_COLOR)) + " / " + client.setting(Module.FPS, Setting.TEXT_ALPHA));
+        canvas.click(client, "Change");
+        hue = label(canvas, "Hue"); client.mouseDown(800, 600, hue.x + 42, hue.y + 3); client.mouseUp(); canvas.render(client); canvas.click(client, "Cancel");
+        check(client.setting(Module.FPS, Setting.TEXT_ALPHA) == 50 && (client.setting(Module.FPS, Setting.TEXT_COLOR) & 0xffffff) == 0x00ff00, "Cancel discards the unsaved color draft");
+        client.setting(Module.FPS, Setting.TEXT_ALPHA, 0); client.value(Module.FPS, "Invisible sample"); canvas.labels.clear();
+        client.renderHud(canvas, 800, 600);
+        check(canvas.labels.stream().noneMatch(item -> item.text.equals("Invisible sample")), "Zero alpha hides text instead of triggering Minecraft's opaque-color fallback");
+        client.manageKeys(344, "Right Shift", 67, "C"); client.focusSearch();
+        check(client.menuCloseKey(344, 258, 344), "Right Shift closes even when a text field has focus");
+        check(!client.menuCloseKey(258, 258, 344), "Tab remains reserved for field navigation");
+        client.escape();
+        client.toggle(Module.CROSSHAIR); client.select(Module.CROSSHAIR);
+        client.state(Module.CROSSHAIR).placed = true; client.state(Module.CROSSHAIR).x = 1; client.state(Module.CROSSHAIR).y = 1;
+        for (int width : new int[] {320, 427, 640, 1280}) for (int height : new int[] {240, 360, 720}) {
+            Canvas viewport = new Canvas(width, height); client.renderHud(viewport, width, height);
+            int[] b = client.bounds(Module.CROSSHAIR);
+            check(b[0] + b[2] / 2 == width / 2 && b[1] + b[3] / 2 == height / 2, "Crosshair ignores old saved positions and stays at the exact screen center");
+            client.enterEditor(); client.mouseDown(width, height, width / 2, height / 2); client.drag(width, height, 0, 0); client.mouseUp(); client.editorKey(10, 10, 0);
+            check(Arrays.equals(b, client.bounds(Module.CROSSHAIR)), "Dragging or nudging cannot move the crosshair"); client.leaveEditor();
+        }
+        for (int width : new int[] {320, 400, 640, 1280}) for (int height : new int[] {240, 360, 720}) {
+            Canvas viewport = new Canvas(width, height); client.select(Module.FPS); client.editorSettings(); viewport.render(client);
+            for (int i = 0; i < 5 && viewport.labels.stream().noneMatch(item -> item.text.equals("Change")); i++) viewport.click(client, "Down");
+            viewport.click(client, "Change");
+            check(viewport.labels.stream().anyMatch(item -> item.text.equals("Hue")), "Visual RGBA picker stays available at every tested viewport");
+            viewport.click(client, "Cancel");
+        }
+    }
     private static void previewsAndOverlay(Path parent) throws Exception {
         CairnClient client = new CairnClient(Files.createTempDirectory(parent, "previews-"));
         check(client.setting(Module.FPS, Setting.BORDER) == 0, "New HUDs have no colored edge");
@@ -210,7 +266,7 @@ public final class ClientInteractionTest {
         client.renderPreview(preview, Module.FPS, 10, 10, 160, 100);
         check(preview.colors.isEmpty(), "Preview reacts immediately to background being disabled");
         client.select(Module.FPS); client.editorSettings(); preview.render(client); preview.colors.clear(); preview.click(client, "Change");
-        check(preview.colors.contains(0xff82c8d8), "Color presets show their actual swatch color");
+        check(preview.labels.stream().anyMatch(label -> label.text.equals("Hue")) && preview.labels.stream().anyMatch(label -> label.text.equals("Alpha 100%")), "Color picker exposes visual hue and alpha controls");
         client.escape();
         client.rows(Module.ARMOR, Arrays.asList(new CairnClient.HudRow(new Object(), "363"), new CairnClient.HudRow(new Object(), "528")));
         client.renderPreview(preview, Module.ARMOR, 10, 10, 160, 100);

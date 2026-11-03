@@ -48,7 +48,7 @@ public final class CairnForge {
         if (menu.isPressed() && mc.currentScreen == null) mc.displayGuiScreen(new Menu());
     }
     @SubscribeEvent public void menuKey(net.minecraftforge.client.event.GuiScreenEvent.KeyboardInputEvent.Post event) {
-        if (mc.currentScreen instanceof net.minecraft.client.gui.GuiMainMenu && Keyboard.getEventKeyState() && Keyboard.getEventKey() == menu.getKeyCode()) mc.displayGuiScreen(new Menu());
+        if (event.gui == mc.currentScreen && mc.currentScreen instanceof net.minecraft.client.gui.GuiMainMenu && Keyboard.getEventKeyState() && Keyboard.getEventKey() == menu.getKeyCode()) mc.displayGuiScreen(new Menu());
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
@@ -274,7 +274,8 @@ public final class CairnForge {
         @Override protected void mouseReleased(int x, int y, int button) { client.mouseUp(); }
         @Override public void handleMouseInput() throws IOException { super.handleMouseInput(); int wheel = Mouse.getEventDWheel(); if (wheel != 0) client.wheel(wheel < 0 ? 1 : -1); }
         @Override protected void keyTyped(char character, int key) throws IOException {
-            if (key == Keyboard.KEY_ESCAPE || key == menu.getKeyCode() && key != Keyboard.KEY_TAB && !client.typing()) {
+            if (key == menu.getKeyCode() && key != Keyboard.KEY_TAB && (key == Keyboard.KEY_RSHIFT || !client.typing())) { mc.displayGuiScreen(null); return; }
+            if (key == Keyboard.KEY_ESCAPE) {
                 if (!client.escape()) mc.displayGuiScreen(null);
             } else if (key == Keyboard.KEY_TAB) client.tab();
             else if (client.typing()) {

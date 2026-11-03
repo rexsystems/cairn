@@ -11,7 +11,6 @@ final class CairnMenu {
     private static final int ACCENT = 0xffff858c, TEXT = 0xffeeeeee, MUTED = 0xffaeb5bf;
     private static final int PANEL = 0xff101318, SURFACE = 0xff191e25, EDGE = 0xff2a3039, PRIMARY = 0xffbf303d;
     private static final String[] CATEGORIES = { "All", "HUD", "Controls", "Visuals", "Enabled" };
-    private static final int[] SWATCHES = { 0xc6db82, 0xf1f0e8, 0x171c18, 0xf2bc71, 0xf28c82, 0x82c8d8, 0xa9b4ef, 0xe8a7ce };
     private final CairnClient client;
     private final List<Control> controls = new ArrayList<Control>();
     private final List<Module> modules = new ArrayList<Module>();
@@ -23,10 +22,23 @@ final class CairnMenu {
     private String colorError;
     private int listScroll, settingsScroll, cosmeticsScroll, focus = -1, mouseX, panelX, panelWidth, listCapacity = 1, listColumns = 1;
     private String cacheKey;
+    private Slider activeSlider;
+    private boolean sliderChanged;
+    private float hue, saturation, brightness;
+    private int draftRgb, draftAlpha = 100, colorDrag, colorX, colorY, colorWidth, colorHeight;
+    private boolean brightnessAxis;
+    private final Map<Integer, Integer> colorControls = new HashMap<Integer, Integer>();
+    private static final class Slider {
+        final Module module; final Setting setting;
+        int x, width;
+        Slider(Module module, Setting setting, int x, int width) { this.module = module; this.setting = setting; this.x = x; this.width = width; }
+    }
     private static final class Control {
         final int x, y, w, h;
         final Runnable action;
-        Control(int x, int y, int w, int h, Runnable action) { this.x = x; this.y = y; this.w = w; this.h = h; this.action = action; }
+        final Slider slider;
+        Control(int x, int y, int w, int h, Runnable action) { this(x, y, w, h, action, null); }
+        Control(int x, int y, int w, int h, Runnable action, Slider slider) { this.x = x; this.y = y; this.w = w; this.h = h; this.action = action; this.slider = slider; }
     }
     CairnMenu(CairnClient client) {
         this.client = client;
@@ -38,7 +50,7 @@ final class CairnMenu {
     boolean typing() { return searchFocus || hexFocus || friendFocus; }
     String query() { return query; }
     void focusSearch() { searchFocus = true; hexFocus = friendFocus = false; details = false; colorSetting = null; }
-    void blur() { searchFocus = hexFocus = friendFocus = false; }
+    void blur() { mouseUp(); searchFocus = hexFocus = friendFocus = false; }
     void type(char c) {
         if (friendFocus) {
             if ((Character.isLetterOrDigit(c) && c < 128 || c == '_' || c == '-') && friendField.length() < 36) friendField += c;
@@ -46,7 +58,8 @@ final class CairnMenu {
         }
         if (hexFocus && Character.digit(c, 16) >= 0) {
             if (hexSelected) { hex = ""; hexSelected = false; }
-            if (hex.length() < 6) hex += Character.toUpperCase(c);
+            if (hex.length() < 8) hex += Character.toUpperCase(c);
+            readHex();
             colorError = null;
         }
         else if (searchFocus && c >= 32 && c != 127 && query.length() < 64) { query += c; listScroll = 0; }
@@ -56,8 +69,10 @@ final class CairnMenu {
         if (hexFocus && hexSelected) { hex = ""; hexSelected = false; }
         else if (hexFocus && !hex.isEmpty()) hex = hex.substring(0, hex.length() - 1);
         else if (searchFocus && !query.isEmpty()) { query = query.substring(0, query.length() - 1); listScroll = 0; }
+        if (hexFocus) readHex();
     }
     boolean escape() {
+        mouseUp();
         if (typing()) { blur(); return true; }
         if (colorSetting != null) { colorSetting = null; return true; }
         if (details) { details = false; settingsScroll = 0; return true; }
@@ -86,6 +101,27 @@ final class CairnMenu {
         return Collections.unmodifiableList(modules);
     }
     void key(int direction, boolean activate) {
+        mouseUp();
+        if (colorSetting != null && colorControls.containsKey(focus)) {
+            int kind = colorControls.get(focus);
+            if (activate && kind == 1) brightnessAxis = !brightnessAxis;
+            else if (direction != 0) {
+                if (kind == 1 && brightnessAxis) brightness = Math.max(0, Math.min(1, brightness + direction / 100f));
+                else if (kind == 1) saturation = Math.max(0, Math.min(1, saturation + direction / 100f));
+                else if (kind == 2) hue = Math.max(0, Math.min(1, hue + direction / 360f));
+                else draftAlpha = clamp(draftAlpha + direction, 0, 100);
+                syncHex();
+            }
+            return;
+        }
+        if (focus >= 0 && focus < controls.size() && controls.get(focus).slider != null) {
+            Slider slider = controls.get(focus).slider;
+            if (direction != 0) {
+                client.setting(slider.module, slider.setting, client.setting(slider.module, slider.setting) + direction * slider.setting.step);
+                client.save();
+            }
+            return;
+        }
         if (activate) {
             if (hexFocus) { applyColor(); return; }
             if (friendFocus) { addFriend(); return; }
@@ -108,6 +144,7 @@ final class CairnMenu {
     }
     void tab() { blur(); if (!controls.isEmpty()) focus = (focus + 1) % controls.size(); }
     void wheel(int amount) {
+        mouseUp();
         if (colorSetting != null) return;
         if (cosmetics) { cosmeticsScroll = Math.max(0, cosmeticsScroll + amount); return; }
         if (friends) { friendsScroll = Math.max(0, friendsScroll + amount); return; }
@@ -115,11 +152,37 @@ final class CairnMenu {
         else listScroll = Math.max(0, listScroll + amount);
     }
     void mouseDown(int width, int height, int x, int y) {
+        mouseUp();
+        mouseX = x; lastMouseY = y;
         blur(); focus = -1;
         for (int i = controls.size() - 1; i >= 0; i--) {
             Control control = controls.get(i);
-            if (x >= control.x && x < control.x + control.w && y >= control.y && y < control.y + control.h) { control.action.run(); return; }
+            if (x >= control.x && x < control.x + control.w && y >= control.y && y < control.y + control.h) {
+                if (control.slider != null) { activeSlider = control.slider; focus = i; drag(x, y); }
+                else { if (colorControls.containsKey(i)) focus = i; control.action.run(); }
+                return;
+            }
         }
+    }
+    void drag(int x, int y) {
+        if (colorDrag != 0) {
+            float horizontal = clamp(x - colorX, 0, colorWidth) / (float) colorWidth;
+            if (colorDrag == 1) { saturation = horizontal; brightness = 1 - clamp(y - colorY, 0, colorHeight) / (float) colorHeight; }
+            else if (colorDrag == 2) hue = horizontal;
+            else draftAlpha = Math.round(horizontal * 100);
+            syncHex(); return;
+        }
+        if (activeSlider == null) return;
+        Setting setting = activeSlider.setting;
+        float fraction = clamp(x - activeSlider.x, 0, activeSlider.width) / (float) activeSlider.width;
+        int value = clamp(setting.min + Math.round(fraction * (setting.max - setting.min) / setting.step) * setting.step, setting.min, setting.max);
+        if (value != client.setting(activeSlider.module, setting)) {
+            client.setting(activeSlider.module, setting, value); sliderChanged = true;
+        }
+    }
+    void mouseUp() {
+        activeSlider = null; colorDrag = 0;
+        if (sliderChanged) { sliderChanged = false; client.save(); }
     }
     private void button(Canvas canvas, String label, int x, int y, int w, int h, int bg, int fg, Runnable action) {
         int index = controls.size();
@@ -154,7 +217,7 @@ final class CairnMenu {
     }
     void openModules() { page("modules"); details = false; colorSetting = null; blur(); focus = -1; }
     void editorControls(Canvas canvas, int width, int height, int mx, int my) {
-        controls.clear(); mouseX = mx; lastMouseY = my;
+        controls.clear(); colorControls.clear(); mouseX = mx; lastMouseY = my;
         int w = Math.min(190, width - 24), x = (width - w) / 2, y = Math.max(42, height / 2 - 30);
         canvas.text("CAIRN", (width - canvas.textWidth("CAIRN")) / 2, y - 20, TEXT);
         button(canvas, "Cairn Settings", x, y, w, 26, PRIMARY, TEXT, () -> client.openModules());
@@ -174,10 +237,10 @@ final class CairnMenu {
         for (Control control : controls) if (x >= control.x && x < control.x + control.w && y >= control.y && y < control.y + control.h) { control.action.run(); return true; }
         return false;
     }
-    void clearControls() { controls.clear(); }
+    void clearControls() { mouseUp(); controls.clear(); }
     private int lastMouseY;
     void render(Canvas canvas, int width, int height, int mx, int my) {
-        controls.clear(); mouseX = mx; lastMouseY = my;
+        controls.clear(); colorControls.clear(); mouseX = mx; lastMouseY = my;
         int w = Math.min(680, width - 24), x = (width - w) / 2, top = Math.max(12, (height - 440) / 2), bottom = height - top;
         panelX = x; panelWidth = w;
         canvas.rect(0, 0, width, height, 0x9906090d);
@@ -561,7 +624,7 @@ final class CairnMenu {
         if (module == Module.CROSSHAIR) { list.addAll(Arrays.asList(Setting.SCALE, Setting.ACCENT_COLOR, Setting.CROSS_SIZE, Setting.CROSS_GAP, Setting.CROSS_THICKNESS, Setting.CROSS_DOT, Setting.CROSS_HIDE_VANILLA)); return list; }
         if (module.hud) list.addAll(Arrays.asList(Setting.SCALE, Setting.TEXT_COLOR, Setting.BG_COLOR, Setting.ACCENT_COLOR));
         if (module == Module.KEYSTROKES) list.addAll(Arrays.asList(Setting.KEY_SIZE, Setting.KEY_GAP, Setting.MOUSE_KEYS, Setting.SPACE_KEY, Setting.KEY_CPS, Setting.OPACITY));
-        else if (module.hud) list.addAll(Arrays.asList(Setting.AUTO_WIDTH, Setting.WIDTH, Setting.OPACITY, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
+        else if (module.hud) list.addAll(Arrays.asList(Setting.AUTO_WIDTH, Setting.WIDTH, Setting.OPACITY, Setting.TEXT_ALPHA, Setting.ACCENT_ALPHA, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
         if (module == Module.CLOCK) list.addAll(Arrays.asList(Setting.CLOCK_SECONDS, Setting.CLOCK_24H));
         if (module == Module.ZOOM) list.addAll(Arrays.asList(Setting.ZOOM_FACTOR, Setting.SMOOTH_ZOOM, Setting.SCROLL_ZOOM, Setting.ZOOM_CINEMATIC));
         if (module == Module.SPRINT) list.addAll(Arrays.asList(Setting.SPRINT_AUTO, Setting.SPRINT_RESET));
@@ -598,18 +661,16 @@ final class CairnMenu {
         for (int i = settingsScroll; i < Math.min(options.size(), settingsScroll + capacity); i++) {
             final Setting setting = options.get(i);
             int cy = first + (i - settingsScroll) * rowHeight, value = client.setting(module, setting);
-            canvas.text(fit(canvas, setting.label, w - 85), x, cy + 7, MUTED);
+            int sliderWidth = Math.min(180, Math.max(112, w / 2));
+            boolean numeric = !setting.color() && !setting.toggle() && setting != Setting.ALIGN;
+            canvas.text(fit(canvas, setting.label, w - (numeric ? sliderWidth + 8 : 85)), x, cy + 7, MUTED);
             if (setting.color()) {
                 canvas.rect(x + w - 76, cy + 6, 12, 12, value);
-                button(canvas, "Change", x + w - 59, cy, 59, 23, 0xff303a2d, TEXT, () -> { colorSetting = setting; hex = String.format(Locale.ROOT, "%06X", client.setting(module, setting) & 0xffffff); hexFocus = false; colorError = null; });
+                button(canvas, "Change", x + w - 59, cy, 59, 23, 0xff303a2d, TEXT, () -> { colorSetting = setting; draftAlpha = client.setting(module, CairnClient.alphaSetting(setting)); setDraft(client.setting(module, setting)); hexFocus = false; colorError = null; });
             } else if (setting.toggle()) {
                 settingToggle(canvas, value == 1, x + w - 64, cy, () -> { client.setting(module, setting, value == 1 ? 0 : 1); client.save(); });
-            } else {
-                button(canvas, "-", x + w - 78, cy, 20, 23, 0xff303a2d, TEXT, () -> { client.setting(module, setting, client.setting(module, setting) - setting.step); client.save(); });
-                String label = setting == Setting.ALIGN ? new String[] { "Left", "Center", "Right" }[value] : String.valueOf(value) + (setting == Setting.SCALE || setting == Setting.OPACITY ? "%" : "");
-                canvas.text(fit(canvas, label, 34), x + w - 55, cy + 7, TEXT);
-                button(canvas, "+", x + w - 20, cy, 20, 23, 0xff303a2d, TEXT, () -> { client.setting(module, setting, client.setting(module, setting) + setting.step); client.save(); });
-            }
+            } else if (setting == Setting.ALIGN) button(canvas, new String[] { "Left", "Center", "Right" }[value], x + w - 78, cy, 78, 23, SURFACE, TEXT, () -> { client.setting(module, setting, (value + 1) % 3); client.save(); });
+            else settingSlider(canvas, module, setting, x + w - sliderWidth, cy, sliderWidth);
         }
         int foot = y + Math.max(48, height - 24);
         if (!options.isEmpty()) {
@@ -617,6 +678,20 @@ final class CairnMenu {
             button(canvas, "Down", x + 35, foot, 43, 22, 0xff303a2d, MUTED, () -> settingsScroll++);
         }
         button(canvas, "Reset", x + w - 57, foot, 57, 22, 0xff303a2d, MUTED, () -> client.reset(module));
+    }
+    private void settingSlider(Canvas canvas, Module module, Setting setting, int x, int y, int width) {
+        int index = controls.size(), value = client.setting(module, setting);
+        String label = String.valueOf(value) + (setting == Setting.SCALE || setting == Setting.OPACITY ? "%" : "");
+        canvas.text(label, x, y + 7, TEXT);
+        int trackX = x + 42, trackWidth = width - 50;
+        Slider slider = new Slider(module, setting, trackX, trackWidth);
+        if (activeSlider != null && activeSlider.module == module && activeSlider.setting == setting) { activeSlider.x = trackX; activeSlider.width = trackWidth; }
+        int progress = Math.round((value - setting.min) / (float) (setting.max - setting.min) * trackWidth);
+        rounded(canvas, trackX, y + 10, trackWidth, 4, 2, EDGE);
+        if (progress > 0) rounded(canvas, trackX, y + 10, progress, 4, 2, PRIMARY);
+        rounded(canvas, trackX + progress - 4, y + 7, 8, 10, 4, ACCENT);
+        if (focus == index) canvas.rect(x, y + 22, width, 1, ACCENT);
+        controls.add(new Control(x, y, width, 23, null, slider));
     }
     private void settingToggle(Canvas canvas, boolean enabled, int x, int y, Runnable action) {
         int index = controls.size();
@@ -629,22 +704,85 @@ final class CairnMenu {
         controls.add(new Control(x, y, 64, 23, action));
     }
     private void applyColor() {
-        if (hex.length() != 6) { colorError = "Enter six hex digits."; return; }
-        try { client.setting(client.selected(), colorSetting, (int) Long.parseLong(hex, 16)); client.save(); colorSetting = null; hexFocus = false; colorError = null; }
-        catch (NumberFormatException e) { colorError = "Use 0-9 and A-F."; }
+        if (!readHex()) { colorError = "Use RRGGBB or RRGGBBAA."; return; }
+        client.setting(client.selected(), colorSetting, draftRgb);
+        client.setting(client.selected(), CairnClient.alphaSetting(colorSetting), draftAlpha);
+        client.save(); colorSetting = null; hexFocus = false; colorError = null; focus = -1; controls.clear(); colorControls.clear();
+    }
+    private void setDraft(int rgb) {
+        draftRgb = rgb & 0xffffff;
+        float[] hsv = java.awt.Color.RGBtoHSB(draftRgb >> 16 & 255, draftRgb >> 8 & 255, draftRgb & 255, null);
+        hue = hsv[0]; saturation = hsv[1]; brightness = hsv[2]; syncHex();
+    }
+    private void syncHex() {
+        draftRgb = java.awt.Color.HSBtoRGB(hue, saturation, brightness) & 0xffffff;
+        hex = String.format(Locale.ROOT, "%06X%02X", draftRgb, Math.round(draftAlpha * 255 / 100f));
+        hexSelected = false;
+    }
+    private boolean readHex() {
+        if (hex.length() != 6 && hex.length() != 8) return false;
+        try {
+            int rgb = (int) Long.parseLong(hex.substring(0, 6), 16);
+            float[] hsv = java.awt.Color.RGBtoHSB(rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255, null);
+            draftRgb = rgb; hue = hsv[0]; saturation = hsv[1]; brightness = hsv[2];
+            if (hex.length() == 8) draftAlpha = Math.round(Integer.parseInt(hex.substring(6), 16) * 100 / 255f);
+            return true;
+        } catch (NumberFormatException e) { return false; }
+    }
+    private void checker(Canvas canvas, int x, int y, int w, int h) {
+        for (int row = 0; row < h; row += 8) for (int col = 0; col < w; col += 8)
+            canvas.rect(x + col, y + row, Math.min(8, w - col), Math.min(8, h - row), ((row / 8 + col / 8) & 1) == 0 ? 0xff757b84 : 0xffaeb5bf);
+    }
+    private void colorControl(int kind, int x, int y, int w, int h) {
+        colorControls.put(controls.size(), kind);
+        if (colorDrag == kind) { colorX = x; colorY = y; colorWidth = w - 1; colorHeight = h - 1; }
+        controls.add(new Control(x, y, w, h, () -> { colorDrag = kind; colorX = x; colorY = y; colorWidth = w - 1; colorHeight = h - 1; drag(mouseX, lastMouseY); }));
     }
     private void colorPicker(Canvas canvas, int x, int y, int w, int h) {
-        canvas.text(fit(canvas, client.selected().title + " / " + colorSetting.label, w), x, y + 2, TEXT);
-        int swatchW = Math.min(30, (w - 28) / 8);
-        for (int i = 0; i < SWATCHES.length; i++) {
-            final int color = SWATCHES[i];
-            button(canvas, "", x + i * (swatchW + 4), y + 22, swatchW, 24, 0xff000000 | color, TEXT, () -> { hex = String.format(Locale.ROOT, "%06X", color); });
-            canvas.rect(x + i * (swatchW + 4) + 3, y + 25, swatchW - 6, 18, 0xff000000 | color);
+        canvas.text(fit(canvas, colorError == null ? client.selected().title + " / " + colorSetting.label : colorError, w), x, y + 2, TEXT);
+        int pw = Math.min(256, w), ph = Math.max(20, Math.min(144, h - 104)), py = y + 18;
+        canvas.rect(x, py, pw, ph, java.awt.Color.HSBtoRGB(hue, 1, 1));
+        for (int i = 0; i < 64; i++) {
+            int left = i * pw / 64, right = (i + 1) * pw / 64;
+            canvas.rect(x + left, py, right - left, ph, ((255 - i * 255 / 63) << 24) | 0xffffff);
         }
-        button(canvas, "#" + hex + (hexFocus ? "_" : ""), x, y + 58, Math.min(w, 150), 25, hexFocus ? 0xff3c4835 : 0xff141b16, TEXT, () -> { hexFocus = true; hexSelected = true; });
-        int actionY = h >= 140 ? y + 112 : y + 88;
-        if (h >= 140) canvas.text(fit(canvas, colorError == null ? "Click the field and enter any RGB hex color." : colorError, w), x, y + 92, colorError == null ? MUTED : 0xffffb9a4);
-        button(canvas, "Apply color", x, actionY, 90, 24, 0xff3c4835, ACCENT, () -> applyColor());
-        button(canvas, "Cancel", x + 98, actionY, 65, 24, 0xff303a2d, TEXT, () -> { colorSetting = null; hexFocus = false; });
+        for (int i = 0; i < 64; i++) {
+            int top = i * ph / 64, bottom = (i + 1) * ph / 64;
+            if (bottom > top) canvas.rect(x, py + top, pw, bottom - top, i * 255 / 63 << 24);
+        }
+        int sx = x + Math.round(saturation * (pw - 1)), sy = py + Math.round((1 - brightness) * (ph - 1));
+        canvas.rect(clamp(sx - 3, x, x + pw - 7), clamp(sy - 3, py, py + ph - 7), 7, 7, 0xff000000);
+        canvas.rect(clamp(sx - 2, x + 1, x + pw - 6), clamp(sy - 2, py + 1, py + ph - 6), 5, 5, TEXT);
+        colorControl(1, x, py, pw, ph);
+        int hy = py + ph + 6, ay = hy + 16, hx = x + 42, hw = pw - 42, ax = x + 74, aw = pw - 74;
+        canvas.text("Hue", x, hy + 1, MUTED);
+        canvas.text("Alpha " + draftAlpha + "%", x, ay + 1, MUTED);
+        checker(canvas, ax, ay, aw, 10);
+        for (int i = 0; i < 64; i++) {
+            int left = i * hw / 64, right = (i + 1) * hw / 64;
+            canvas.rect(hx + left, hy, right - left, 10, java.awt.Color.HSBtoRGB(i / 63f, 1, 1));
+            left = i * aw / 64; right = (i + 1) * aw / 64;
+            canvas.rect(ax + left, ay, right - left, 10, (i * 255 / 63 << 24) | draftRgb);
+        }
+        int hueMarker = hx + Math.round(hue * (hw - 4)), alphaMarker = ax + Math.round(draftAlpha / 100f * (aw - 4));
+        canvas.rect(hueMarker, hy - 1, 4, 12, 0xff000000); canvas.rect(hueMarker + 1, hy, 2, 10, TEXT);
+        canvas.rect(alphaMarker, ay - 1, 4, 12, 0xff000000); canvas.rect(alphaMarker + 1, ay, 2, 10, TEXT);
+        colorControl(2, hx, hy, hw, 10); colorControl(3, ax, ay, aw, 10);
+        for (Map.Entry<Integer, Integer> field : colorControls.entrySet()) if (field.getKey() == focus) {
+            Control c = controls.get(focus); canvas.rect(c.x, c.y + c.h - 1, c.w, 1, ACCENT);
+        }
+        int hexY = ay + 16, actionY = hexY + 26;
+        button(canvas, "#" + hex + (hexFocus ? "_" : ""), x, hexY, Math.min(pw, 150), 20, SURFACE, TEXT, () -> { hexFocus = true; hexSelected = true; });
+        checker(canvas, x + 158, hexY, pw - 158, 20);
+        canvas.rect(x + 158, hexY, pw - 158, 20, (draftAlpha * 255 / 100 << 24) | draftRgb);
+        button(canvas, "Apply color", x, actionY, 90, 22, PRIMARY, TEXT, () -> applyColor());
+        button(canvas, "Cancel", x + 98, actionY, 65, 22, SURFACE, TEXT, () -> { colorSetting = null; hexFocus = false; });
+        if (w >= 500) {
+            int px = x + pw + 20, previewWidth = w - pw - 20;
+            canvas.text("Live preview", px, py, TEXT);
+            checker(canvas, px, py + 18, previewWidth, Math.min(120, ph));
+            client.renderColorPreview(canvas, client.selected(), colorSetting, draftRgb, draftAlpha, px + 8, py + 26, previewWidth - 16, Math.min(104, ph - 16));
+        }
+        if (h >= 300) canvas.text(fit(canvas, colorError != null ? colorError : "Drag to pick. Arrows adjust; Enter switches saturation/brightness.", w), x, actionY + 32, MUTED);
     }
 }

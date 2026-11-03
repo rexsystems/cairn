@@ -226,7 +226,8 @@ public final class CairnFabricMapped implements ClientModInitializer {
         @Override public boolean mouseScrolled(double x, double y, double amount) { client.wheel(amount < 0 ? 1 : -1); return true; }
         @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
             if (client.binding()) { client.bind(key == GLFW.GLFW_KEY_ESCAPE ? -1 : key, InputConstants.Type.KEYSYM.getOrCreate(key).getDisplayName().getString()); return true; }
-            if (key == GLFW.GLFW_KEY_ESCAPE || client.menuCloseKey(key, GLFW.GLFW_KEY_TAB)) { if (!client.escape()) onClose(); return true; }
+            if (client.menuCloseKey(key, GLFW.GLFW_KEY_TAB, GLFW.GLFW_KEY_RIGHT_SHIFT)) { onClose(); return true; }
+            if (key == GLFW.GLFW_KEY_ESCAPE) { if (!client.escape()) onClose(); return true; }
             if (key == GLFW.GLFW_KEY_TAB) { client.tab(); return true; }
             if (client.typing()) {
                 if (key == GLFW.GLFW_KEY_BACKSPACE) client.backspace(); else if (key == GLFW.GLFW_KEY_ENTER) client.key(0, true);

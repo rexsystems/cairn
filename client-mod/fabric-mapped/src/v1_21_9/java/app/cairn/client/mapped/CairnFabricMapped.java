@@ -249,7 +249,8 @@ public final class CairnFabricMapped implements ClientModInitializer {
         @Override public boolean keyPressed(KeyEvent event) {
             int key = event.key();
             if (client.binding()) { client.bind(key == InputConstants.KEY_ESCAPE ? -1 : key, InputConstants.Type.KEYSYM.getOrCreate(key).getDisplayName().getString()); return true; }
-            if (key == InputConstants.KEY_ESCAPE || client.menuCloseKey(key, InputConstants.KEY_TAB)) { if (!client.escape()) onClose(); return true; }
+            if (client.menuCloseKey(key, InputConstants.KEY_TAB, InputConstants.KEY_RSHIFT)) { onClose(); return true; }
+            if (key == InputConstants.KEY_ESCAPE) { if (!client.escape()) onClose(); return true; }
             if (key == InputConstants.KEY_TAB) { client.tab(); return true; }
             if (client.typing()) {
                 if (key == InputConstants.KEY_BACKSPACE) client.backspace(); else if (key == InputConstants.KEY_RETURN) client.key(0, true);

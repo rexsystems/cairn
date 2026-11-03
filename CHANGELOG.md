@@ -7,6 +7,7 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 ## [Unreleased]
 
 ### Added
+- Draggable numeric sliders across module settings and a visual HSV/alpha color picker with live preview, checkerboard transparency and optional RGBA HEX input.
 - Cairn title screen, Right Shift HUD overview, live module settings previews, stateful switches and item/effect icons in the armor and potion HUDs.
 - Administrator role grants by verified Minecraft name, tied to the account UUID and unavailable to offline/dev identities.
 - In-game Join controls for shared friend server addresses on all supported Fabric and Forge versions, available outside a world.
@@ -43,6 +44,8 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - File and network commands run off the main thread, progress events are throttled and live logs are batched, so the window stays responsive during installs and while the game runs (most noticeable on Windows).
 
 ### Fixed
+- Right Shift closes the client interface directly instead of opening another menu; Forge no longer handles the same key twice when returning to the title screen.
+- Crosshair position stays at the exact viewport center, including after loading an old moved layout. Fully transparent HUD text stays invisible.
 - Module cards open their settings when clicked, and rebound menu keys no longer interrupt text entry.
 - Added regression checks for SDL and GLFW mouse button mappings, including independent left/right CPS labels.
 - Cairn Client's Friends button remains accessible at narrow GUI sizes, and Tab navigates fields even when it is the menu key.

@@ -22,9 +22,17 @@ Enable **Options > Cairn Client**, save, then launch. **Right Shift** opens the 
 
 The Minecraft title screen uses Cairn controls over the game's own panorama. Singleplayer, Multiplayer, Minecraft settings and Quit retain vanilla actions and restrictions. Cairn Settings, Cosmetics and Friends are available directly. Tab/arrows and Enter/Space operate the title controls.
 
+Press **Right Shift** again to close the interface directly from the editor, settings or a color field. **Escape** navigates back within the menu. Letter keys rebound as the menu key still work as text while a field has focus; Tab remains field navigation.
+
 **E** or **Edit HUD** opens the HUD editor. Drag each widget to move it, or drag its bottom-right corner to resize it. Selected widgets have an outline and resize handle. Tab selects the next enabled widget, arrows nudge it, and +/- adjusts scale. **G** toggles four-pixel snapping. **H** hides the toolbars so every part of the screen is available for dragging. Enter opens the selected widget's settings; Escape returns to modules. Positions are clamped to the viewport. Reset restores one widget's settings and position.
 
 New widgets flow down the left edge in columns without overlapping, and older saved layouts that stacked widgets are migrated. Text widgets fit their content by default (Auto width); turning it off uses the fixed Width setting. Each text widget has independent scale, width, text/background/accent RGB colors, background opacity, background visibility, accent edge, shadow and alignment. The color field accepts any six-digit RGB hex value. Click it and type to replace the current value. New HUDs use white text on neutral backgrounds with the accent edge off. Old default green backgrounds/edges migrate to this plain style; custom colors are retained. Settings have a live HUD preview, with a side panel on wide screens and a compact preview on smaller screens; switches show their state with both text and a thumb.
+
+Numeric settings use draggable sliders throughout the module settings. Clicking the track selects a value; dragging remains captured beyond the track and clamps to the range. Tab focuses a slider and arrow keys adjust it. Changes appear in the preview immediately and are saved on release. Alignment uses a named choice rather than a numeric slider.
+
+**Change** opens a visual color picker: saturation/brightness square, hue strip, alpha strip, checkerboard transparency preview and live module preview. Choose a color with the mouse; typing is optional. The field accepts `RRGGBB` or `RRGGBBAA`. Text, backgrounds and accent/crosshair colors have independent opacity. Apply saves the draft; Cancel discards it. Arrow keys adjust the focused color control; Enter switches the square between saturation and brightness adjustment.
+
+The crosshair is locked to the exact screen center. Old saved positions are ignored; dragging and arrow-key movement cannot move it. Its size, gap, thickness, color and opacity remain configurable.
 
 Keystrokes draws W/A/S/D, left/right mouse buttons and Space as individual keys. Key size, spacing, widget scale, released background, pressed color, text color, mouse buttons, Space and CPS labels are configurable. Pressed labels automatically choose black or white for contrast. The mod uses Minecraft's normal font, as requested; no custom font or resource-loader dependency is bundled.
 
