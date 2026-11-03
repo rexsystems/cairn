@@ -4,6 +4,7 @@ pub mod backup;
 pub mod cairn_client;
 pub mod compat;
 pub mod content;
+pub mod cosmetics;
 pub mod crash;
 pub mod crashlog;
 pub mod msa_client;
@@ -118,6 +119,10 @@ fn save_settings(state: State<AppState>, settings: Settings) -> R<Settings> {
     let mut s = settings;
     s.concurrent_downloads = s.concurrent_downloads.clamp(1, 64);
     s.default_memory_mb = s.default_memory_mb.clamp(512, 65536);
+    s.cosmetics_url = s.cosmetics_url.trim().to_owned();
+    if !s.cosmetics_url.is_empty() {
+        s.cosmetics_url = cosmetics::normalize_url(&s.cosmetics_url).ok_or("The cosmetics server must be an https:// address (http only for localhost).")?;
+    }
     s.save(&state.paths.settings_file()).map_err(ea)?;
     crash::set_allowed(s.crash_reports_allowed());
     discord::configure(discord::Options::from_settings(&s));
@@ -1022,6 +1027,72 @@ async fn set_account_cape(state: State<'_, AppState>, id: String, cape_id: Optio
     accounts::set_active_cape(&mut f, &state.paths, &id, cape_id.as_deref()).await.map_err(ea)
 }
 
+/// The chosen (or active) account with a usable Minecraft token, for signing in to the cosmetics server.
+async fn cosmetics_account(state: &AppState, id: Option<&str>) -> anyhow::Result<accounts::Account> {
+    let _lock = state.accounts_lock.lock().await;
+    let mut f = AccountsFile::load(&state.paths);
+    let id = id.map(str::to_owned).or_else(|| f.active.clone()).ok_or_else(|| anyhow::anyhow!("Add an account first."))?;
+    let idx = f.accounts.iter().position(|a| a.id == id).ok_or_else(|| anyhow::anyhow!("Account not found"))?;
+    let before = f.accounts[idx].mc_token.clone();
+    accounts::fresh_token(&mut f.accounts[idx]).await?;
+    if f.accounts[idx].mc_token != before {
+        f.save(&state.paths)?;
+    }
+    Ok(f.accounts[idx].clone())
+}
+
+fn cosmetics_base(state: &AppState) -> R<String> {
+    cosmetics::server_url(&Settings::load(&state.paths.settings_file())).ok_or_else(|| "Set a cosmetics server in Settings first.".to_owned())
+}
+
+#[tauri::command]
+async fn cosmetics_overview(state: State<'_, AppState>, id: Option<String>) -> R<cosmetics::Overview> {
+    let Ok(base) = cosmetics_base(&state) else { return Ok(cosmetics::Overview::default()) };
+    let mut out = cosmetics::Overview { url: Some(base.clone()), ..Default::default() };
+    match cosmetics::stats(&base).await {
+        Ok(stats) => out.stats = Some(stats),
+        Err(err) => {
+            out.error = Some(ea(err));
+            return Ok(out);
+        }
+    }
+    let me = match cosmetics_account(&state, id.as_deref()).await {
+        Ok(acc) => cosmetics::me(&base, &acc).await,
+        Err(err) => Err(err),
+    };
+    match me {
+        Ok(me) => out.me = Some(me),
+        Err(err) => out.error = Some(ea(err)),
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+async fn cosmetics_equip(state: State<'_, AppState>, id: Option<String>, cape: Option<String>, badge: Option<String>) -> R<Value> {
+    let base = cosmetics_base(&state)?;
+    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
+    cosmetics::equip(&base, &acc, cape.as_deref(), badge.as_deref()).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn cosmetics_upload(state: State<'_, AppState>, id: Option<String>, png: Vec<u8>, frame_ms: u32) -> R<Value> {
+    let base = cosmetics_base(&state)?;
+    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
+    cosmetics::upload(&base, &acc, png, frame_ms).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn cosmetics_cape_image(state: State<'_, AppState>, hash: String) -> R<String> {
+    cosmetics::cape_data_url(&cosmetics_base(&state)?, &hash).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn cosmetics_remove_cape(state: State<'_, AppState>, id: Option<String>) -> R<Value> {
+    let base = cosmetics_base(&state)?;
+    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
+    cosmetics::remove_custom(&base, &acc).await.map_err(ea)
+}
+
 #[tauri::command]
 async fn set_account_skin(state: State<'_, AppState>, id: String, path: String, model: String) -> R<accounts::AccountCosmetics> {
     let _lock = state.accounts_lock.lock().await;
@@ -1541,6 +1612,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info, get_settings, save_settings,
+            cosmetics_overview, cosmetics_equip, cosmetics_upload, cosmetics_remove_cape, cosmetics_cape_image,
             list_instances, get_instance, create_instance, update_instance, delete_instance, duplicate_instance, set_instance_icon,
             import_mrpack, import_modpack, export_mrpack,
             share_code, read_share_code, import_share_code,

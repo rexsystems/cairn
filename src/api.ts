@@ -65,6 +65,7 @@ export interface Settings {
   crashReportsEnabled: boolean;
   privacyPromptAnswered: boolean;
   curseforgeApiKey?: string;
+  cosmeticsUrl?: string;
 }
 
 export interface AppUpdate { version: string; currentVersion: string; notes: string | null; channel: string }
@@ -241,6 +242,18 @@ export interface DepInfo {
   title?: string | null;
 }
 
+/** Shapes from the self-hosted cosmetics server (cosmetics-server/). */
+export interface CosmeticsStats { online: number; peak: number; peakAt: number; total: number }
+export interface CustomCape { hash: string; status: "pending" | "approved" | "rejected"; visible: boolean; frames: number; frameMs: number; url: string }
+export interface CosmeticsMe {
+  uuid: string; name: string; role: "player" | "staff" | "admin" | "banned";
+  equipped: { cape: string | null; badge: string | null };
+  customCape: CustomCape | null;
+  unlocked: { capes: string[]; badges: string[] };
+  moderation: "approval" | "instant";
+}
+export interface CosmeticsOverview { url: string | null; stats: CosmeticsStats | null; me: CosmeticsMe | null; error: string | null }
+
 export interface LaunchOpts {
   world?: string | null;
   server?: string | null;
@@ -352,6 +365,11 @@ export const api = {
   setActiveAccount: (id: string) => invoke<Account[]>("set_active_account", { id }),
   removeAccount: (id: string) => invoke<Account[]>("remove_account", { id }),
   addOfflineAccount: (name: string) => invoke<Account[]>("add_offline_account", { name }),
+  cosmeticsOverview: (id?: string) => invoke<CosmeticsOverview>("cosmetics_overview", { id }),
+  cosmeticsEquip: (id: string | undefined, cape: string | null, badge: string | null) => invoke<CosmeticsMe>("cosmetics_equip", { id, cape, badge }),
+  cosmeticsUpload: (id: string | undefined, png: Uint8Array, frameMs: number) => invoke<CosmeticsMe>("cosmetics_upload", { id, png: Array.from(png), frameMs }),
+  cosmeticsRemoveCape: (id?: string) => invoke<CosmeticsMe>("cosmetics_remove_cape", { id }),
+  cosmeticsCapeImage: (hash: string) => invoke<string>("cosmetics_cape_image", { hash }),
   accountCosmetics: (id: string) => invoke<AccountCosmetics>("account_cosmetics", { id }),
   setAccountCape: (id: string, capeId: string | null) => invoke<AccountCosmetics>("set_account_cape", { id, capeId }),
   setAccountSkin: (id: string, path: string, model: string) => invoke<AccountCosmetics>("set_account_skin", { id, path, model }),
