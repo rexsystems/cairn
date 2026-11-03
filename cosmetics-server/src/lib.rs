@@ -477,14 +477,18 @@ async fn upload_cape(State(state): State<Shared>, headers: HeaderMap, Query(quer
     }
     let conn = state.db();
     let now = now();
+    let status = if state.cfg.moderation == Moderation::Instant { "approved" } else { "pending" };
     if let Some(existing) = db::cape(&conn, &parsed.hash)? {
         if existing.status == "rejected" {
             return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "This cape was rejected by a moderator."));
         }
+        if existing.status == "pending" && state.cfg.moderation == Moderation::Instant {
+            db::set_cape_status(&conn, &parsed.hash, "approved", now)?;
+        }
     } else {
         conn.execute(
-            "INSERT INTO capes (hash, owner, status, frames, frame_ms, width, height, created) VALUES (?1, ?2, 'pending', ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![parsed.hash, user.uuid, parsed.frames, parsed.frame_ms, parsed.width, parsed.height, now],
+            "INSERT INTO capes (hash, owner, status, frames, frame_ms, width, height, created) VALUES (?1, ?2, ?8, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![parsed.hash, user.uuid, parsed.frames, parsed.frame_ms, parsed.width, parsed.height, now, status],
         )?;
     }
     // Replacing a cape withdraws the old pending one so the review queue cannot be flooded.

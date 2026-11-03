@@ -289,6 +289,11 @@ async fn instant_moderation_shows_capes_right_away() {
     let h = harness(|cfg| cfg.moderation = Moderation::Instant).await;
     let token = h.login("Alex", ALEX).await;
     let (_, cape) = h.upload(&token, png(64, 32), "").await;
+    assert_eq!(cape["status"], "approved");
+    let (_, me) = h.call("GET", "/v1/me", Some(&token), None).await;
+    assert_eq!(me["customCape"]["status"], "approved");
+    let (_, pending) = h.call("GET", "/v1/admin/capes?status=pending", Some(ADMIN), None).await;
+    assert!(pending["capes"].as_array().unwrap().is_empty());
     let (_, body) = h.call("GET", &format!("/v1/players?uuids={ALEX}"), None, None).await;
     assert_eq!(body["players"][ALEX]["cape"]["url"], format!("/v1/capes/{}.png", cape["hash"].as_str().unwrap()));
 }

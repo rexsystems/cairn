@@ -45,6 +45,7 @@ Offline (cracked) accounts can't pass step 3, so they never get cosmetics.
     - At most 4 Mpx in total.
 - **Moderation:**
   - By default, custom capes stay invisible to other players until an admin approves them.
+  - With `instant` moderation, uploads are saved and reported as approved immediately.
   - A rejected image can't be uploaded again.
   - A new upload withdraws the player's previous pending one.
 - **Admin access:**
