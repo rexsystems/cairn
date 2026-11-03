@@ -38,6 +38,32 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
          CREATE TABLE IF NOT EXISTS stats (
              key TEXT PRIMARY KEY,
              value INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS friends (
+             owner TEXT NOT NULL,
+             friend TEXT NOT NULL,
+             since INTEGER NOT NULL,
+             PRIMARY KEY (owner, friend)
+         );
+         CREATE TABLE IF NOT EXISTS friend_requests (
+             sender TEXT NOT NULL,
+             target TEXT NOT NULL,
+             created INTEGER NOT NULL,
+             PRIMARY KEY (sender, target)
+         );
+         CREATE INDEX IF NOT EXISTS friend_requests_target ON friend_requests(target);
+         CREATE TABLE IF NOT EXISTS blocks (
+             owner TEXT NOT NULL,
+             blocked TEXT NOT NULL,
+             created INTEGER NOT NULL,
+             PRIMARY KEY (owner, blocked)
+         );
+         CREATE TABLE IF NOT EXISTS social_settings (
+             uuid TEXT PRIMARY KEY,
+             share TEXT NOT NULL DEFAULT 'full',
+             appear_offline INTEGER NOT NULL DEFAULT 0,
+             requests TEXT NOT NULL DEFAULT 'everyone',
+             dnd INTEGER NOT NULL DEFAULT 0
          );",
     )?;
     Ok(conn)

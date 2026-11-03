@@ -7,6 +7,7 @@ A small self-hosted backend for Cairn Client cosmetics:
 - Moderated custom capes, static or animated.
 - Staff roles.
 - A public online counter.
+- Friends, presence and notifications for Cairn Client players.
 
 It is one Rust binary with a SQLite database and a folder of cape PNGs.
 
@@ -29,6 +30,8 @@ Offline (cracked) accounts can't pass step 3, so they never get cosmetics.
   - Per-IP token-bucket rate limits:
     - sign-in: 6/min
     - uploads: 1/min after a burst of 5
+    - friend requests, removals and blocks: 30/min after a burst of 15
+    - notification polls: 60/min after a burst of 20
     - everything else: `COSMETICS_RATE_PER_MINUTE`
   - 16 KiB request bodies (1 MiB for cape uploads) and a 20 s request timeout.
 - **Cape uploads:**
@@ -51,6 +54,27 @@ Offline (cracked) accounts can't pass step 3, so they never get cosmetics.
   - CORS is closed unless you list origins.
   - Every response gets `nosniff`, a `default-src 'none'` CSP and `no-referrer`.
 - **Docker:** the image runs as a non-root user with a read-only root filesystem and no capabilities.
+
+## Friends and presence
+
+Friends only exist between players who have signed in with Cairn Client. Presence comes only from
+the in-game mod's heartbeat, so a player who isn't running Cairn Client shows as offline. The
+launcher can list friends and change settings, but never reports activity.
+
+- **Requests:** by name (case-insensitive) or UUID. Sending a request to someone who already sent
+  you one accepts it. Up to 100 pending outgoing requests and 200 friends.
+- **What friends see** is set per player in `/v1/me/social`:
+  - `share`: `full` (version, mode and server address), `game` (version and mode, never the server)
+    or `status` (online or offline only).
+  - `appearOffline`: friends see offline with no activity, and get no "came online" notice.
+  - `dnd`: friends see "do not disturb". Notices are still queued; the client skips the toasts.
+  - `requests`: `everyone` or `none`.
+- **Privacy:** there is no endpoint that shows anyone's presence except to their friends. Hidden
+  fields are never put in a reply or a notice. The public `/v1/players` lookup never includes activity.
+- **Blocking** removes the friendship and any requests both ways and drops queued notices between
+  the two. Requests from a blocked player look sent to them but never arrive.
+- **Notifications** (`request`, `accepted`, `online`, `server`) are kept in memory: the last 50 per
+  player for 10 minutes. They are lost on restart, which is fine for toasts.
 
 ## Self-hosting
 
@@ -150,7 +174,14 @@ If no URL is set, or the server is down, everything else keeps working and cosme
 | `PUT /v1/me/equipped` | bearer | `{cape, badge}`: catalog ids, `"custom"`, `"none"` (badge) or `null` |
 | `POST /v1/me/cape?frameMs=100` | bearer | Raw PNG body, `Content-Type: image/png` |
 | `DELETE /v1/me/cape` | bearer | Remove the custom cape |
-| `POST /v1/heartbeat` | bearer | Marks the player online for 90 s; clients send it every 60 s |
+| `POST /v1/heartbeat` | bearer | Marks the player online for 90 s; the mod sends it every 60 s. Optional `{activity: {version, mode: menu\|singleplayer\|multiplayer, server}}` |
+| `GET /v1/friends` | bearer | `{friends: [{uuid, name, since, status: online\|dnd\|offline, activity}], incoming, outgoing, blocked, settings}` |
+| `POST /v1/friends/requests` | bearer | `{target}` (name or UUID) → `{status: sent\|accepted, uuid, name}` |
+| `POST /v1/friends/requests/<uuid>/<accept\|decline\|cancel>` | bearer | Answer an incoming request or cancel your own |
+| `DELETE /v1/friends/<uuid>` | bearer | Remove a friend on both sides |
+| `PUT`, `DELETE /v1/blocks/<uuid>` | bearer | Block or unblock |
+| `GET`, `PUT /v1/me/social` | bearer | `{share, appearOffline, requests, dnd}`; `PUT` accepts any subset |
+| `GET /v1/events?after=<cursor>&wait=<s>` | bearer | Long poll, up to 15 s. Without `after` it only returns the current `cursor` |
 | `GET /v1/players?uuids=a,b,…` | – | Up to 100 UUIDs; only Cairn users are returned. Cached 60 s |
 | `GET /v1/stats` | – | `{online, peak, peakAt, total}`. Cached 30 s |
 | `GET /v1/catalog` | – | Built-in capes and badges |

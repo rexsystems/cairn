@@ -1,15 +1,16 @@
 //! Cairn cosmetics backend: Mojang-verified sign-in, equipped cosmetics, moderated
-//! custom capes, staff roles and a public online counter.
+//! custom capes, staff roles, a public online counter and Cairn-only friends with presence.
 pub mod cape;
 pub mod config;
 pub mod db;
 pub mod limit;
+mod social;
 
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::{body::Bytes, Json, Router};
 use base64::Engine;
 use config::{Config, Moderation};
@@ -55,12 +56,14 @@ pub struct AppState {
     catalog: Catalog,
     limiter: limit::RateLimiter,
     challenges: Mutex<HashMap<String, (String, Instant)>>,
-    presence: Mutex<HashMap<String, Instant>>,
+    presence: Mutex<HashMap<String, social::Presence>>,
+    social: social::Social,
     http: reqwest::Client,
 }
 
 type Shared = Arc<AppState>;
 
+#[derive(Debug)]
 pub struct ApiError(StatusCode, String);
 
 impl ApiError {
@@ -133,6 +136,7 @@ impl AppState {
             limiter: limit::RateLimiter::default(),
             challenges: Mutex::new(HashMap::new()),
             presence: Mutex::new(HashMap::new()),
+            social: social::Social::default(),
             http,
         }))
     }
@@ -146,12 +150,13 @@ impl AppState {
         let _ = self.db().execute("DELETE FROM sessions WHERE expires <= ?1", [now()]);
         lock(&self.challenges).retain(|_, (_, at)| at.elapsed() < CHALLENGE_TTL);
         let window = Duration::from_secs(self.cfg.online_window_secs);
-        lock(&self.presence).retain(|_, at| at.elapsed() < window);
+        lock(&self.presence).retain(|_, p| p.at.elapsed() < window);
+        self.social.sweep();
     }
 
     fn online(&self) -> i64 {
         let window = Duration::from_secs(self.cfg.online_window_secs);
-        lock(&self.presence).values().filter(|at| at.elapsed() < window).count() as i64
+        lock(&self.presence).values().filter(|p| p.at.elapsed() < window).count() as i64
     }
 
     fn cape_allowed(&self, id: &str, role: &str) -> Option<&CatalogCape> {
@@ -188,6 +193,13 @@ pub fn router(state: Shared) -> Router {
         .route("/v1/me/equipped", put(set_equipped))
         .route("/v1/heartbeat", post(heartbeat))
         .route("/v1/players", get(players))
+        .route("/v1/friends", get(social::list))
+        .route("/v1/friends/requests", post(social::send_request))
+        .route("/v1/friends/requests/{uuid}/{action}", post(social::answer_request))
+        .route("/v1/friends/{uuid}", delete(social::remove))
+        .route("/v1/blocks/{uuid}", put(social::block).delete(social::unblock))
+        .route("/v1/me/social", get(social::get_settings).put(social::put_settings))
+        .route("/v1/events", get(social::events))
         .route("/v1/capes/{file}", get(cape_image))
         .route("/v1/admin/capes", get(admin_capes))
         .route("/v1/admin/capes/{hash}/image", get(admin_cape_image))
@@ -232,6 +244,10 @@ async fn rate_limit(State(state): State<Shared>, req: Request, next: Next) -> Re
         ("auth", 6, 10)
     } else if path == "/v1/me/cape" && req.method() == Method::POST {
         ("upload", 1, state.cfg.upload_burst)
+    } else if path == "/v1/events" {
+        ("events", 60, 20)
+    } else if (path.starts_with("/v1/friends") || path.starts_with("/v1/blocks")) && req.method() != Method::GET {
+        ("social", 30, 15)
     } else if path.starts_with("/v1/admin/") {
         ("admin", base, base)
     } else {
@@ -489,9 +505,11 @@ async fn delete_cape(State(state): State<Shared>, headers: HeaderMap) -> ApiResu
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn heartbeat(State(state): State<Shared>, headers: HeaderMap) -> ApiResult<Json<Value>> {
+/// Only the in-game mod calls this; its optional `activity` feeds what friends see.
+async fn heartbeat(State(state): State<Shared>, headers: HeaderMap, body: Bytes) -> ApiResult<Json<Value>> {
     let user = session(&state, &headers)?;
-    lock(&state.presence).insert(user.uuid.clone(), Instant::now());
+    let activity = social::heartbeat_body(&body)?;
+    social::heartbeat(&state, &user.uuid, &user.name, activity)?;
     let online = state.online();
     let conn = state.db();
     conn.execute("UPDATE users SET last_seen = ?2 WHERE uuid = ?1", rusqlite::params![user.uuid, now()])?;

@@ -355,3 +355,229 @@ fn offline_uuid_matches_minecraft() {
     // Offline-mode UUID that vanilla servers assign to "Notch".
     assert_eq!(cairn_cosmetics_server::offline_uuid("Notch"), "b50ad385829d3141a2167e7d7539ba7f");
 }
+
+const CARA: &str = "aaaabbbbccccddddeeeeffff00001111";
+
+fn beat(version: &str, mode: &str, server: Option<&str>) -> Value {
+    json!({ "activity": { "version": version, "mode": mode, "server": server } })
+}
+
+fn friend<'a>(list: &'a Value, uuid: &str) -> Option<&'a Value> {
+    list["friends"].as_array().unwrap().iter().find(|f| f["uuid"] == uuid)
+}
+
+async fn befriend(h: &Harness, a: &str, b: &str, b_name: &str, b_uuid: &str, a_uuid: &str) {
+    let (status, sent) = h.call("POST", "/v1/friends/requests", Some(a), Some(json!({ "target": b_name.to_lowercase() }))).await;
+    assert_eq!(status, StatusCode::OK, "{sent}");
+    assert_eq!(sent["uuid"], b_uuid);
+    let (status, _) = h.call("POST", &format!("/v1/friends/requests/{a_uuid}/accept"), Some(b), None).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn friend_requests_follow_the_rules() {
+    let h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    let (status, _) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "Nobody" }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "only players who used Cairn Client can be added");
+    let (status, _) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "alex" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "bad name!" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (_, sent) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": BOB }))).await;
+    assert_eq!(sent["status"], "sent");
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    assert_eq!(list["incoming"][0]["name"], "Alex");
+    let (_, list) = h.call("GET", "/v1/friends", Some(&alex), None).await;
+    assert_eq!(list["outgoing"][0]["name"], "Bob");
+    // Someone else can't accept a request that wasn't sent to them.
+    let cara = h.login("Cara", CARA).await;
+    let (status, _) = h.call("POST", &format!("/v1/friends/requests/{ALEX}/accept"), Some(&cara), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // A request back counts as accepting.
+    let (_, back) = h.call("POST", "/v1/friends/requests", Some(&bob), Some(json!({ "target": "Alex" }))).await;
+    assert_eq!(back["status"], "accepted");
+    let (status, _) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "Bob" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, list) = h.call("GET", "/v1/friends", Some(&alex), None).await;
+    assert_eq!(friend(&list, BOB).unwrap()["status"], "offline");
+    assert!(list["incoming"].as_array().unwrap().is_empty() && list["outgoing"].as_array().unwrap().is_empty());
+
+    let (status, _) = h.call("PUT", "/v1/me/social", Some(&cara), Some(json!({ "requests": "none" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "Cara" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = h.call("PUT", "/v1/me/social", Some(&cara), Some(json!({ "requests": "friends-of-friends" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = h.call("PUT", "/v1/me/social", Some(&cara), Some(json!({ "share": "everything" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = h.call("DELETE", &format!("/v1/friends/{BOB}"), Some(&alex), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    assert!(friend(&list, ALEX).is_none(), "removing a friend removes it on both sides");
+    let (status, _) = h.call("GET", "/v1/friends", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn presence_only_reaches_friends_and_respects_privacy() {
+    let h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    let cara = h.login("Cara", CARA).await;
+    befriend(&h, &alex, &bob, "Bob", BOB, ALEX).await;
+
+    // The launcher never heartbeats, so a signed-in player who isn't in game stays offline.
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    assert_eq!(friend(&list, ALEX).unwrap()["status"], "offline");
+    let (status, _) = h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("Play.Example.net")))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    let a = friend(&list, ALEX).unwrap();
+    assert_eq!(a["status"], "online");
+    assert_eq!(a["activity"]["version"], "26.3");
+    assert_eq!(a["activity"]["server"], "play.example.net");
+    // Cara is not a friend and there is no endpoint that shows anyone else's presence.
+    let (_, list) = h.call("GET", "/v1/friends", Some(&cara), None).await;
+    assert!(list["friends"].as_array().unwrap().is_empty());
+    assert!(!list.to_string().contains("play.example.net"));
+    let (_, players) = h.call("GET", &format!("/v1/players?uuids={ALEX}"), None, None).await;
+    assert!(!players.to_string().contains("play.example.net"), "the public lookup never shows activity");
+
+    h.call("PUT", "/v1/me/social", Some(&alex), Some(json!({ "share": "game" }))).await;
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    let a = friend(&list, ALEX).unwrap();
+    assert_eq!(a["activity"]["mode"], "multiplayer");
+    assert!(a["activity"]["server"].is_null());
+    assert!(!list.to_string().contains("example.net"));
+
+    h.call("PUT", "/v1/me/social", Some(&alex), Some(json!({ "share": "status", "dnd": true }))).await;
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    let a = friend(&list, ALEX).unwrap();
+    assert_eq!(a["status"], "dnd");
+    assert!(a["activity"].is_null());
+
+    let (_, me) = h.call("PUT", "/v1/me/social", Some(&alex), Some(json!({ "appearOffline": true }))).await;
+    assert_eq!(me, json!({ "share": "status", "appearOffline": true, "requests": "everyone", "dnd": true }));
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    let a = friend(&list, ALEX).unwrap();
+    assert_eq!(a["status"], "offline");
+    assert!(a["activity"].is_null());
+
+    let (status, _) = h.call("POST", "/v1/heartbeat", Some(&alex), Some(json!({ "activity": { "version": "26.3", "mode": "lan" } }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = h.call("POST", "/v1/heartbeat", Some(&alex), Some(json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "older clients send an empty object");
+}
+
+#[tokio::test]
+async fn blocking_cuts_everything_off() {
+    let h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    befriend(&h, &alex, &bob, "Bob", BOB, ALEX).await;
+    h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("1.21.11", "multiplayer", Some("mc.example")))).await;
+
+    let (status, _) = h.call("PUT", &format!("/v1/blocks/{ALEX}"), Some(&bob), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, list) = h.call("GET", "/v1/friends", Some(&alex), None).await;
+    assert!(friend(&list, BOB).is_none());
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    assert!(friend(&list, ALEX).is_none() && !list.to_string().contains("mc.example"));
+    assert_eq!(list["blocked"][0]["uuid"], ALEX);
+
+    // Alex sees the usual reply, but Bob never gets the request.
+    let (status, sent) = h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "Bob" }))).await;
+    assert_eq!((status, sent["status"].clone()), (StatusCode::OK, json!("sent")));
+    let (_, list) = h.call("GET", "/v1/friends", Some(&bob), None).await;
+    assert!(list["incoming"].as_array().unwrap().is_empty());
+    let (_, events) = h.call("GET", "/v1/events?after=0", Some(&bob), None).await;
+    assert!(events["events"].as_array().unwrap().iter().all(|e| e["from"]["uuid"] != ALEX));
+    let (status, _) = h.call("POST", "/v1/friends/requests", Some(&bob), Some(json!({ "target": "Alex" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "the blocker has to unblock first");
+
+    let (status, _) = h.call("DELETE", &format!("/v1/blocks/{ALEX}"), Some(&bob), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, sent) = h.call("POST", "/v1/friends/requests", Some(&bob), Some(json!({ "target": "Alex" }))).await;
+    assert_eq!(sent["status"], "sent");
+}
+
+#[tokio::test]
+async fn notifications_are_long_polled_and_private() {
+    let h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    let cara = h.login("Cara", CARA).await;
+    let (_, start) = h.call("GET", "/v1/events", Some(&bob), None).await;
+    assert!(start["events"].as_array().unwrap().is_empty(), "a fresh client gets a cursor, not a backlog");
+    let cursor = start["cursor"].as_u64().unwrap();
+
+    // Bob waits; Alex's request should wake him well before the wait runs out.
+    let waiter = {
+        let app = h.app.clone();
+        let bob = bob.clone();
+        tokio::spawn(async move {
+            let req = Request::get(format!("/v1/events?after={cursor}&wait=10")).header(header::AUTHORIZATION, format!("Bearer {bob}")).body(Body::empty()).unwrap();
+            let res = app.oneshot(req).await.unwrap();
+            serde_json::from_slice::<Value>(&res.into_body().collect().await.unwrap().to_bytes()).unwrap()
+        })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let started = std::time::Instant::now();
+    h.call("POST", "/v1/friends/requests", Some(&alex), Some(json!({ "target": "Bob" }))).await;
+    let got = waiter.await.unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert_eq!(got["events"][0]["type"], "request");
+    assert_eq!(got["events"][0]["from"]["name"], "Alex");
+    let cursor = got["cursor"].as_u64().unwrap();
+
+    let (_, start) = h.call("GET", "/v1/events", Some(&alex), None).await;
+    let alex_cursor = start["cursor"].as_u64().unwrap();
+    h.call("POST", &format!("/v1/friends/requests/{ALEX}/accept"), Some(&bob), None).await;
+    let (_, got) = h.call("GET", &format!("/v1/events?after={alex_cursor}"), Some(&alex), None).await;
+    assert_eq!(got["events"][0]["type"], "accepted");
+
+    h.call("PUT", "/v1/me/social", Some(&bob), Some(json!({ "dnd": true }))).await;
+    h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "menu", None))).await;
+    h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("mc.example")))).await;
+    h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("mc.example")))).await;
+    let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
+    let kinds: Vec<&str> = got["events"].as_array().unwrap().iter().map(|e| e["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["online", "server"], "DND still queues events; the client decides not to toast");
+    assert_eq!(got["events"][1]["server"], "mc.example");
+    let (_, other) = h.call("GET", "/v1/events?after=0", Some(&cara), None).await;
+    assert!(other["events"].as_array().unwrap().is_empty(), "non-friends hear nothing");
+
+    // Hidden server: no server event; appear offline: no online event.
+    let cursor = got["cursor"].as_u64().unwrap();
+    h.call("PUT", "/v1/me/social", Some(&alex), Some(json!({ "share": "game" }))).await;
+    h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("secret.example")))).await;
+    let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
+    assert!(!got.to_string().contains("secret.example"));
+    assert!(got["events"].as_array().unwrap().is_empty());
+
+    let (status, _) = h.call("GET", "/v1/events?after=999999&wait=1", Some(&bob), None).await;
+    assert_eq!(status, StatusCode::OK, "a cursor from before a restart is reset, not an error");
+}
+
+#[tokio::test]
+async fn appearing_offline_sends_no_online_toast() {
+    let h = harness(|_| {}).await;
+    let alex = h.login("Alex", ALEX).await;
+    let bob = h.login("Bob", BOB).await;
+    befriend(&h, &alex, &bob, "Bob", BOB, ALEX).await;
+    let (_, start) = h.call("GET", "/v1/events", Some(&bob), None).await;
+    let cursor = start["cursor"].as_u64().unwrap();
+    h.call("PUT", "/v1/me/social", Some(&alex), Some(json!({ "appearOffline": true }))).await;
+    h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("1.8.9", "multiplayer", Some("hypixel.net")))).await;
+    let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
+    assert!(got["events"].as_array().unwrap().is_empty());
+    // Turning it off while in game announces the player once.
+    h.call("PUT", "/v1/me/social", Some(&alex), Some(json!({ "appearOffline": false }))).await;
+    let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
+    assert_eq!(got["events"].as_array().unwrap().len(), 1);
+    assert_eq!(got["events"][0]["type"], "online");
+}
