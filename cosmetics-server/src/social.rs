@@ -438,9 +438,18 @@ pub async fn put_settings(State(state): State<Shared>, headers: HeaderMap, Json(
         state.social.push(&user.uuid, &user.uuid, json!({ "type": "settings", "settings": new.json() }));
     }
     let presence = lock(&state.presence).get(&user.uuid).cloned();
-    if !visible(presence.as_ref(), window, &old) && visible(presence.as_ref(), window, &new) {
+    let (was, now) = (visible(presence.as_ref(), window, &old), visible(presence.as_ref(), window, &new));
+    let event = if !was && now {
+        Some(json!({ "type": "online", "from": person(&user.uuid, &user.name), "dnd": new.dnd }))
+    } else if was && (!now || old.share != new.share || old.dnd != new.dnd) {
+        // Silent refresh so open friend lists drop a hidden server or offline player right away.
+        Some(json!({ "type": "presence", "from": person(&user.uuid, &user.name) }))
+    } else {
+        None
+    };
+    if let Some(event) = event {
         for friend in friend_ids(&conn, &user.uuid)? {
-            state.social.push(&friend, &user.uuid, json!({ "type": "online", "from": person(&user.uuid, &user.name), "dnd": new.dnd }));
+            state.social.push(&friend, &user.uuid, event.clone());
         }
     }
     Ok(Json(new.json()))

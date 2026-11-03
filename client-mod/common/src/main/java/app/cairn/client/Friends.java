@@ -264,6 +264,7 @@ public final class Friends {
             String title, text;
             // DND or privacy changed from the launcher or another game; apply before toasting the rest.
             if (type.equals("settings")) { applySettings(Json.object(event.get("settings"))); continue; }
+            if (type.equals("presence")) { changed = true; continue; }
             if (type.equals("online")) { title = name; text = "is now online"; }
             else if (type.equals("server")) {
                 String server = Json.string(event.get("server"), null);

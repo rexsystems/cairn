@@ -86,6 +86,7 @@ public final class FriendsTest {
         check(friends.dnd() && friends.toasts().isEmpty(), "DND turned on from the launcher applies before the next toast");
         friends.handle(Json.list(Json.parse("[{\"type\":\"settings\",\"settings\":{\"dnd\":false}}]")));
         check(!friends.dnd(), "DND turned off from the launcher");
+        check(friends.handle(Json.list(Json.parse("[{\"type\":\"presence\",\"from\":{\"name\":\"Bob\"}}]"))) && friends.toasts().isEmpty(), "A privacy change refreshes the list silently");
         friends.toast("request", true);
 
         friends.handle(Json.list(Json.parse("[{\"type\":\"request\",\"from\":{\"name\":\"" + new String(new char[60]).replace('\0', 'W') + "\"}},{\"type\":\"online\",\"from\":{\"name\":\"Bob\"}}]")));

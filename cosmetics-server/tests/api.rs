@@ -558,7 +558,8 @@ async fn notifications_are_long_polled_and_private() {
     h.call("POST", "/v1/heartbeat", Some(&alex), Some(beat("26.3", "multiplayer", Some("secret.example")))).await;
     let (_, got) = h.call("GET", &format!("/v1/events?after={cursor}"), Some(&bob), None).await;
     assert!(!got.to_string().contains("secret.example"));
-    assert!(got["events"].as_array().unwrap().is_empty());
+    let kinds: Vec<&str> = got["events"].as_array().unwrap().iter().map(|e| e["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["presence"], "only a silent list refresh for hiding the server");
 
     let (status, _) = h.call("GET", "/v1/events?after=999999&wait=1", Some(&bob), None).await;
     assert_eq!(status, StatusCode::OK, "a cursor from before a restart is reset, not an error");
