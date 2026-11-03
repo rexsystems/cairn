@@ -3,6 +3,7 @@ import { api, type Loader, type LoaderVersion, type McVersion } from "../api";
 import { useStore } from "../store";
 import { Modal, Select, Switch } from "../components/ui";
 import { loaderLabel } from "../format";
+import { cairnClientSupported } from "../lib/cairnClient";
 
 const LOADERS: { id: Loader; note: string }[] = [
   { id: "vanilla", note: "No mods" },
@@ -25,10 +26,12 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [memory, setMemory] = useState(settings?.defaultMemoryMb ?? 4096);
   const [useHorizon, setUseHorizon] = useState(false);
+  const [useCairn, setUseCairn] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const horizonOk = loader === "vanilla" && mc === "26.3";
+  const cairnOk = cairnClientSupported(loader, mc);
   useEffect(() => {
     if (!horizonOk) setUseHorizon(false);
   }, [horizonOk]);
@@ -72,6 +75,7 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
         loaderVersion: loader === "vanilla" ? null : loaderVersion || null,
         memoryMb: memory,
         useHorizon: horizonOk && useHorizon,
+        useCairn: cairnOk && useCairn,
       });
       await refreshInstances();
       onClose();
@@ -150,6 +154,12 @@ export function CreateInstance({ onClose }: { onClose: () => void }) {
         <small>Most modpacks run well with 4 to 6 GB. You can change this later.</small>
       </label>
 
+      {cairnOk && (
+        <div className="field">
+          <Switch checked={useCairn} onChange={setUseCairn} label="Cairn Client" />
+          <small>Adds the Cairn HUD, zoom and module menu. Right Shift opens it in game. You can turn it off later in Options.</small>
+        </div>
+      )}
       {horizonOk && (
         <div className="field">
           <Switch checked={useHorizon} onChange={setUseHorizon} label="Play with Horizon" />

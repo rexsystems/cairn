@@ -75,7 +75,7 @@ pub async fn prepare(paths: &Paths, settings: &Settings, inst: &mut Instance, ta
         _ => java::ensure(paths, settings, major, task).await?,
     };
     let launch_version = match &inst.launch_version {
-        Some(v) if paths.version_json(v).exists() => v.clone(),
+        Some(v) if paths.version_json(v).exists() && !crate::cairn_client::stale_profile(inst, v) => v.clone(),
         _ => loaders::install(paths, &inst.loader, &inst.mc_version, inst.loader_version.as_deref(), Some(&java_path), task).await?,
     };
     if inst.launch_version.as_deref() != Some(&launch_version) {

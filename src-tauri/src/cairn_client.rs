@@ -12,22 +12,49 @@ pub fn artifact(inst: &Instance) -> Option<&'static [u8]> {
         ("forge", "1.8") => Some(include_bytes!("../client-mods/cairn-client-forge-1.8.jar")),
         ("forge", "1.8.8") => Some(include_bytes!("../client-mods/cairn-client-forge-1.8.8.jar")),
         ("forge", "1.8.9") => Some(include_bytes!("../client-mods/cairn-client-forge-1.8.9.jar")),
+        ("fabric", "1.16.5") => Some(include_bytes!("../client-mods/cairn-client-fabric-1.16.5.jar")),
         ("fabric", "1.20.1") => Some(include_bytes!("../client-mods/cairn-client-fabric-1.20.1.jar")),
+        ("fabric", "1.20.4") => Some(include_bytes!("../client-mods/cairn-client-fabric-1.20.4.jar")),
         ("fabric", "1.21.1") => Some(include_bytes!("../client-mods/cairn-client-fabric-1.21.1.jar")),
+        ("fabric", "1.21.11") => Some(include_bytes!("../client-mods/cairn-client-fabric-1.21.11.jar")),
         ("fabric", "26.3") => Some(include_bytes!("../client-mods/cairn-client-fabric-26.3.jar")),
         _ => None,
     }
 }
 
+/// The bundled jar's own fabricloader range, so the launcher and the mod never disagree.
+fn loader_floor(inst: &Instance) -> Option<String> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(artifact(inst)?)).ok()?;
+    let mut text = String::new();
+    zip.by_name("fabric.mod.json").ok()?.read_to_string(&mut text).ok()?;
+    let metadata: serde_json::Value = serde_json::from_str(&text).ok()?;
+    metadata["depends"]["fabricloader"].as_str().map(str::to_string)
+}
+
+fn loader_too_old(inst: &Instance, version: &str) -> bool {
+    loader_floor(inst).is_some_and(|floor| crate::versioning::fabric_any(&[floor], version) == Some(false))
+}
+
+/// Loader version inside a cached Fabric profile id such as "fabric-loader-0.16.10-1.21.1".
+fn profile_loader<'a>(inst: &Instance, launch_version: &'a str) -> Option<&'a str> {
+    launch_version.strip_prefix("fabric-loader-")?.strip_suffix(inst.mc_version.as_str())?.strip_suffix('-')
+}
+
+/// An unpinned instance keeps its first Fabric profile forever, which can predate the
+/// loader Cairn Client needs; such a profile is reinstalled with the current loader.
+pub fn stale_profile(inst: &Instance, launch_version: &str) -> bool {
+    inst.use_cairn && !inst.use_horizon && inst.loader == "fabric" && inst.loader_version.as_deref().is_none_or(str::is_empty)
+        && profile_loader(inst, launch_version).is_some_and(|version| loader_too_old(inst, version))
+}
+
 pub fn validate(inst: &Instance) -> Result<()> {
     if inst.use_cairn && artifact(inst).is_none() {
-        bail!("Cairn Client has builds for Forge 1.8, 1.8.8, 1.8.9 and Fabric 1.20.1, 1.21.1, 26.3. Disable Cairn Client before changing to this version or loader.");
+        bail!("Cairn Client has builds for Forge 1.8, 1.8.8, 1.8.9 and Fabric 1.16.5, 1.20.1, 1.20.4, 1.21.1, 1.21.11, 26.3. Disable Cairn Client before changing to this version or loader.");
     }
     if inst.use_cairn && inst.loader == "fabric" {
-        if let Some(version) = &inst.loader_version {
-            if crate::versioning::fabric_any(&[">=0.20.1".into()], version) == Some(false) {
-                bail!("Cairn Client needs Fabric Loader 0.20.1 or newer. Update the loader in Options first.");
-            }
+        if let Some(version) = inst.loader_version.as_deref().filter(|version| loader_too_old(inst, version)) {
+            let floor = loader_floor(inst).unwrap_or_default();
+            bail!("Cairn Client for Minecraft {} needs Fabric Loader {floor}, but this instance is pinned to {version}. Pick a newer loader in Options first.", inst.mc_version);
         }
     }
     Ok(())
@@ -136,8 +163,20 @@ mod tests {
     }
     #[test]
     fn bundled_builds_match_their_game_versions_and_use_the_normal_font() {
-        for (loader, version, major) in [("forge", "1.8", 52), ("forge", "1.8.8", 52), ("forge", "1.8.9", 52), ("fabric", "1.20.1", 61), ("fabric", "1.21.1", 65), ("fabric", "26.3", 69)] {
+        for (loader, version, major) in [
+            ("forge", "1.8", 52),
+            ("forge", "1.8.8", 52),
+            ("forge", "1.8.9", 52),
+            ("fabric", "1.16.5", 52),
+            ("fabric", "1.20.1", 61),
+            ("fabric", "1.20.4", 61),
+            ("fabric", "1.21.1", 65),
+            ("fabric", "1.21.11", 65),
+            ("fabric", "26.3", 69),
+        ] {
             let inst = Instance { loader: loader.into(), mc_version: version.into(), use_cairn: true, ..Default::default() };
+            let listed = include_str!("../../src/lib/cairnClient.ts").lines().find(|line| line.trim_start().starts_with(&format!("{loader}:"))).unwrap_or_default();
+            assert!(listed.contains(&format!("\"{version}\"")), "the instance options do not offer {loader} {version}");
             let mut zip = zip::ZipArchive::new(std::io::Cursor::new(artifact(&inst).unwrap())).unwrap();
             let mut header = [0; 8];
             zip.by_name("app/cairn/client/CairnClient.class").unwrap().read_exact(&mut header).unwrap();
@@ -159,6 +198,27 @@ mod tests {
         assert!(validate(&inst).is_err());
         inst.loader_version = Some("0.20.1".into());
         assert!(validate(&inst).is_ok());
+        // Older game versions accept the loaders that were current for them.
+        inst.mc_version = "1.20.1".into();
+        inst.loader_version = Some("0.14.21".into());
+        assert!(validate(&inst).is_ok());
+        inst.loader_version = Some("0.14.9".into());
+        assert!(validate(&inst).is_err());
+    }
+    #[test]
+    fn reinstalls_an_unpinned_profile_with_a_loader_that_is_too_old() {
+        let mut inst = instance();
+        assert!(stale_profile(&inst, "fabric-loader-0.19.2-26.3"));
+        assert!(!stale_profile(&inst, "fabric-loader-0.20.1-26.3"));
+        assert!(!stale_profile(&inst, "26.3"));
+        inst.mc_version = "1.21.11".into();
+        assert!(!stale_profile(&inst, "fabric-loader-0.18.1-1.21.11"));
+        assert!(stale_profile(&inst, "fabric-loader-0.16.9-1.21.11"), "each jar carries its own floor");
+        inst.use_cairn = false;
+        assert!(!stale_profile(&inst, "fabric-loader-0.10.0-1.21.11"));
+        inst.use_cairn = true;
+        inst.loader_version = Some("0.10.0".into());
+        assert!(!stale_profile(&inst, "fabric-loader-0.10.0-1.21.11"), "pinned loaders are reported by validate instead");
     }
     #[test]
     fn prelaunch_checks_use_the_next_launch_mode_without_changing_files() {
