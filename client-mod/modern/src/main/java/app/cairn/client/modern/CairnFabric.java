@@ -13,6 +13,23 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import java.util.Locale;
+import app.cairn.client.Cosmetics;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.core.ClientAsset;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.LightCoordsUtil;
+import net.minecraft.world.entity.Avatar;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.PlayerSkin;
+import net.minecraft.world.phys.Vec3;
 
 public final class CairnFabric implements ClientModInitializer {
     private static CairnClient client;
@@ -25,6 +42,60 @@ public final class CairnFabric implements ClientModInitializer {
         Component component = TEXT_CACHE.get(value);
         if (component == null) { component = Component.literal(value); TEXT_CACHE.put(value, component); }
         return component;
+    }
+    private static final java.util.Map<String, Identifier> TEXTURES = new java.util.HashMap<String, Identifier>();
+    private static final java.util.Map<Identifier, ClientAsset.ResourceTexture> CAPE_ASSETS = new java.util.HashMap<Identifier, ClientAsset.ResourceTexture>();
+    private static final Component STAFF = Component.literal("STAFF ").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD);
+    /** Uploads cosmetics PNGs lazily on the render thread; a broken image is remembered so it isn't decoded every frame. */
+    private static Identifier texture(String key) {
+        if (client == null || key == null) return null;
+        if (TEXTURES.containsKey(key)) return TEXTURES.get(key);
+        byte[] png = client.cosmetics.texture(key);
+        if (png == null) return null;
+        Identifier id = Identifier.fromNamespaceAndPath("cairn_client", "cosmetics/" + key);
+        try {
+            NativeImage image = NativeImage.read(png);
+            Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(id::toString, image));
+        } catch (java.io.IOException | RuntimeException e) {
+            System.err.println("[Cairn Client] Could not upload " + key + ": " + e);
+            id = null;
+        }
+        TEXTURES.put(key, id);
+        return id;
+    }
+    private static Cosmetics.Look look(Entity entity) { return client == null || entity == null ? null : client.cosmetics.look(entity.getUUID().toString()); }
+    public static void dress(Avatar entity, AvatarRenderState state) {
+        if (!(entity instanceof AbstractClientPlayer)) return;
+        Cosmetics.Look look = look(entity);
+        if (look == null) return;
+        Identifier cape = texture(client.cosmetics.capeTexture(look));
+        if (cape != null && state.skin != null) {
+            PlayerSkin skin = state.skin;
+            state.skin = new PlayerSkin(skin.body(), CAPE_ASSETS.computeIfAbsent(cape, id -> new ClientAsset.ResourceTexture(id, id)), skin.elytra(), skin.model(), skin.secure());
+        }
+        if (look.staff() && state.nameTag != null) state.nameTag = STAFF.copy().append(state.nameTag);
+    }
+    /** Mirrors vanilla's name tag transform so the logo badge sits just left of the name. */
+    public static void badge(AvatarRenderState state, PoseStack pose, SubmitNodeCollector collector, CameraRenderState camera) {
+        Minecraft mc = Minecraft.getInstance();
+        if (client == null || state.nameTag == null || state.nameTagAttachment == null || mc.level == null) return;
+        Identifier icon = texture(client.cosmetics.badgeTexture(look(mc.level.getEntity(state.id))));
+        if (icon == null) return;
+        float x0 = -mc.font.width(state.nameTag) / 2f - 11, x1 = x0 + 9, y0 = (state.showExtraEars ? -10 : 0) - .5f, y1 = y0 + 9;
+        int light = LightCoordsUtil.lightCoordsWithEmission(state.lightCoords, 2);
+        Vec3 at = state.nameTagAttachment;
+        pose.pushPose();
+        if (state.scoreText != null) pose.translate(0, 9 * 1.15f * .025f, 0);
+        pose.translate(at.x, at.y + .5, at.z);
+        pose.rotate(camera.orientation);
+        pose.scale(.025f, -.025f, .025f);
+        collector.submitCustomGeometry(pose, RenderTypes.text(icon), (matrix, buffer) -> {
+            buffer.addVertex(matrix, x0, y0, 0).setColor(-1).setUv(0, 0).setLight(light);
+            buffer.addVertex(matrix, x0, y1, 0).setColor(-1).setUv(0, 1).setLight(light);
+            buffer.addVertex(matrix, x1, y1, 0).setColor(-1).setUv(1, 1).setLight(light);
+            buffer.addVertex(matrix, x1, y0, 0).setColor(-1).setUv(1, 0).setLight(light);
+        });
+        pose.popPose();
     }
     public static float zoomFactor() {
         return client == null ? 1 : client.zoomFactor(zooming());
@@ -52,6 +123,9 @@ public final class CairnFabric implements ClientModInitializer {
         if (client == null) return;
         Minecraft mc = Minecraft.getInstance();
         mc.options.smoothCamera = client.smoothCamera(zooming(), mc.options.smoothCamera);
+        client.cosmetics.account(mc.getUser().getName(), mc.getUser().getProfileId().toString(), mc.getUser().getAccessToken());
+        if (mc.level != null && ticks % 20 == 0) for (AbstractClientPlayer player : mc.level.players()) look(player);
+        client.cosmetics.tick();
         if (mc.player == null) { sprint = false; return; }
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.gui.screen() == null) {
@@ -107,6 +181,10 @@ public final class CairnFabric implements ClientModInitializer {
                 graphics.pose().popMatrix();
             }
             public int textWidth(String value) { return Minecraft.getInstance().font.width(CairnFabric.text(value)); }
+            public void image(String key, int x, int y, int width, int height, float u0, float v0, float u1, float v1) {
+                Identifier id = texture(key);
+                if (id != null) graphics.blit(id, x, y, x + width, y + height, u0, u1, v0, v1);
+            }
         };
     }
     public static void hud(GuiGraphicsExtractor graphics) {
