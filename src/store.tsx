@@ -11,6 +11,7 @@ export type Route =
   | { name: "discover"; instanceId?: string; projectType?: string; projectId?: string; query?: string }
   | { name: "accounts" }
   | { name: "friends" }
+  | { name: "cosmetics" }
   | { name: "settings" };
 
 interface Toast { id: number; text: string; error?: boolean }

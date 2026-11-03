@@ -9,6 +9,7 @@ declare module "pixelarticons/react/*" {
   export const Coffee: Icon;
   export const Compass: Icon;
   export const Copy: Icon;
+  export const Crown: Icon;
   export const Download: Icon;
   export const ExternalLink: Icon;
   export const Folder: Icon;

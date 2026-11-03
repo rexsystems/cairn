@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "capes": [
+    {
+      "id": "classic",
+      "name": "Cairn Classic",
+      "frames": 1,
+      "frameMs": 0,
+      "role": null
+    },
+    {
+      "id": "moss",
+      "name": "Moss",
+      "frames": 1,
+      "frameMs": 0,
+      "role": null
+    },
+    {
+      "id": "ember",
+      "name": "Ember",
+      "frames": 1,
+      "frameMs": 0,
+      "role": null
+    },
+    {
+      "id": "glacier",
+      "name": "Glacier",
+      "frames": 1,
+      "frameMs": 0,
+      "role": null
+    },
+    {
+      "id": "midnight",
+      "name": "Midnight",
+      "frames": 1,
+      "frameMs": 0,
+      "role": null
+    },
+    {
+      "id": "staff",
+      "name": "Cairn Staff",
+      "frames": 1,
+      "frameMs": 0,
+      "role": "staff"
+    },
+    {
+      "id": "pulse",
+      "name": "Pulse",
+      "frames": 16,
+      "frameMs": 100,
+      "role": null
+    },
+    {
+      "id": "spectrum",
+      "name": "Spectrum",
+      "frames": 20,
+      "frameMs": 80,
+      "role": null
+    },
+    {
+      "id": "flow",
+      "name": "Flow",
+      "frames": 16,
+      "frameMs": 90,
+      "role": null
+    }
+  ],
+  "badges": [
+    {
+      "id": "classic",
+      "name": "Classic",
+      "role": null
+    },
+    {
+      "id": "moss",
+      "name": "Moss",
+      "role": null
+    },
+    {
+      "id": "ember",
+      "name": "Ember",
+      "role": null
+    },
+    {
+      "id": "glacier",
+      "name": "Glacier",
+      "role": null
+    },
+    {
+      "id": "amethyst",
+      "name": "Amethyst",
+      "role": null
+    },
+    {
+      "id": "rose",
+      "name": "Rose",
+      "role": null
+    },
+    {
+      "id": "gold",
+      "name": "Staff gold",
+      "role": "staff"
+    }
+  ]
+}

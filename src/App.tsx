@@ -20,6 +20,7 @@ import { DiscordJoin } from "./components/DiscordJoin";
 const Discover = lazy(() => import("./pages/Discover").then((m) => ({ default: m.Discover })));
 const Accounts = lazy(() => import("./pages/Accounts").then((m) => ({ default: m.Accounts })));
 const Friends = lazy(() => import("./pages/Friends").then((m) => ({ default: m.Friends })));
+const Cosmetics = lazy(() => import("./pages/Cosmetics").then((m) => ({ default: m.Cosmetics })));
 const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })));
 
 const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
@@ -28,6 +29,7 @@ const NAV: { name: Route["name"]; label: string; icon: IconName }[] = [
   { name: "discover", label: "Discover", icon: "discover" },
   { name: "friends", label: "Friends", icon: "friends" },
   { name: "accounts", label: "Accounts", icon: "user" },
+  { name: "cosmetics", label: "Cosmetics", icon: "crown" },
   { name: "settings", label: "Settings", icon: "settings" },
 ];
 
@@ -172,6 +174,7 @@ function Pages() {
           {route.name === "discover" && <Discover instanceId={route.instanceId} initialType={route.projectType} openProject={route.projectId} initialQuery={route.query} />}
           {route.name === "friends" && <Friends />}
           {route.name === "accounts" && <Accounts />}
+          {route.name === "cosmetics" && <Cosmetics />}
           {route.name === "settings" && <SettingsPage />}
           </Suspense>
         </div>

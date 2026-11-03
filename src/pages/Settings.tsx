@@ -67,6 +67,7 @@ export function SettingsPage() {
     || formWithEnv.telemetryEnabled !== settings.telemetryEnabled
     || formWithEnv.crashReportsEnabled !== settings.crashReportsEnabled
     || (formWithEnv.curseforgeApiKey ?? "") !== (settings.curseforgeApiKey ?? "")
+    || (formWithEnv.cosmeticsUrl ?? "") !== (settings.cosmeticsUrl ?? "")
     || JSON.stringify(formWithEnv.gameEnv) !== JSON.stringify(settings.gameEnv ?? {})
   );
 
@@ -160,6 +161,25 @@ export function SettingsPage() {
             />
           </label>
           <small className="muted">Used to import CurseForge modpack zips. Official builds include a key; one set here takes priority. Get your own at console.curseforge.com.</small>
+          <label className="field">
+            <span>Cosmetics server</span>
+            <input
+              className="input mono"
+              type="url"
+              autoComplete="off"
+              spellCheck={false}
+              value={form.cosmeticsUrl ?? ""}
+              placeholder="https://cosmetics.example.com"
+              onChange={(e) => set("cosmeticsUrl", e.target.value)}
+              onBlur={() => {
+                if (!settings) return;
+                if ((form.cosmeticsUrl ?? "") !== (settings.cosmeticsUrl ?? "")) {
+                  void persist({ ...form, cosmeticsUrl: form.cosmeticsUrl ?? "" }, true);
+                }
+              }}
+            />
+          </label>
+          <small className="muted">Capes, badges and the online count come from this server, which you host yourself (see cosmetics-server/README.md). Leave it empty to turn cosmetics off. Cairn Client in your games uses the same server.</small>
         </section>
 
         <section className="panel settings-section" aria-labelledby="s-game">

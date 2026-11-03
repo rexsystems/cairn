@@ -56,6 +56,9 @@ pub struct Settings {
     /// CurseForge Core API key for importing CF modpack zips (Settings → or CAIRN_CURSEFORGE_API_KEY).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub curseforge_api_key: String,
+    /// Self-hosted cosmetics server (capes, badges, player count). Empty means off unless the build sets one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cosmetics_url: String,
 }
 
 impl Default for Settings {
@@ -84,6 +87,7 @@ impl Default for Settings {
             crash_reports_enabled: false,
             privacy_prompt_answered: false,
             curseforge_api_key: String::new(),
+            cosmetics_url: String::new(),
         }
     }
 }

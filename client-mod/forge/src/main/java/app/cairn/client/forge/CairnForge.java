@@ -31,6 +31,10 @@ public final class CairnForge {
     private boolean sprint;
     private boolean sprintWasDown;
     private int ticks;
+    private final java.util.Map<String, net.minecraft.util.ResourceLocation> textures = new java.util.HashMap<String, net.minecraft.util.ResourceLocation>();
+    // Mojang capes we replaced, restored when a player unequips their Cairn cape.
+    private final java.util.Map<net.minecraft.client.network.NetworkPlayerInfo, net.minecraft.util.ResourceLocation> mojangCapes = new java.util.WeakHashMap<net.minecraft.client.network.NetworkPlayerInfo, net.minecraft.util.ResourceLocation>();
+    private java.lang.reflect.Field capeField;
 
     @Mod.EventHandler public void init(FMLInitializationEvent event) {
         if ("false".equals(System.getProperty("cairn.client.enabled"))) return;
@@ -47,7 +51,11 @@ public final class CairnForge {
         if (mc.currentScreen instanceof net.minecraft.client.gui.GuiMainMenu && Keyboard.getEventKeyState() && Keyboard.getEventKey() == menu.getKeyCode()) mc.displayGuiScreen(new Menu());
     }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || mc.thePlayer == null) return;
+        if (event.phase != TickEvent.Phase.END) return;
+        client.cosmetics.account(mc.getSession().getUsername(), mc.getSession().getPlayerID(), mc.getSession().getToken());
+        client.cosmetics.tick();
+        if (mc.thePlayer == null) return;
+        if (mc.theWorld != null && mc.getNetHandler() != null) for (Object value : mc.theWorld.playerEntities) capes((net.minecraft.entity.player.EntityPlayer) value);
         mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);
         boolean left = Mouse.isButtonDown(0), right = Mouse.isButtonDown(1);
         boolean down = mc.gameSettings.keyBindSprint.isKeyDown();
@@ -88,6 +96,77 @@ public final class CairnForge {
         client.value(Module.EFFECTS, effects.length() == 0 ? "No effects" : effects.toString());
         }
     }
+    /** Uploads cosmetics PNGs lazily on the render thread; a broken image is remembered so it isn't decoded every frame. */
+    private net.minecraft.util.ResourceLocation texture(String key) {
+        if (key == null) return null;
+        if (textures.containsKey(key)) return textures.get(key);
+        byte[] png = client.cosmetics.texture(key);
+        if (png == null) return null;
+        net.minecraft.util.ResourceLocation id = new net.minecraft.util.ResourceLocation("cairn_client", "cosmetics/" + key);
+        try {
+            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+            if (image == null) throw new IOException("not a PNG");
+            mc.getTextureManager().loadTexture(id, new net.minecraft.client.renderer.texture.DynamicTexture(image));
+        } catch (IOException | RuntimeException e) {
+            System.err.println("[Cairn Client] Could not upload " + key + ": " + e);
+            id = null;
+        }
+        textures.put(key, id);
+        return id;
+    }
+    private app.cairn.client.Cosmetics.Look look(net.minecraft.entity.Entity entity) {
+        return entity instanceof net.minecraft.client.entity.AbstractClientPlayer ? client.cosmetics.look(entity.getUniqueID().toString()) : null;
+    }
+    /** 1.8 has no cape hook, so the cape slot on the tab-list entry is swapped every tick (animated capes change frame). */
+    private void capes(net.minecraft.entity.player.EntityPlayer player) {
+        net.minecraft.client.network.NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(player.getUniqueID());
+        if (info == null) return;
+        try {
+            if (capeField == null) capeField = net.minecraftforge.fml.relauncher.ReflectionHelper.findField(net.minecraft.client.network.NetworkPlayerInfo.class, "locationCape", "field_178862_f");
+            app.cairn.client.Cosmetics.Look look = look(player);
+            net.minecraft.util.ResourceLocation cape = look == null ? null : texture(client.cosmetics.capeTexture(look));
+            net.minecraft.util.ResourceLocation current = (net.minecraft.util.ResourceLocation) capeField.get(info);
+            boolean ours = current != null && "cairn_client".equals(current.getResourceDomain());
+            if (cape != null) {
+                if (!ours) mojangCapes.put(info, current);
+                if (cape != current) capeField.set(info, cape);
+            } else if (ours) capeField.set(info, mojangCapes.remove(info));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            capeField = null;
+        }
+    }
+    /** Mirrors Render.renderLivingLabel so the logo badge sits just left of the vanilla name. */
+    @SubscribeEvent public void badge(net.minecraftforge.client.event.RenderLivingEvent.Specials.Post event) {
+        net.minecraft.entity.EntityLivingBase entity = event.entity;
+        net.minecraft.client.renderer.entity.RenderManager manager = mc.getRenderManager();
+        if (entity == manager.livingPlayer || entity.isInvisibleToPlayer(mc.thePlayer) || entity.riddenByEntity != null || !Minecraft.isGuiEnabled()) return;
+        if (entity.getDistanceSqToEntity(manager.livingPlayer) > (entity.isSneaking() ? 32 * 32 : 64 * 64)) return;
+        net.minecraft.util.ResourceLocation icon = texture(client.cosmetics.badgeTexture(look(entity)));
+        if (icon == null) return;
+        String name = entity.getDisplayName().getFormattedText();
+        float x0 = -mc.fontRendererObj.getStringWidth(name) / 2f - 11, x1 = x0 + 9, y0 = ("deadmau5".equals(name) ? -10 : 0) - .5f, y1 = y0 + 9;
+        float scale = 0.016666668F * 1.6F;
+        net.minecraft.client.renderer.GlStateManager.pushMatrix();
+        net.minecraft.client.renderer.GlStateManager.translate((float) event.x, (float) event.y + entity.height + 0.5F, (float) event.z);
+        net.minecraft.client.renderer.GlStateManager.rotate(-manager.playerViewY, 0, 1, 0);
+        net.minecraft.client.renderer.GlStateManager.rotate(manager.playerViewX, 1, 0, 0);
+        net.minecraft.client.renderer.GlStateManager.scale(-scale, -scale, scale);
+        net.minecraft.client.renderer.GlStateManager.disableLighting();
+        net.minecraft.client.renderer.GlStateManager.enableBlend();
+        net.minecraft.client.renderer.GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        net.minecraft.client.renderer.GlStateManager.color(1, 1, 1, 1);
+        mc.getTextureManager().bindTexture(icon);
+        // Immediate mode: WorldRenderer's vertex API differs between 1.8 and 1.8.8+.
+        org.lwjgl.opengl.GL11.glBegin(org.lwjgl.opengl.GL11.GL_QUADS);
+        org.lwjgl.opengl.GL11.glTexCoord2f(0, 0); org.lwjgl.opengl.GL11.glVertex3f(x0, y0, 0);
+        org.lwjgl.opengl.GL11.glTexCoord2f(0, 1); org.lwjgl.opengl.GL11.glVertex3f(x0, y1, 0);
+        org.lwjgl.opengl.GL11.glTexCoord2f(1, 1); org.lwjgl.opengl.GL11.glVertex3f(x1, y1, 0);
+        org.lwjgl.opengl.GL11.glTexCoord2f(1, 0); org.lwjgl.opengl.GL11.glVertex3f(x1, y0, 0);
+        org.lwjgl.opengl.GL11.glEnd();
+        net.minecraft.client.renderer.GlStateManager.enableLighting();
+        net.minecraft.client.renderer.GlStateManager.disableBlend();
+        net.minecraft.client.renderer.GlStateManager.popMatrix();
+    }
     @SubscribeEvent public void fov(FOVUpdateEvent event) {
         event.newfov /= client.zoomFactor(zooming());
     }
@@ -108,6 +187,16 @@ public final class CairnForge {
             net.minecraft.client.renderer.GlStateManager.popMatrix();
         }
         public int textWidth(String text) { return mc.fontRendererObj.getStringWidth(text); }
+        public void image(String key, int x, int y, int width, int height, float u0, float v0, float u1, float v1) {
+            net.minecraft.util.ResourceLocation id = texture(key);
+            if (id == null) return;
+            // This blit takes whole texels, so normalized UVs become a virtual texture size.
+            int textureWidth = Math.round(width / (u1 - u0)), textureHeight = Math.round(height / (v1 - v0));
+            net.minecraft.client.renderer.GlStateManager.color(1, 1, 1, 1);
+            net.minecraft.client.renderer.GlStateManager.enableBlend();
+            mc.getTextureManager().bindTexture(id);
+            Gui.drawModalRectWithCustomSizedTexture(x, y, u0 * textureWidth, v0 * textureHeight, width, height, textureWidth, textureHeight);
+        }
     };
     @SubscribeEvent public void render(RenderGameOverlayEvent.Post event) {
         if (event.type != RenderGameOverlayEvent.ElementType.ALL || mc.thePlayer == null || mc.gameSettings.hideGUI || mc.currentScreen instanceof Menu) return;

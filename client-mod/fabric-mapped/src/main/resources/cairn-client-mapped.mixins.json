@@ -1,1 +1,1 @@
-{"required":true,"minVersion":"0.8","package":"app.cairn.client.mapped.mixin","compatibilityLevel":"${mixinLevel}","refmap":"cairn-client-mapped-refmap.json","client":["ClientTickMixin","HudMixin","ZoomMixin","MouseMixin","KeyboardMixin"],"injectors":{"defaultRequire":1}}
+{"required":true,"minVersion":"0.8","package":"app.cairn.client.mapped.mixin","compatibilityLevel":"${mixinLevel}","refmap":"cairn-client-mapped-refmap.json","client":["ClientTickMixin","HudMixin","ZoomMixin","MouseMixin","KeyboardMixin",${cosmeticsMixins}],"injectors":{"defaultRequire":1}}

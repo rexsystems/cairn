@@ -43,6 +43,24 @@ jobs:
       - run: npm run build:web
       - run: cargo test --manifest-path src-tauri/Cargo.toml
 
+  cosmetics-server:
+    name: Cosmetics server
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable @ 2025-08
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: cosmetics-server
+          cache-on-failure: true
+
+      - run: cargo test --locked --manifest-path cosmetics-server/Cargo.toml
+      - run: cargo clippy --locked --all-targets --manifest-path cosmetics-server/Cargo.toml -- -D warnings
+
   # Full installers ship from Release on main. PR builds keep the matrix light.
   build:
     name: Build (${{ matrix.name }})

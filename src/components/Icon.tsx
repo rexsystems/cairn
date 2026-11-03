@@ -7,6 +7,7 @@ import { Close } from "pixelarticons/react/Close";
 import { Coffee } from "pixelarticons/react/Coffee";
 import { Compass } from "pixelarticons/react/Compass";
 import { Copy } from "pixelarticons/react/Copy";
+import { Crown } from "pixelarticons/react/Crown";
 import { Download } from "pixelarticons/react/Download";
 import { ExternalLink } from "pixelarticons/react/ExternalLink";
 import { Folder } from "pixelarticons/react/Folder";
@@ -61,6 +62,7 @@ const art = {
   chevron: ChevronDown,
   back: ArrowLeft,
   box: Box,
+  crown: Crown,
 } satisfies Record<string, SvgIcon>;
 
 export type IconName = keyof typeof art;

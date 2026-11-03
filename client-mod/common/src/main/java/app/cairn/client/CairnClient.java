@@ -11,6 +11,8 @@ public final class CairnClient {
         void text(String text, int x, int y, int color);
         void textScaled(String text, int x, int y, int color, float scale, boolean shadow);
         int textWidth(String text);
+        /** Draws part of a cosmetics texture key; adapters without image support skip it. */
+        default void image(String texture, int x, int y, int width, int height, float u0, float v0, float u1, float v1) { }
     }
     public enum Module {
         FPS("FPS", "Frame counter", "HUD", true, true),
@@ -90,6 +92,7 @@ public final class CairnClient {
     private final SimpleDateFormat[] clocks = { new SimpleDateFormat("h:mm a"), new SimpleDateFormat("h:mm:ss a"), new SimpleDateFormat("HH:mm"), new SimpleDateFormat("HH:mm:ss") };
     private final Date date = new Date();
     private final CairnMenu menu;
+    public final Cosmetics cosmetics;
     private final long sessionStart = System.nanoTime();
     private long nextCounters, nextClock;
     private int leftCps, rightCps;
@@ -124,7 +127,13 @@ public final class CairnClient {
             state.placed = state.x >= 0 && state.y >= 0 && !legacyDefault(module, state.x, state.y);
             if (module == Module.CROSSHAIR) state.placed = Boolean.parseBoolean(config.getProperty("CROSSHAIR.placed", "false"));
         }
+        cosmetics = new Cosmetics(this);
         menu = new CairnMenu(this);
+    }
+    String option(String key, String fallback) { return config.getProperty(key, fallback); }
+    void setOption(String key, String value) {
+        if (value == null) config.remove(key); else config.setProperty(key, value);
+        save();
     }
     // Builds before the flow layout saved these fixed slots for every module, so they mean "never moved".
     private static boolean legacyDefault(Module module, int x, int y) {

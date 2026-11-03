@@ -228,6 +228,7 @@ pub async fn launch(app: AppHandle, paths: Paths, games: Arc<Games>, id: String,
         .current_dir(&dir)
         .env_clear()
         .envs(settings.game_process_env())
+        .env("CAIRN_COSMETICS_URL", crate::cosmetics::server_url(&settings).unwrap_or_default())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(false);
@@ -486,6 +487,7 @@ async fn launch_horizon(
         .env_clear()
         .envs(settings.game_process_env())
         .env("HORIZON_HOME", &game_home)
+        .env("CAIRN_COSMETICS_URL", crate::cosmetics::server_url(&settings).unwrap_or_default())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(false);

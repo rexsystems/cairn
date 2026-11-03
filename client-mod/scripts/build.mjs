@@ -62,7 +62,7 @@ if (target === 'all' || target === 'modern') {
     fs.rmSync(classes, { recursive: true, force: true });
     fs.mkdirSync(classes, { recursive: true });
     run(executable('javac'), ['--release', '25', '-proc:none', '-cp', [mc, ...libs].join(path.delimiter), '-d', classes, ...common, ...sources(path.join(root, 'modern/src/main/java'))]);
-    run(executable('jar'), ['--create', '--date=2026-01-01T00:00:00Z', '--file', path.join(output, 'cairn-client-fabric-26.3.jar'), '-C', classes, '.', '-C', path.join(root, 'modern/src/main/resources'), '.']);
+    run(executable('jar'), ['--create', '--date=2026-01-01T00:00:00Z', '--file', path.join(output, 'cairn-client-fabric-26.3.jar'), '-C', classes, '.', '-C', path.join(root, 'modern/src/main/resources'), '.', '-C', path.join(root, 'common/src/main/resources'), '.']);
 }
 if (target === 'all' || target === 'test') {
     const classes = path.join(root, 'common/build/test-classes');
@@ -70,5 +70,6 @@ if (target === 'all' || target === 'test') {
     run(executable('javac'), ['--release', '8', '-d', classes, ...common, ...sources(path.join(root, 'tests'))]);
     run(executable('java'), ['-cp', classes, 'ClientCoreTest']);
     run(executable('java'), ['-cp', classes, 'app.cairn.client.ClientInteractionTest']);
+    run(executable('java'), ['-cp', [classes, path.join(root, 'common/src/main/resources')].join(path.delimiter), '-Djava.awt.headless=true', 'app.cairn.client.CosmeticsTest']);
 }
 console.log(`Cairn Client ${target}: complete.`);
