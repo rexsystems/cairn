@@ -40,7 +40,7 @@ public final class CairnTitle {
     public void key(boolean activate, boolean backwards) {
         if (activate) { if (focus >= 0 && actions.get(focus).enabled) actions.get(focus).run.run(); return; }
         for (int i = 0; i < actions.size(); i++) {
-            focus = (focus + (backwards ? actions.size() - 1 : 1)) % actions.size();
+            focus = focus < 0 ? backwards ? actions.size() - 1 : 0 : Math.floorMod(focus + (backwards ? -1 : 1), actions.size());
             if (actions.get(focus).enabled) return;
         }
     }

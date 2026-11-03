@@ -225,6 +225,11 @@ public final class ClientInteractionTest {
             for (Label label : canvas.labels) if (label.text.equals("Singleplayer")) title.click(label.x + 1, label.y + 1);
             title.key(false, false); title.key(true, false);
             check(calls[0] == 2, "Title actions work with mouse and keyboard");
+            CairnTitle backwards = new CairnTitle();
+            backwards.add("Disabled", () -> calls[0] += 100, false);
+            backwards.add("Last", () -> calls[0] += 10, true);
+            backwards.key(false, true); backwards.key(true, false);
+            check(calls[0] == 12, "Initial backward title navigation selects the last enabled action");
         }
         client.cosmetics.equip("ember", "classic");
         check(client.cosmetics.status().startsWith("No cosmetics server"), "Selection preserves the missing-server diagnosis");

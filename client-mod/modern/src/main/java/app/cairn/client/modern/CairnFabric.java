@@ -235,7 +235,7 @@ public final class CairnFabric implements ClientModInitializer {
         @Override public boolean mouseClicked(MouseButtonEvent event, boolean twice) { if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) view.click((int) event.x(), (int) event.y()); return true; }
         @Override public boolean keyPressed(KeyEvent event) {
             if (client.menuKey(event.key())) { minecraft.gui.setScreen(new Menu()); return true; }
-            if (event.key() == InputConstants.KEY_TAB || event.key() == InputConstants.KEY_DOWN || event.key() == InputConstants.KEY_UP) { view.key(false, event.key() == InputConstants.KEY_UP); return true; }
+            if (event.key() == InputConstants.KEY_TAB || event.key() == InputConstants.KEY_DOWN || event.key() == InputConstants.KEY_UP) { view.key(false, event.key() == InputConstants.KEY_UP || event.hasShiftDown()); return true; }
             if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_SPACE) { view.key(true, false); return true; }
             return false;
         }

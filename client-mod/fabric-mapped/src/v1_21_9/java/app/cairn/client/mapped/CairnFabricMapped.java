@@ -233,7 +233,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         @Override public boolean mouseClicked(MouseButtonEvent event, boolean twice) { if (event.button() == 0) view.click((int) event.x(), (int) event.y()); return true; }
         @Override public boolean keyPressed(KeyEvent event) {
             if (client.menuKey(event.key())) { minecraft.setScreen(new Menu()); return true; }
-            if (event.key() == InputConstants.KEY_TAB || event.key() == InputConstants.KEY_DOWN || event.key() == InputConstants.KEY_UP) { view.key(false, event.key() == InputConstants.KEY_UP); return true; }
+            if (event.key() == InputConstants.KEY_TAB || event.key() == InputConstants.KEY_DOWN || event.key() == InputConstants.KEY_UP) { view.key(false, event.key() == InputConstants.KEY_UP || event.hasShiftDown()); return true; }
             if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_SPACE) { view.key(true, false); return true; }
             return false;
         }
