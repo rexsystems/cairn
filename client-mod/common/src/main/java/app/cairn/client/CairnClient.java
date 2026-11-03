@@ -50,6 +50,8 @@ public final class CairnClient {
         MOUSE_KEYS("Mouse buttons", 1, 0, 1, 1), SPACE_KEY("Space bar", 1, 0, 1, 1),
         KEY_CPS("CPS on mouse keys", 1, 0, 1, 1),
         ZOOM_FACTOR("Zoom strength", 4, 2, 10, 1), SMOOTH_ZOOM("Smooth zoom", 1, 0, 1, 1),
+        SCROLL_ZOOM("Scroll to adjust", 1, 0, 1, 1), ZOOM_CINEMATIC("Cinematic camera", 1, 0, 1, 1),
+        AUTO_WIDTH("Fit width to text", 1, 0, 1, 1),
         CROSS_SIZE("Arm length", 4, 2, 12, 1), CROSS_GAP("Center gap", 2, 0, 8, 1),
         CROSS_THICKNESS("Thickness", 1, 1, 4, 1), CROSS_DOT("Center dot", 1, 0, 1, 1),
         CROSS_HIDE_VANILLA("Replace vanilla crosshair", 1, 0, 1, 1),
@@ -61,15 +63,22 @@ public final class CairnClient {
         public boolean color() { return step == 0; }
         public boolean toggle() { return !color() && max == 1; }
     }
+    /** Keys the adapter lets players rebind from the Cairn menu. */
+    public enum Bind { MENU("Menu key"), ZOOM("Zoom key");
+        public final String label;
+        Bind(String label) { this.label = label; }
+    }
     static final Module[] MODULES = Module.values();
     static final Setting[] SETTINGS = Setting.values();
+    static final int TEXT_HEIGHT = 18, MARGIN = 4, GAP = 2;
     static final int ACCENT = 0xffc6db82, TEXT = 0xfff1f0e8, MUTED = 0xffb4b8aa;
     static final class State {
         boolean enabled;
         final int[] settings = new int[SETTINGS.length];
-        int x, y;
+        int x, y, flowX, flowY, contentWidth;
+        boolean placed;
         String value = "", clipped = "";
-        String clippedSource;
+        String clippedSource, measured;
         int clippedWidth = -1;
         int textWidth;
         int pressedTextColor;
@@ -91,7 +100,11 @@ public final class CairnClient {
     private int dragX, dragY, initialWidth, initialScale;
     private int viewportWidth = 960, viewportHeight = 540;
     private long zoomTime;
-    private float zoom = 1;
+    private float zoom = 1, scrollZoom = 1;
+    private final int[] keyCodes = new int[Bind.values().length];
+    private final String[] keyNames = new String[Bind.values().length];
+    private boolean keysManaged;
+    private Bind listening;
     private String saveError;
 
     public CairnClient(Path gameDir) {
@@ -106,11 +119,16 @@ public final class CairnClient {
                 state.settings[setting.ordinal()] = setting.color() ? value | 0xff000000 : clamp(value, setting.min, setting.max);
             }
             state.pressedTextColor = readable(state.settings[Setting.ACCENT_COLOR.ordinal()]);
-            state.x = number(module.name() + ".x", module == Module.CPS ? 110 : 12);
-            state.y = number(module.name() + ".y", module == Module.CPS ? 112 : module.ordinal() * 28 + 12);
-            if (module == Module.CROSSHAIR && !Boolean.parseBoolean(config.getProperty("CROSSHAIR.placed", "false"))) { state.x = -1; state.y = -1; }
+            state.x = number(module.name() + ".x", -1);
+            state.y = number(module.name() + ".y", -1);
+            state.placed = state.x >= 0 && state.y >= 0 && !legacyDefault(module, state.x, state.y);
+            if (module == Module.CROSSHAIR) state.placed = Boolean.parseBoolean(config.getProperty("CROSSHAIR.placed", "false"));
         }
         menu = new CairnMenu(this);
+    }
+    // Builds before the flow layout saved these fixed slots for every module, so they mean "never moved".
+    private static boolean legacyDefault(Module module, int x, int y) {
+        return module == Module.CPS ? x == 110 && y == 112 : x == 12 && y == module.ordinal() * 28 + 12;
     }
     static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
     static int readable(int color) {
@@ -165,7 +183,8 @@ public final class CairnClient {
     }
     public float zoomFactor(boolean held) {
         long now = System.nanoTime();
-        float target = held && enabled(Module.ZOOM) ? setting(Module.ZOOM, Setting.ZOOM_FACTOR) : 1;
+        if (!held) scrollZoom = 1;
+        float target = held && enabled(Module.ZOOM) ? setting(Module.ZOOM, Setting.ZOOM_FACTOR) * scrollZoom : 1;
         if (setting(Module.ZOOM, Setting.SMOOTH_ZOOM) == 0 || zoomTime == 0) zoom = target;
         else {
             double delta = Math.min(.1, (now - zoomTime) / 1_000_000_000.0);
@@ -175,10 +194,50 @@ public final class CairnClient {
         zoomTime = now;
         return zoom;
     }
+    /** Returns true when the wheel adjusted an active zoom, so the adapter can keep it off the hotbar. */
+    public boolean zoomScroll(boolean held, double amount) {
+        if (!held || amount == 0 || !enabled(Module.ZOOM) || setting(Module.ZOOM, Setting.SCROLL_ZOOM) == 0) return false;
+        float base = setting(Module.ZOOM, Setting.ZOOM_FACTOR);
+        scrollZoom = Math.max(1 / base, Math.min(50 / base, scrollZoom * (amount > 0 ? 1.25f : .8f)));
+        return true;
+    }
+    public boolean cinematicZoom() { return enabled(Module.ZOOM) && setting(Module.ZOOM, Setting.ZOOM_CINEMATIC) == 1; }
+    /** Smooth-camera value for this tick; the player's own choice comes back once zoom ends. */
+    public boolean smoothCamera(boolean zooming, boolean current) {
+        boolean wanted = zooming && cinematicZoom();
+        if (wanted && !cinematicActive) { cinematicPrevious = current; cinematicActive = true; }
+        else if (!wanted && cinematicActive) { cinematicActive = false; return cinematicPrevious; }
+        return cinematicActive || current;
+    }
+    public boolean menuKey(int code) { return keysManaged && listening == null && code == keyCode(Bind.MENU); }
+    /** Adapters that read raw key codes call this once; Forge keeps vanilla's own Controls screen instead. */
+    public void manageKeys(int menuCode, String menuName, int zoomCode, String zoomName) {
+        keysManaged = true;
+        keyCodes[Bind.MENU.ordinal()] = number("key.MENU", menuCode); keyNames[Bind.MENU.ordinal()] = config.getProperty("key.MENU.name", menuName);
+        keyCodes[Bind.ZOOM.ordinal()] = number("key.ZOOM", zoomCode); keyNames[Bind.ZOOM.ordinal()] = config.getProperty("key.ZOOM.name", zoomName);
+    }
+    private boolean cinematicActive, cinematicPrevious;
+    public boolean keysManaged() { return keysManaged; }
+    public int keyCode(Bind bind) { return keyCodes[bind.ordinal()]; }
+    public String keyName(Bind bind) { return keyNames[bind.ordinal()]; }
+    public boolean binding() { return listening != null; }
+    Bind listening() { return listening; }
+    void listen(Bind bind) { listening = bind; menu.blur(); }
+    /** Assigns the pressed key to the bind waiting for input; a negative code cancels. */
+    public void bind(int code, String name) {
+        if (listening == null) return;
+        if (code >= 0) {
+            keyCodes[listening.ordinal()] = code; keyNames[listening.ordinal()] = name == null || name.isEmpty() ? "Key " + code : name;
+            config.setProperty("key." + listening.name(), String.valueOf(code)); config.setProperty("key." + listening.name() + ".name", keyNames[listening.ordinal()]);
+            save();
+        }
+        listening = null;
+    }
     public boolean editing() { return editing; }
     public void enterEditor() { editing = true; editorTools = true; menu.blur(); }
     public void leaveEditor() { dragging = null; editing = false; save(); }
     public boolean escape() {
+        if (listening != null) { listening = null; return true; }
         if (editing) { leaveEditor(); return true; }
         return menu.escape();
     }
@@ -210,8 +269,8 @@ public final class CairnClient {
         State state = state(module);
         for (Setting setting : SETTINGS) state.settings[setting.ordinal()] = setting.initial;
         state.pressedTextColor = readable(state.settings[Setting.ACCENT_COLOR.ordinal()]);
-        state.x = module == Module.CPS ? 110 : 12; state.y = module == Module.CPS ? 112 : module.ordinal() * 28 + 12;
-        if (module == Module.CROSSHAIR) { state.x = state.y = -1; config.setProperty("CROSSHAIR.placed", "false"); }
+        state.x = state.y = -1; state.placed = false;
+        if (module == Module.CROSSHAIR) config.setProperty("CROSSHAIR.placed", "false");
         state.clippedWidth = -1;
         save();
     }
@@ -224,19 +283,52 @@ public final class CairnClient {
     private int widgetWidth(Module module) {
         if (module == Module.CROSSHAIR) return 2 * (Math.round(setting(module, Setting.CROSS_SIZE) * scale(module)) + Math.round(setting(module, Setting.CROSS_GAP) * scale(module))) + Math.max(1, Math.round(setting(module, Setting.CROSS_THICKNESS) * scale(module)));
         if (module == Module.KEYSTROKES) return 3 * Math.round(setting(module, Setting.KEY_SIZE) * scale(module)) + 2 * Math.max(1, Math.round(setting(module, Setting.KEY_GAP) * scale(module)));
+        if (setting(module, Setting.AUTO_WIDTH) == 1) return Math.round(autoWidth(state(module).contentWidth) * scale(module));
         return Math.round(setting(module, Setting.WIDTH) * scale(module));
     }
+    // Rounded up to whole steps so a ticking counter does not make the panel wobble every frame.
+    static int autoWidth(int textWidth) { return Math.min(Setting.WIDTH.max, (Math.max(24, textWidth) + 12 + 5) / 6 * 6); }
     private int widgetHeight(Module module) {
         if (module == Module.CROSSHAIR) return widgetWidth(module);
-        if (module != Module.KEYSTROKES) return Math.round(22 * scale(module));
+        if (module != Module.KEYSTROKES) return Math.round(TEXT_HEIGHT * scale(module));
         int size = Math.round(setting(module, Setting.KEY_SIZE) * scale(module)), gap = Math.max(1, Math.round(setting(module, Setting.KEY_GAP) * scale(module)));
         int height = size * 2 + gap;
         if (setting(module, Setting.MOUSE_KEYS) == 1) height += Math.round((setting(module, Setting.KEY_SIZE) - 4) * scale(module)) + gap;
         if (setting(module, Setting.SPACE_KEY) == 1) height += Math.round(12 * scale(module)) + gap;
         return height;
     }
-    private int x(Module module, int width) { return clamp(module == Module.CROSSHAIR && state(module).x < 0 ? (width - widgetWidth(module)) / 2 : state(module).x, 0, Math.max(0, width - widgetWidth(module))); }
-    private int y(Module module, int height) { return clamp(module == Module.CROSSHAIR && state(module).y < 0 ? (height - widgetHeight(module)) / 2 : state(module).y, 0, Math.max(0, height - widgetHeight(module))); }
+    private int x(Module module, int width) {
+        State state = state(module);
+        int x = state.placed ? state.x : module == Module.CROSSHAIR ? (width - widgetWidth(module)) / 2 : state.flowX;
+        return clamp(x, 0, Math.max(0, width - widgetWidth(module)));
+    }
+    private int y(Module module, int height) {
+        State state = state(module);
+        int y = state.placed ? state.y : module == Module.CROSSHAIR ? (height - widgetHeight(module)) / 2 : state.flowY;
+        return clamp(y, 0, Math.max(0, height - widgetHeight(module)));
+    }
+    int[] bounds(Module module) { return new int[] { x(module, viewportWidth), y(module, viewportHeight), widgetWidth(module), widgetHeight(module) }; }
+    private void place(Module module, int x, int y) {
+        State state = state(module); state.x = x; state.y = y; state.placed = true;
+        if (module == Module.CROSSHAIR) config.setProperty("CROSSHAIR.placed", "true");
+    }
+    /** Widgets the player never moved stack top-left in module order and wrap into columns, so presets never overlap. */
+    private void layout(Canvas canvas, int width, int height) {
+        int columnX = MARGIN, cursor = MARGIN, columnWidth = 0;
+        for (Module module : MODULES) {
+            if (!enabled(module) || !module.hud || module == Module.CROSSHAIR) continue;
+            State state = state(module);
+            if (module != Module.KEYSTROKES) {
+                String source = state.value.isEmpty() ? module.title : state.value;
+                if (!source.equals(state.measured)) { state.contentWidth = canvas.textWidth(source); state.measured = source; }
+            }
+            if (state.placed) continue;
+            int w = widgetWidth(module), h = widgetHeight(module);
+            if (cursor > MARGIN && cursor + h > height - MARGIN) { columnX += columnWidth + GAP; cursor = MARGIN; columnWidth = 0; }
+            state.flowX = columnX; state.flowY = cursor;
+            cursor += h + GAP; columnWidth = Math.max(columnWidth, w);
+        }
+    }
     private int color(Module module, Setting setting) { return setting(module, setting); }
     private int background(Module module) { return (setting(module, Setting.OPACITY) * 255 / 100 << 24) | (color(module, Setting.BG_COLOR) & 0xffffff); }
     private void keyBox(Canvas canvas, int x, int y, int w, int h, boolean pressed, String label, Module module, float scale) {
@@ -278,6 +370,7 @@ public final class CairnClient {
     public void renderHud(Canvas canvas, int width, int height) {
         viewportWidth = width; viewportHeight = height;
         counters();
+        layout(canvas, width, height);
         for (Module module : MODULES) {
             if (!enabled(module) || !module.hud) continue;
             int x = x(module, width), y = y(module, height);
@@ -295,7 +388,7 @@ public final class CairnClient {
                     state.clipped = fit(canvas, source, available); state.clippedSource = source; state.clippedWidth = available; state.textWidth = canvas.textWidth(state.clipped);
                 }
                 int textX = setting(module, Setting.ALIGN) == 0 ? x + Math.round(6 * scale) : setting(module, Setting.ALIGN) == 1 ? x + Math.max(0, (w - Math.round(state.textWidth * scale)) / 2) : x + Math.max(0, w - Math.round((state.textWidth + 6) * scale));
-                canvas.textScaled(state.clipped, textX, y + Math.round(6 * scale), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
+                canvas.textScaled(state.clipped, textX, y + Math.max(0, (h - Math.round(8 * scale)) / 2), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
             }
             if (editing && module == selected) {
                 canvas.rect(x, y, w, 1, ACCENT); canvas.rect(x, y + h - 1, w, 1, ACCENT);
@@ -322,9 +415,7 @@ public final class CairnClient {
     public void editorKey(int dx, int dy, int scale) {
         if (scale != 0) setting(selected, Setting.SCALE, setting(selected, Setting.SCALE) + scale * 10);
         else {
-            state(selected).x = x(selected, viewportWidth) + dx * (snap ? 4 : 1);
-            state(selected).y = y(selected, viewportHeight) + dy * (snap ? 4 : 1);
-            if (selected == Module.CROSSHAIR) config.setProperty("CROSSHAIR.placed", "true");
+            place(selected, x(selected, viewportWidth) + dx * (snap ? 4 : 1), y(selected, viewportHeight) + dy * (snap ? 4 : 1));
         }
         save();
     }
@@ -353,10 +444,8 @@ public final class CairnClient {
         } else {
             int x = mouseX - dragX, y = mouseY - dragY;
             if (snap) { x = Math.round(x / 4f) * 4; y = Math.round(y / 4f) * 4; }
-            state(dragging).x = clamp(x, 0, Math.max(0, width - widgetWidth(dragging)));
             int top = editorTools ? 30 : 0, bottom = editorTools ? 26 : 0;
-            state(dragging).y = clamp(y, top, Math.max(top, height - bottom - widgetHeight(dragging)));
-            if (dragging == Module.CROSSHAIR) config.setProperty("CROSSHAIR.placed", "true");
+            place(dragging, clamp(x, 0, Math.max(0, width - widgetWidth(dragging))), clamp(y, top, Math.max(top, height - bottom - widgetHeight(dragging))));
         }
     }
     public void mouseUp() { if (dragging != null) { dragging = null; save(); } }
@@ -366,7 +455,8 @@ public final class CairnClient {
         for (Module module : MODULES) {
             State state = state(module);
             config.setProperty(module.name() + ".enabled", String.valueOf(state.enabled));
-            config.setProperty(module.name() + ".x", String.valueOf(state.x)); config.setProperty(module.name() + ".y", String.valueOf(state.y));
+            if (state.placed) { config.setProperty(module.name() + ".x", String.valueOf(state.x)); config.setProperty(module.name() + ".y", String.valueOf(state.y)); }
+            else { config.remove(module.name() + ".x"); config.remove(module.name() + ".y"); }
             for (Setting setting : SETTINGS) config.setProperty(module.name() + "." + setting.name(), String.valueOf(state.settings[setting.ordinal()]));
         }
         try {

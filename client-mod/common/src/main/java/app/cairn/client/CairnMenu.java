@@ -4,6 +4,7 @@ import java.util.*;
 import app.cairn.client.CairnClient.Module;
 import app.cairn.client.CairnClient.Setting;
 import app.cairn.client.CairnClient.Canvas;
+import app.cairn.client.CairnClient.Bind;
 import static app.cairn.client.CairnClient.*;
 
 final class CairnMenu {
@@ -118,6 +119,7 @@ final class CairnMenu {
         int enabled = 0; for (Module module : MODULES) if (client.enabled(module)) enabled++;
         canvas.text(MODULES.length + " modules / " + enabled + " enabled", x + 14, top + 25, MUTED);
         button(canvas, "Edit HUD", x + w - 94, top + 7, 80, 26, 0xff3c4835, ACCENT, () -> client.enterEditor());
+        if (client.keysManaged() && w >= 400) bindButton(canvas, Bind.MENU, x + w - 248, top + 7, 150, 26);
         if (colorSetting != null) { colorPicker(canvas, x + 12, top + 48, w - 24, bottom - top - 60); return; }
         if (details) {
             button(canvas, "Back to modules", x + 12, top + 47, 116, 22, 0xff303a2d, ACCENT, () -> { details = false; settingsScroll = 0; });
@@ -180,14 +182,18 @@ final class CairnMenu {
             canvas.rect(x + w + 2, y + position, 2, barHeight, ACCENT);
         }
     }
+    private void bindButton(Canvas canvas, Bind bind, int x, int y, int w, int h) {
+        boolean waiting = client.listening() == bind;
+        button(canvas, waiting ? "Press a key..." : bind.label + ": " + client.keyName(bind), x, y, w, h, waiting ? 0xff3c4835 : 0xff303a2d, waiting ? ACCENT : TEXT, () -> client.listen(bind));
+    }
     private List<Setting> options(Module module) {
         List<Setting> list = new ArrayList<Setting>();
         if (module == Module.CROSSHAIR) { list.addAll(Arrays.asList(Setting.SCALE, Setting.ACCENT_COLOR, Setting.CROSS_SIZE, Setting.CROSS_GAP, Setting.CROSS_THICKNESS, Setting.CROSS_DOT, Setting.CROSS_HIDE_VANILLA)); return list; }
         if (module.hud) list.addAll(Arrays.asList(Setting.SCALE, Setting.TEXT_COLOR, Setting.BG_COLOR, Setting.ACCENT_COLOR));
         if (module == Module.KEYSTROKES) list.addAll(Arrays.asList(Setting.KEY_SIZE, Setting.KEY_GAP, Setting.MOUSE_KEYS, Setting.SPACE_KEY, Setting.KEY_CPS, Setting.OPACITY));
-        else if (module.hud) list.addAll(Arrays.asList(Setting.WIDTH, Setting.OPACITY, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
+        else if (module.hud) list.addAll(Arrays.asList(Setting.AUTO_WIDTH, Setting.WIDTH, Setting.OPACITY, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
         if (module == Module.CLOCK) list.addAll(Arrays.asList(Setting.CLOCK_SECONDS, Setting.CLOCK_24H));
-        if (module == Module.ZOOM) list.addAll(Arrays.asList(Setting.ZOOM_FACTOR, Setting.SMOOTH_ZOOM));
+        if (module == Module.ZOOM) list.addAll(Arrays.asList(Setting.ZOOM_FACTOR, Setting.SMOOTH_ZOOM, Setting.SCROLL_ZOOM, Setting.ZOOM_CINEMATIC));
         if (module == Module.SPRINT) list.addAll(Arrays.asList(Setting.SPRINT_AUTO, Setting.SPRINT_RESET));
         return list;
     }
@@ -196,11 +202,13 @@ final class CairnMenu {
         canvas.text(fit(canvas, module.title + " settings", w), x, y + 2, TEXT);
         button(canvas, client.enabled(module) ? "Enabled" : "Disabled", x, y + 18, w, 22, 0xff303a2d, client.enabled(module) ? ACCENT : MUTED, () -> client.toggle(module));
         List<Setting> options = options(module);
-        int rowHeight = 28, capacity = Math.max(1, (height - 66) / rowHeight);
+        int rowHeight = 28, first = y + 40, reserved = 66;
+        if (module == Module.ZOOM && client.keysManaged()) { bindButton(canvas, Bind.ZOOM, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
+        int capacity = Math.max(1, (height - reserved) / rowHeight);
         settingsScroll = clamp(settingsScroll, 0, Math.max(0, options.size() - capacity));
         for (int i = settingsScroll; i < Math.min(options.size(), settingsScroll + capacity); i++) {
             final Setting setting = options.get(i);
-            int cy = y + 40 + (i - settingsScroll) * rowHeight, value = client.setting(module, setting);
+            int cy = first + (i - settingsScroll) * rowHeight, value = client.setting(module, setting);
             canvas.text(fit(canvas, setting.label, w - 85), x, cy + 7, MUTED);
             if (setting.color()) {
                 canvas.rect(x + w - 76, cy + 6, 12, 12, value);

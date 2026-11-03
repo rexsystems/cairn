@@ -4,6 +4,7 @@ import java.nio.file.*;
 import java.util.*;
 import app.cairn.client.CairnClient.Module;
 import app.cairn.client.CairnClient.Setting;
+import app.cairn.client.CairnClient.Bind;
 
 public final class ClientInteractionTest {
     private static void check(boolean value, String message) { if (!value) throw new AssertionError(message); }
@@ -28,6 +29,65 @@ public final class ClientInteractionTest {
             for (Label item : labels) if (item.text.equals(label)) { client.mouseDown(width, height, item.x + 1, item.y + 1); render(client); return; }
             throw new AssertionError("Control not visible: " + label);
         }
+    }
+    private static boolean overlaps(int[] a, int[] b) { return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]; }
+    private static void layoutAndKeys(Path parent) throws Exception {
+        Path directory = Files.createTempDirectory(parent, "layout-");
+        Files.createDirectories(directory.resolve("config"));
+        // Positions older builds wrote for every module, plus one the player really moved.
+        Files.write(directory.resolve("config/cairn-client.properties"), Arrays.asList("FPS.x=12", "FPS.y=12", "COORDINATES.x=12", "COORDINATES.y=40", "CPS.x=110", "CPS.y=112", "PING.x=300", "PING.y=200"));
+        CairnClient client = new CairnClient(directory);
+        check(!client.state(Module.FPS).placed && !client.state(Module.CPS).placed && client.state(Module.PING).placed, "Legacy default slots count as unplaced");
+        for (String preset : new String[] { "Minimal", "Combat", "Explore", "All" }) {
+            if (preset.equals("All")) { for (Module module : Module.values()) if (!client.enabled(module)) client.toggle(module); }
+            else client.preset(preset.equals("Minimal") ? 0 : preset.equals("Combat") ? 1 : 2);
+            for (int[] size : new int[][] { { 427, 240 }, { 640, 360 }, { 960, 540 } }) {
+                client.value(Module.FPS, "144 FPS"); client.value(Module.COORDINATES, "XYZ 1234 64 -5678");
+                client.renderHud(new Canvas(size[0], size[1]), size[0], size[1]);
+                List<int[]> boxes = new ArrayList<int[]>();
+                for (Module module : Module.values()) if (client.enabled(module) && module.hud && module != Module.CROSSHAIR) boxes.add(client.bounds(module));
+                // A screen too small for everything may clamp; the common sizes must not overlap.
+                if (size[1] >= 360 || !preset.equals("All")) for (int i = 0; i < boxes.size(); i++) for (int j = i + 1; j < boxes.size(); j++) check(!overlaps(boxes.get(i), boxes.get(j)), preset + " preset overlaps at " + size[0] + "x" + size[1]);
+            }
+        }
+        int[] fps = client.bounds(Module.FPS);
+        client.value(Module.FPS, "9 FPS"); client.renderHud(new Canvas(960, 540), 960, 540);
+        int narrow = client.bounds(Module.FPS)[2];
+        client.value(Module.FPS, "1440 FPS"); client.renderHud(new Canvas(960, 540), 960, 540);
+        check(narrow < fps[2] + 30 && client.bounds(Module.FPS)[2] > narrow, "Panels fit their text");
+        client.setting(Module.FPS, Setting.AUTO_WIDTH, 0);
+        check(client.bounds(Module.FPS)[2] == 150, "Fixed width still available");
+        client.save();
+        check(!new String(Files.readAllBytes(directory.resolve("config/cairn-client.properties")), "UTF-8").contains("FPS.x="), "Unplaced widgets do not pin a position");
+
+        check(!client.keysManaged(), "Forge keeps vanilla key bindings");
+        client.manageKeys(344, "Right Shift", 67, "C");
+        Canvas canvas = new Canvas(800, 600); canvas.render(client);
+        canvas.click(client, "Menu key: Right Shift");
+        check(client.binding(), "Clicking a key button waits for a key");
+        client.bind(82, "R");
+        check(!client.binding() && client.keyCode(Bind.MENU) == 82, "Pressed key becomes the menu key");
+        client.select(Module.ZOOM); client.enterEditor(); client.editorSettings(); canvas.render(client);
+        canvas.click(client, "Zoom key: C");
+        check(client.escape() && !client.binding() && client.keyCode(Bind.ZOOM) == 67, "Escape cancels rebinding");
+        CairnClient restored = new CairnClient(directory); restored.manageKeys(344, "Right Shift", 67, "C");
+        check(restored.keyCode(Bind.MENU) == 82 && restored.keyName(Bind.MENU).equals("R"), "Key bindings persist");
+
+        if (!client.enabled(Module.ZOOM)) client.toggle(Module.ZOOM);
+        client.setting(Module.ZOOM, Setting.SMOOTH_ZOOM, 0);
+        check(client.zoomFactor(true) == 4, "Zoom uses its strength");
+        check(client.zoomScroll(true, 1) && client.zoomFactor(true) == 5, "Scrolling while zoomed zooms further");
+        check(!client.zoomScroll(false, 1), "Scrolling without zoom keeps the hotbar");
+        for (int i = 0; i < 40; i++) client.zoomScroll(true, -1);
+        check(client.zoomFactor(true) == 1, "Scroll zoom never zooms out past normal");
+        client.zoomFactor(false);
+        check(client.zoomFactor(true) == 4, "Releasing zoom forgets the scroll level");
+        client.setting(Module.ZOOM, Setting.ZOOM_CINEMATIC, 0);
+        check(!client.smoothCamera(true, false), "Cinematic zoom can be turned off");
+        client.setting(Module.ZOOM, Setting.ZOOM_CINEMATIC, 1);
+        check(client.smoothCamera(true, false) && client.smoothCamera(true, true) && !client.smoothCamera(false, true), "Cinematic zoom restores the player's camera");
+        check(client.smoothCamera(true, true) && client.smoothCamera(false, true), "Cinematic zoom keeps an enabled camera");
+        check(client.menuKey(82) && !client.menuKey(344), "Menu opens on the bound key");
     }
     public static void main(String[] args) throws Exception {
         Path directory = Files.createTempDirectory("cairn-interaction-test-");
@@ -59,10 +119,11 @@ public final class ClientInteractionTest {
             canvas.click(client, "Back to modules"); canvas.click(client, "Minimal");
             check(client.enabled(Module.FPS) && !client.enabled(Module.KEYSTROKES), "Preset changes actual enabled modules");
             client.toggle(Module.COORDINATES);
-            client.select(Module.FPS); client.state(Module.FPS).x = 20; client.state(Module.FPS).y = 40;
+            client.select(Module.FPS); client.state(Module.FPS).x = 20; client.state(Module.FPS).y = 40; client.state(Module.FPS).placed = true;
             client.enterEditor(); client.mouseDown(800, 600, 30, 50); client.drag(800, 600, 60, 100); client.mouseUp();
             check(client.state(Module.FPS).x == 52 && client.state(Module.FPS).y == 92, "Drag uses grid snapping");
-            client.mouseDown(800, 600, 200, 112); client.drag(800, 600, 277, 140); client.mouseUp();
+            int[] fps = client.bounds(Module.FPS);
+            client.mouseDown(800, 600, fps[0] + fps[2] - 2, fps[1] + fps[3] - 2); client.drag(800, 600, fps[0] + fps[2] * 3 / 2, 140); client.mouseUp();
             check(client.setting(Module.FPS, Setting.SCALE) == 150, "Corner drag resizes widget");
             client.leaveEditor();
             for (int width : new int[] {320, 400, 640, 1280}) for (int height : new int[] {240, 360, 720}) {
@@ -85,8 +146,9 @@ public final class ClientInteractionTest {
             client.value(Module.FPS, "60 FPS");
             Canvas hud = new Canvas(800, 600); client.renderHud(hud, 800, 600); int measurements = hud.measures;
             client.renderHud(hud, 800, 600); check(hud.measures == measurements, "Stable HUD text does not repeat layout measurement");
+            layoutAndKeys(directory);
             check(client.saveError() == null, "No settings errors");
-            System.out.println("PASS: search, per-widget colors and sizes, presets, snapping, resize handles, all settings pages at 12 viewport sizes, contrast and stable HUD layout caching.");
+            System.out.println("PASS: search, per-widget colors and sizes, presets, snapping, resize handles, all settings pages at 12 viewport sizes, contrast, stable HUD layout caching, overlap-free presets, legacy position migration, key rebinding and scroll zoom.");
         } finally {
             try (java.util.stream.Stream<Path> paths = Files.walk(directory)) { paths.sorted(Comparator.reverseOrder()).forEach(path -> { try { Files.delete(path); } catch (Exception e) { throw new RuntimeException(e); } }); }
         }
