@@ -20,6 +20,7 @@ base { archivesName = "cairn-client-fabric-$targetMinecraft" }
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
 tasks.withType(JavaCompile).configureEach { options.release = target.java; options.compilerArgs << '-Xlint:-options' }
 sourceSets.main.java.srcDir('../common/src/main/java')
+sourceSets.main.resources.srcDir('../common/src/main/resources')
 sourceSets.main.java.srcDir("src/${target.family}/java")
 if (file("src/$targetMinecraft/java").exists()) sourceSets.main.java.srcDir("src/$targetMinecraft/java")
 unimined.minecraft {

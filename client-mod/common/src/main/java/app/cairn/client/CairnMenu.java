@@ -14,10 +14,10 @@ final class CairnMenu {
     private final List<Control> controls = new ArrayList<Control>();
     private final List<Module> modules = new ArrayList<Module>();
     private String query = "", category = "All", hex = "";
-    private boolean searchFocus, hexFocus, hexSelected, details;
+    private boolean searchFocus, hexFocus, hexSelected, details, cosmetics;
     private Setting colorSetting;
     private String colorError;
-    private int listScroll, settingsScroll, focus = -1, mouseX, panelX, panelWidth, listCapacity = 1, listColumns = 1;
+    private int listScroll, settingsScroll, cosmeticsScroll, focus = -1, mouseX, panelX, panelWidth, listCapacity = 1, listColumns = 1;
     private String cacheKey;
     private static final class Control {
         final int x, y, w, h;
@@ -46,9 +46,11 @@ final class CairnMenu {
         if (typing()) { blur(); return true; }
         if (colorSetting != null) { colorSetting = null; return true; }
         if (details) { details = false; settingsScroll = 0; return true; }
+        if (cosmetics) { cosmetics = false; return true; }
         return false;
     }
-    void openSettings(Module module) { client.select(module); details = true; colorSetting = null; settingsScroll = 0; blur(); focus = -1; }
+    void openCosmetics() { cosmetics = true; details = false; colorSetting = null; cosmeticsScroll = 0; blur(); focus = -1; }
+    void openSettings(Module module) { client.select(module); details = true; cosmetics = false; colorSetting = null; settingsScroll = 0; blur(); focus = -1; }
     List<Module> filtered() {
         String key = query + "|" + category;
         if (category.equals("Enabled")) for (Module module : MODULES) key += client.enabled(module) ? "1" : "0";
@@ -86,6 +88,7 @@ final class CairnMenu {
     void tab() { blur(); if (!controls.isEmpty()) focus = (focus + 1) % controls.size(); }
     void wheel(int amount) {
         if (colorSetting != null) return;
+        if (cosmetics) { cosmeticsScroll = Math.max(0, cosmeticsScroll + amount); return; }
         if (details || panelWidth >= 620 && mouseX >= panelX + panelWidth - 216) settingsScroll = Math.max(0, settingsScroll + amount);
         else listScroll = Math.max(0, listScroll + amount);
     }
@@ -120,6 +123,10 @@ final class CairnMenu {
         canvas.text(MODULES.length + " modules / " + enabled + " enabled", x + 14, top + 25, MUTED);
         button(canvas, "Edit HUD", x + w - 94, top + 7, 80, 26, 0xff3c4835, ACCENT, () -> client.enterEditor());
         if (client.keysManaged() && w >= 400) bindButton(canvas, Bind.MENU, x + w - 248, top + 7, 150, 26);
+        boolean headerCosmetics = w >= 480 || w < 400 && w >= 330;
+        int cosmeticsX = client.keysManaged() && w >= 400 ? x + w - 334 : x + w - 180;
+        if (headerCosmetics) button(canvas, "Cosmetics", cosmeticsX, top + 7, 80, 26, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) cosmetics = false; else openCosmetics(); });
+        if (cosmetics && colorSetting == null) { cosmeticsPage(canvas, x + 12, top + 47, w - 24, bottom - top - 59); return; }
         if (colorSetting != null) { colorPicker(canvas, x + 12, top + 48, w - 24, bottom - top - 60); return; }
         if (details) {
             button(canvas, "Back to modules", x + 12, top + 47, 116, 22, 0xff303a2d, ACCENT, () -> { details = false; settingsScroll = 0; });
@@ -145,14 +152,82 @@ final class CairnMenu {
             if (w >= 620) settings(canvas, x + w - 212, contentTop, 200, contentBottom - contentTop);
         }
         if (colorSetting != null || details) return;
-        int footerY = bottom - 32, presetW = Math.max(42, Math.min(78, (w - 40) / 4));
+        int footerY = bottom - 32, presetW = w < 330 ? Math.max(36, (w - 150) / 3) : Math.max(42, Math.min(78, (w - 40) / 4));
         canvas.text("Preset", x + 12, footerY + 7, MUTED);
         String[] names = { "Minimal", "Combat", "Explore" };
         for (int i = 0; i < 3; i++) {
             final int preset = i;
             button(canvas, names[i], x + 54 + i * (presetW + 3), footerY, presetW, 22, 0xff303a2d, TEXT, () -> client.preset(preset));
         }
+        int presetsEnd = x + 54 + 3 * (presetW + 3);
+        int footerButton = w < 330 ? 70 : 82;
+        if (!headerCosmetics && x + w - 12 - footerButton >= presetsEnd) button(canvas, "Cosmetics", x + w - 12 - footerButton, footerY, footerButton, 22, 0xff3c4835, ACCENT, () -> openCosmetics());
         if (client.saveError() != null) canvas.text(fit(canvas, "Could not save settings. Check the log.", w - 24), x + 12, contentBottom - 10, 0xffffb9a4);
+    }
+    private static String capeName(Cosmetics cosmetics, String id) {
+        if (id.equals("none")) return "None";
+        if (id.equals("custom")) return "Your cape";
+        for (Cosmetics.Item item : cosmetics.capes()) if (item.id.equals(id)) return item.name;
+        return id;
+    }
+    private void cosmeticsPage(Canvas canvas, int x, int y, int w, int h) {
+        final Cosmetics cosmetics = client.cosmetics;
+        cosmetics.wantStats();
+        button(canvas, "Back to modules", x, y, 116, 22, 0xff303a2d, ACCENT, () -> this.cosmetics = false);
+        boolean wide = w >= 380;
+        if (wide) {
+            button(canvas, "Refresh", x + w - 58, y, 58, 22, 0xff303a2d, MUTED, () -> cosmetics.refresh());
+            button(canvas, cosmetics.visible() ? "Shown" : "Hidden", x + w - 122, y, 60, 22, 0xff303a2d, cosmetics.visible() ? ACCENT : MUTED, () -> cosmetics.visible(!cosmetics.visible()));
+            String stats = cosmetics.online() >= 0 ? cosmetics.online() + " online / " + cosmetics.peak() + " peak / " + cosmetics.total() + " players" : cosmetics.enabled() ? "Counting players..." : "";
+            canvas.text(fit(canvas, stats, w - 254), x + 124, y + 7, MUTED);
+        }
+        canvas.text(fit(canvas, cosmetics.status(), w), x, y + 30, cosmetics.signedIn() ? TEXT : MUTED);
+        List<String> capes = new ArrayList<String>();
+        capes.add("none");
+        for (Cosmetics.Item item : cosmetics.capes()) if (cosmetics.unlocked(item, true)) capes.add(item.id);
+        if (cosmetics.customHash() != null && !"rejected".equals(cosmetics.customStatus())) capes.add("custom");
+        String worn = cosmetics.equippedCape() == null ? "none" : cosmetics.equippedCape();
+        int cardW = 56, cardH = 84, gap = 6, columns = Math.max(1, (w + gap) / (cardW + gap));
+        int gridTop = y + 58, badgeBlock = 62, rowsVisible = Math.max(1, (h - 58 - badgeBlock - 14) / (cardH + gap));
+        int rows = (capes.size() + columns - 1) / columns;
+        cosmeticsScroll = clamp(cosmeticsScroll, 0, Math.max(0, rows - rowsVisible));
+        canvas.text(rows > rowsVisible ? "Capes (scroll for more)" : "Capes", x, y + 46, TEXT);
+        long now = System.currentTimeMillis();
+        for (int i = cosmeticsScroll * columns; i < Math.min(capes.size(), (cosmeticsScroll + rowsVisible) * columns); i++) {
+            final String id = capes.get(i);
+            int cx = x + i % columns * (cardW + gap), cy = gridTop + (i / columns - cosmeticsScroll) * (cardH + gap);
+            boolean selected = id.equals(worn), hover = mouseX >= cx && mouseX < cx + cardW && lastMouseY >= cy && lastMouseY < cy + cardH;
+            canvas.rect(cx, cy, cardW, cardH, selected ? 0xff35412f : hover ? 0xff313a2f : 0xff2a3229);
+            if (selected) { canvas.rect(cx, cy, cardW, 2, ACCENT); canvas.rect(cx, cy + cardH - 2, cardW, 2, ACCENT); }
+            canvas.rect(cx + 12, cy + 5, 32, 50, 0xff171c18);
+            String texture = id.equals("none") ? null : cosmetics.previewTexture(id, now);
+            // The cape's outer face sits at (1,1) and is 10x16 in the 64x32 layout.
+            if (texture != null) canvas.image(texture, cx + 13, cy + 6, 30, 48, 1 / 64f, 1 / 32f, 11 / 64f, 17 / 32f);
+            canvas.text(fit(canvas, capeName(cosmetics, id), cardW - 6), cx + 3, cy + 59, selected ? ACCENT : TEXT);
+            String note = selected ? "Worn" : id.equals("custom") && "pending".equals(cosmetics.customStatus()) ? "In review" : "";
+            if (!note.isEmpty()) canvas.text(fit(canvas, note, cardW - 6), cx + 3, cy + 71, MUTED);
+            controls.add(new Control(cx, cy, cardW, cardH, () -> cosmetics.equip(id.equals("none") ? null : id, cosmetics.equippedBadge())));
+        }
+        int badgeY = gridTop + rowsVisible * (cardH + gap) + 2;
+        if (badgeY + 44 > y + h - 12) return;
+        canvas.text(fit(canvas, "Logo badge next to your name", w), x, badgeY, TEXT);
+        String badge = cosmetics.equippedBadge() == null ? "classic" : cosmetics.equippedBadge();
+        List<String> badges = new ArrayList<String>();
+        badges.add("none");
+        for (Cosmetics.Item item : cosmetics.badges()) if (cosmetics.unlocked(item, false)) badges.add(item.id);
+        int cell = 28, perRow = Math.max(1, (w + 4) / (cell + 4));
+        for (int i = 0; i < Math.min(badges.size(), perRow); i++) {
+            final String id = badges.get(i);
+            int bx = x + i * (cell + 4), by = badgeY + 14;
+            boolean selected = id.equals(badge);
+            canvas.rect(bx, by, cell, cell, selected ? 0xff35412f : 0xff2a3229);
+            if (selected) canvas.rect(bx, by + cell - 2, cell, 2, ACCENT);
+            String texture = cosmetics.badgeTexture(id);
+            if (texture != null) canvas.image(texture, bx + 4, by + 4, 20, 20, 0, 0, 1, 1);
+            else if (id.equals("none")) canvas.text("-", bx + 11, by + 10, MUTED);
+            controls.add(new Control(bx, by, cell, cell, () -> cosmetics.equip(cosmetics.equippedCape(), id)));
+        }
+        canvas.text(fit(canvas, "Upload your own cape, animated strips too, in the Cairn launcher.", w), x, y + h - 10, MUTED);
     }
     private void moduleList(Canvas canvas, int x, int y, int w, int height) {
         List<Module> list = filtered();
