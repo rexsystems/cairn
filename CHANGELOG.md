@@ -30,6 +30,7 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - A **Friends** page lists the people you played with, with Invite again and Join again.
 
 ### Changed
+- Rebuilt the in-game Cairn menu as a dark module gallery with red navigation, module previews, large Enabled/Disabled switches, separate settings controls and a working close button.
 - Mod descriptions are sanitized with DOMPurify, and the app ships a Content Security Policy.
 - The CurseForge API key is no longer in the source. Builds take it from `CAIRN_CURSEFORGE_API_KEY`, and Settings can override it.
 - The Microsoft client ID lives in one module and can be set with `CAIRN_MSA_CLIENT_ID`.
@@ -38,6 +39,8 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - File and network commands run off the main thread, progress events are throttled and live logs are batched, so the window stays responsive during installs and while the game runs (most noticeable on Windows).
 
 ### Fixed
+- Module cards open their settings when clicked, and rebound menu keys no longer interrupt text entry.
+- Added regression checks for SDL and GLFW mouse button mappings, including independent left/right CPS labels.
 - Cairn Client's Friends button remains accessible at narrow GUI sizes, and Tab navigates fields even when it is the menu key.
 - Minecraft 26.3 menu clicks, HUD dragging, CPS button selection and text input use the SDL input APIs.
 - Preparing a second game retains unchanged native libraries and replaces changed files atomically, so it cannot truncate libraries loaded by a running client. Concurrent atomic writes use separate temporary files.

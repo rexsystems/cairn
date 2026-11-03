@@ -20,7 +20,8 @@ def xdo(*args):
 
 def window():
     found = subprocess.run(["xdotool", "search", "--class", "."], capture_output=True, text=True)
-    for wid in found.stdout.split():
+    named = subprocess.run(["xdotool", "search", "--name", "Minecraft"], capture_output=True, text=True)
+    for wid in dict.fromkeys(found.stdout.split() + named.stdout.split()):
         try:
             geometry = xdo("getwindowgeometry", "--shell", wid)
             if "WIDTH=1920\n" in geometry and "HEIGHT=1080\n" in geometry:
@@ -41,7 +42,7 @@ def click(wid, x, y):
 
 
 def capture(wid, name):
-    time.sleep(.3)
+    time.sleep(1)
     subprocess.run(["import", "-window", wid, str(output / name)], check=True)
 
 

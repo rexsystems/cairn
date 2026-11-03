@@ -47,3 +47,20 @@ Docker Compose `up --build -d` was exercised against the local Podman Docker API
 - Craftsmanship PASS: navigation and menu rebinding stay reachable at all twelve tested viewports. Tests cover Tab as the menu binding and leaving text focus with Tab; in-game request/accept, Join, privacy and blocking have real effects on both verified versions.
 
 The remaining handoff work is still open: per-version cape and badge rendering, scoreboard-line alignment, a Forge cape render hook, emotes and the later new features, Windows checks, description-image proxying and a real two-account Discord join test. No new release is claimed for this branch.
+
+## Module gallery and mouse verification, 3 November 2026
+
+The Right Shift menu now follows the supplied visual reference: a bounded charcoal panel, red navigation, a module gallery with individual previews, separate settings controls and green activation switches. The normal Minecraft font is retained. README.md records the layout, icon, spacing and color decisions.
+
+`scripts/menu-e2e.py` launched all nine supported versions as real offline Minecraft processes under Xvfb/software OpenGL. On each version, native mouse input selected Modules, disabled and re-enabled FPS, typed `zoom` into search and disabled the filtered Zoom module. Assertions read the persisted configuration after those actions. Settings and close screenshots were inspected. Three captures were repeated with a longer settling interval because the initial captures caught incomplete frames; all three settled settings pages rendered correctly. The 1.16.5 run used M for the previously documented Xvfb Right Shift limitation. These tests cover menu interaction, not per-version multiplayer cosmetics or GPU performance.
+
+A separate 26.3 client joined a loopback vanilla server. Two native left clicks and three native right clicks produced `2 CPS` on the left and `3 CPS` on the right in the in-world HUD. Shared Java regression tests cover both GLFW 0/1 and SDL 1/3 mouse-button conventions. The tests also cover gallery activation, opening module settings, closing, text entry and reserved menu keys at twelve viewport sizes.
+
+Evidence is stored in `cosmetics/previews/menu-modules-<version>.png`, `menu-settings-26.3.png`, `menu-settings-1.8.9.png`, `menu-cps-26.3.png` and `menu-native-results.json`. The Friends harness coordinates were updated for the new header; its full social scenario has not been repeated after this visual redesign.
+
+All nine client artifacts and shared Java tests pass. The local Tauri debug application was built with the updated embedded jars. GitHub push and PR CI runs 41644863884 and 41644873632 passed, including Check, Fedora and Flatpak. PR build jobs disable updater signing explicitly; the Release workflow still signs release builds.
+
+- Hard gate PASS: native navigation, switches and search passed on all nine versions; settled settings and close captures were inspected. Shared tests verify keyboard interaction and twelve viewport sizes. No fictional product claims or decorative assets were added.
+- Purpose gate PASS: the user's reference supplies the graphite/red gallery direction; README.md explains the grid, normal font, spacing and original module previews. Equal card sizes support scanning and separate activation from settings.
+- Liveliness PASS: ENERGY 2 / RHYTHM 1 / MOTION 1; red selected navigation anchors the gallery, repeated module previews identify functions, and hover/focus states provide interaction feedback.
+- Craftsmanship PASS: persisted state confirms actual actions. Contrast checks pass for normal text: EEEEEE on BF303D 4.88:1, A4E3B4 on 1D432B 7.53:1, AEB5BF on 191E25 8.10:1. SDL and GLFW click mappings have independent regression coverage.
