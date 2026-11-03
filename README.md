@@ -70,6 +70,8 @@ With it on, your Discord profile shows **Join** (or **Ask to join**, which you a
 
 The **Friends** page keeps the people you played with on this computer. Discord's local RPC doesn't expose your friends list or who is online, so Cairn can't show that.
 
+Cairn Client also has an in-game **Friends** tab backed by the configured [cosmetics server](./cosmetics-server/README.md). It supports friend requests, shared game activity, DND, privacy settings, blocking and joining a friend's shared server address from the title screen. See the [client controls and two-client test](./client-mod/README.md#friends) and [validation record](./client-mod/VALIDATION.md) for per-version coverage.
+
 ### Discord app setup (maintainers)
 
 In the [Developer Portal](https://discord.com/developers/applications) for the app (`1566104003291390072`):

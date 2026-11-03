@@ -88,6 +88,7 @@ public final class FriendsTest {
             Canvas canvas = new Canvas(size[0], size[1]);
             navigation.renderMenu(canvas, size[0], size[1], 0, 0);
             check(canvas.positions.containsKey("Friends") && canvas.positions.containsKey("Cosmetics"), "Both pages are reachable from modules at " + size[0] + "x" + size[1]);
+            check(canvas.labels.stream().anyMatch(l -> l.startsWith("Menu key")), "Menu rebinding remains reachable at every viewport");
             int[] at = canvas.positions.get("Friends");
             navigation.mouseDown(size[0], size[1], at[0], at[1]);
             Canvas opened = new Canvas(size[0], size[1]);

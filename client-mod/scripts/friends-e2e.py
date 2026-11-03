@@ -129,6 +129,7 @@ wait(bob_from_alice, "The in-game Accept button did not create the friendship")
 wait(lambda: (bob_from_alice().get("activity") or {}).get("server"), "Bob must be connected to the local Minecraft server")
 assert bob_from_alice()["activity"]["version"] == version
 capture(alice_window, "friends-" + version)
+capture(alice_window, "toast-accepted-" + version)
 
 click(alice_window, 950, 305)
 wait(lambda: next((f for f in friends(b)["friends"] if f["uuid"] == alice["uuid"] and f.get("activity") and f["activity"]["mode"] == "multiplayer"), None), "Join did not connect Alice to Bob's server")

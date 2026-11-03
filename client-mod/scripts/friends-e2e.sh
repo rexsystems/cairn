@@ -26,6 +26,8 @@ cleanup() {
     echo "Test artifacts: $work"
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
+: >"$work/display"
 setsid Xvfb -displayfd 3 -screen 0 2560x1440x24 -nolisten tcp 3>"$work/display" >"$work/xvfb.log" 2>&1 &
 pids+=("$!")
 for attempt in {1..100}; do [[ -s "$work/display" ]] && break; sleep .1; done
@@ -52,6 +54,7 @@ for name in CairnAlice CairnBob; do
     if [[ "$loader" == forge && "$name" == CairnAlice ]]; then
         for attempt in {1..600}; do
             xdotool search --name Minecraft >/dev/null 2>&1 && break
+            if ! kill -0 "$game_pid" 2>/dev/null; then cat "$work/$name.log" >&2; exit 1; fi
             sleep .2
         done
     fi

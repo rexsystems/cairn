@@ -153,6 +153,7 @@ final class CairnMenu {
         if (navigationHeight > 0) {
             button(canvas, friendsLabel(), x + 12, top + 46, 80, 24, friends ? 0xff3c4835 : 0xff303a2d, friends ? ACCENT : TEXT, () -> { if (friends) page("modules"); else openFriends(); });
             button(canvas, "Cosmetics", x + 98, top + 46, 80, 24, cosmetics ? 0xff3c4835 : 0xff303a2d, cosmetics ? ACCENT : TEXT, () -> { if (cosmetics) page("modules"); else openCosmetics(); });
+            if (client.keysManaged()) bindButton(canvas, Bind.MENU, x + 184, top + 46, w - 196, 24);
         }
         int pageTop = top + 47 + navigationHeight;
         if (cosmetics && colorSetting == null) { cosmeticsPage(canvas, x + 12, pageTop, w - 24, bottom - pageTop - 12); return; }
@@ -188,6 +189,10 @@ final class CairnMenu {
         for (int i = 0; i < 3; i++) {
             final int preset = i;
             button(canvas, names[i], x + 54 + i * (presetW + 3), footerY, presetW, 22, 0xff303a2d, TEXT, () -> client.preset(preset));
+        }
+        if (client.keysManaged() && headerFriends && w < 620) {
+            int bindWidth = Math.min(150, w - 66 - 3 * (presetW + 3));
+            bindButton(canvas, Bind.MENU, x + w - 12 - bindWidth, footerY, bindWidth, 22);
         }
         if (client.saveError() != null) canvas.text(fit(canvas, "Could not save settings. Check the log.", w - 24), x + 12, contentBottom - 10, 0xffffb9a4);
     }

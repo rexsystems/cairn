@@ -30,6 +30,12 @@ Keystrokes draws W/A/S/D, left/right mouse buttons and Space as individual keys.
 
 Twenty modules: FPS, coordinates, ping, keystrokes, left/right CPS, armor durability, potion effects, local clock, movement speed, toggle sprint, zoom, crosshair, direction, biome, held item, hunger/saturation, world time, session duration, memory and server address.
 
+## Friends
+
+The module menu's **Friends** button opens requests, friends and privacy settings. It remains available at narrow GUI sizes. Add a player by name, accept their request, and see the version and server they choose to share. **Privacy** opens sharing and toast settings on shorter screens. **DND** mutes Cairn notifications; **Appear offline** hides activity from friends. Blocking removes the friendship and queued notifications in both directions.
+
+**Join** appears only when a friend shares an address and the local client is outside a world. Leave the current world before joining another server. All six Fabric adapters and all three Forge adapters provide the connection handler; in-game request, join and privacy checks have been completed on 26.3 and Forge 1.8.9. Other versions currently have build and shared-test coverage for these changes.
+
 Zoom has adjustable strength and optional smoothing. While zooming, the mouse wheel changes the zoom level instead of the hotbar slot, and the cinematic camera can be applied for the duration of the zoom; the previous camera setting is restored on release. Toggle sprint has auto-sprint and reset-on-stop options while respecting food, sneak, item use and collision checks. Clock supports seconds and 12/24-hour formats. Crosshair has configurable size, gap, thickness, center dot and color; it can be positioned and scaled in the editor. It replaces Minecraft's crosshair by default, with an option to retain the original. Armor, held item and effects currently use compact text displays.
 
 Choices persist in `config/cairn-client.properties` inside the instance. Existing settings survive upgrades, and invalid numeric settings are bounded.
@@ -40,7 +46,7 @@ The launcher installs only `mods/cairn-client-managed.jar`. Turning Cairn off re
 
 ## Build and validation
 
-`npm run build:client` rebuilds all six artifacts under `src-tauri/client-mods`, then runs shared Java tests. Bundled jars are included in source so building the launcher does not require Java tools or mod downloads.
+`npm run build:client` rebuilds all nine artifacts under `src-tauri/client-mods`, then runs shared Java tests. Bundled jars are included in source so building the launcher does not require Java tools or mod downloads.
 
 Requirements: Node and curl; JDK 25 for 26.3; Gradle 8.14 running on JDK 21 for mapped Fabric and legacy Forge; an installed JDK 8 for Forge's legacy tooling. Set `CAIRN_MODERN_JAVA_HOME`, `CAIRN_LEGACY_JAVA_HOME`, `CAIRN_JAVA_INSTALLATIONS` (comma-separated JDK directories) and `CAIRN_GRADLE` when tools are not the system defaults. Output bytecode targets Java 8 for Forge and 1.16.5, Java 17 for 1.20.1/1.20.4, Java 21 for 1.21.1/1.21.11 and Java 25 for 26.3. Minecraft is not included in output jars.
 
@@ -48,9 +54,23 @@ Build one family with `node client-mod/scripts/build.mjs forge`, `mapped` or `mo
 
 `npm run test:client` checks configuration, search, controls, arbitrary colors, per-widget size, presets, snapping, resize handles, cached HUD measurement and settings pages at twelve viewport sizes. `npm test` covers the Options toggle; `npm run test:rust` covers managed installation and preservation of user files. To run the headless core CPU benchmark after compiling tests: `java -cp client-mod/common/build/test-classes app.cairn.client.HudBenchmark`. This excludes Minecraft, font drawing and GPU work and does not measure in-game FPS.
 
+### Two-client friends test
+
+On Linux, install Xvfb, xdotool, ImageMagick (`import`), Python 3, curl, ripgrep and the normal launcher build dependencies. Start a matching vanilla Minecraft server in offline mode on loopback with its whitelist disabled. The test creates its own loopback cosmetics server with dev authentication, private X display and two offline identities. It drives Add, Accept, Join, DND, hide-server, appear-offline and Block through the real game windows, checks API responses, and saves screenshots and a JSON result. Inspect the DND screenshots to confirm toast absence; that visual check is not automated.
+
+```sh
+CAIRN_SMOKE_SERVER=127.0.0.1:25575 bash client-mod/scripts/friends-e2e.sh 26.3 fabric
+E2E_JAVA=/path/to/jdk8/bin/java CAIRN_SMOKE_SERVER=127.0.0.1:25576 \
+  bash client-mod/scripts/friends-e2e.sh 1.8.9 forge
+```
+
+`CAIRN_SMOKE_DIR` selects the artifact directory; the default is a new temporary directory. Set `CAIRN_SMOKE_CACHE` to a launcher data directory to copy its `meta/` and `java/` caches into the isolated test directory. The harness retains artifacts and stops its own clients and services on exit. Use a fresh directory for each completed run, since successful runs leave players blocked. No Microsoft account is used, and dev authentication is never exposed outside loopback.
+
 ## Rendering decisions
 
 ENERGY 2 / RHYTHM 1 / MOTION 1. The existing moss accent identifies enabled modules, selection and HUD handles. Search and category filters reduce scanning; the inspector holds per-module controls separately from activation. Two columns collapse to one in narrower windows. Solid surfaces keep labels readable over gameplay. Minecraft's normal font follows the user's preference. Widths are measured by the active font and text is clipped to its container. No decorative motion competes with gameplay.
+
+Friends and Cosmetics stay in the header when they fit and move to their own row on narrow screens, so navigation cannot disappear behind presets. Menu-key rebinding moves to that row or the footer when the header is full.
 
 HUD state is parsed once when the mod starts. Text layout is cached until content, width or scale changes. Click counters refresh at 100 ms; clocks and memory at one second; game statistics at five ticks. Disabled statistics skip formatting. Configuration writes happen on control changes and drag release, never during HUD rendering. Text component caches are bounded. Keystrokes input and zoom stay responsive independently of statistics formatting.
 

@@ -1,0 +1,11 @@
+{
+  "version": "1.8.9",
+  "request": "passed",
+  "accept": "passed",
+  "presence": "passed",
+  "join": "passed",
+  "hideServer": "passed",
+  "appearOffline": "passed",
+  "block": "passed",
+  "dnd": "screenshots captured; inspect toast absence"
+}

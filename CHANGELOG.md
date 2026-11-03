@@ -7,6 +7,7 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 ## [Unreleased]
 
 ### Added
+- In-game Join controls for shared friend server addresses on all supported Fabric and Forge versions, available outside a world.
 - Stable and beta update channels, picked under Settings → About.
 - SHA-256 checks for Java runtimes, Forge/NeoForge installers and Horizon downloads.
 - Opt-in usage stats and crash reports, asked once on first launch.
@@ -37,6 +38,9 @@ ships as `X.Y.Z+N` (build N of X.Y.Z); `npm run bump -- X.Y.Z` starts a new vers
 - File and network commands run off the main thread, progress events are throttled and live logs are batched, so the window stays responsive during installs and while the game runs (most noticeable on Windows).
 
 ### Fixed
+- Cairn Client's Friends button remains accessible at narrow GUI sizes, and Tab navigates fields even when it is the menu key.
+- Minecraft 26.3 menu clicks, HUD dragging, CPS button selection and text input use the SDL input APIs.
+- Preparing a second game retains unchanged native libraries and replaces changed files atomically, so it cannot truncate libraries loaded by a running client. Concurrent atomic writes use separate temporary files.
 - Instant-moderation cape uploads report `approved` instead of `pending`.
 - Cosmetics-server friend notifications and cursors survive restarts. Privacy changes also remove queued activity notices, including previously shared server addresses.
 - The compatibility report no longer flags multi-loader mods for another loader's dependencies, and checks Fabric API modules against their own versions.
