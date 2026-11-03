@@ -253,6 +253,13 @@ export interface CosmeticsMe {
   moderation: "approval" | "instant";
 }
 export interface CosmeticsOverview { url: string | null; stats: CosmeticsStats | null; me: CosmeticsMe | null; error: string | null }
+/** Cairn Client friends; status and activity come only from players running the mod. */
+export interface CairnActivity { version: string; mode: "menu" | "singleplayer" | "multiplayer"; server: string | null }
+export interface CairnFriend { uuid: string; name: string; since: number; status: "online" | "dnd" | "offline"; activity: CairnActivity | null }
+export interface CairnPerson { uuid: string; name: string }
+export interface SocialSettings { share: "full" | "game" | "status"; appearOffline: boolean; requests: "everyone" | "none"; dnd: boolean }
+export interface CairnFriendList { friends: CairnFriend[]; incoming: CairnPerson[]; outgoing: CairnPerson[]; blocked: CairnPerson[]; settings: SocialSettings; reply?: { status?: string; name?: string } }
+export type CairnFriendAction = "add" | "accept" | "decline" | "cancel" | "remove" | "block" | "unblock";
 
 export interface LaunchOpts {
   world?: string | null;
@@ -369,6 +376,9 @@ export const api = {
   cosmeticsEquip: (id: string | undefined, cape: string | null, badge: string | null) => invoke<CosmeticsMe>("cosmetics_equip", { id, cape, badge }),
   cosmeticsUpload: (id: string | undefined, png: Uint8Array, frameMs: number) => invoke<CosmeticsMe>("cosmetics_upload", { id, png: Array.from(png), frameMs }),
   cosmeticsRemoveCape: (id?: string) => invoke<CosmeticsMe>("cosmetics_remove_cape", { id }),
+  cairnFriends: () => invoke<CairnFriendList>("cairn_friends", {}),
+  cairnFriendAction: (action: CairnFriendAction, target: string) => invoke<CairnFriendList>("cairn_friend_action", { action, target }),
+  cairnSocialSettings: (patch: Partial<SocialSettings>) => invoke<SocialSettings>("cairn_social_settings", { patch }),
   cosmeticsCapeImage: (hash: string) => invoke<string>("cosmetics_cape_image", { hash }),
   accountCosmetics: (id: string) => invoke<AccountCosmetics>("account_cosmetics", { id }),
   setAccountCape: (id: string, capeId: string | null) => invoke<AccountCosmetics>("set_account_cape", { id, capeId }),

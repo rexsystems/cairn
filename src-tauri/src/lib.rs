@@ -1094,6 +1094,41 @@ async fn cosmetics_remove_cape(state: State<'_, AppState>, id: Option<String>) -
 }
 
 #[tauri::command]
+async fn cairn_friends(state: State<'_, AppState>, id: Option<String>) -> R<Value> {
+    let base = cosmetics_base(&state)?;
+    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
+    cosmetics::friends(&base, &acc).await.map_err(ea)
+}
+
+#[tauri::command]
+async fn cairn_friend_action(state: State<'_, AppState>, id: Option<String>, action: String, target: String) -> R<Value> {
+    let base = cosmetics_base(&state)?;
+    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
+    cosmetics::friend_action(&base, &acc, &action, &target).await.map_err(ea)
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SocialPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    share: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    appear_offline: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requests: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dnd: Option<bool>,
+}
+
+#[tauri::command]
+async fn cairn_social_settings(state: State<'_, AppState>, id: Option<String>, patch: SocialPatch) -> R<Value> {
+    let base = cosmetics_base(&state)?;
+    let acc = cosmetics_account(&state, id.as_deref()).await.map_err(ea)?;
+    let patch = serde_json::to_value(&patch).map_err(|e| e.to_string())?;
+    cosmetics::social_settings(&base, &acc, &patch).await.map_err(ea)
+}
+
+#[tauri::command]
 async fn set_account_skin(state: State<'_, AppState>, id: String, path: String, model: String) -> R<accounts::AccountCosmetics> {
     let _lock = state.accounts_lock.lock().await;
     let mut f = AccountsFile::load(&state.paths);
@@ -1613,6 +1648,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info, get_settings, save_settings,
             cosmetics_overview, cosmetics_equip, cosmetics_upload, cosmetics_remove_cape, cosmetics_cape_image,
+            cairn_friends, cairn_friend_action, cairn_social_settings,
             list_instances, get_instance, create_instance, update_instance, delete_instance, duplicate_instance, set_instance_icon,
             import_mrpack, import_modpack, export_mrpack,
             share_code, read_share_code, import_share_code,

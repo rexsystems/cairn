@@ -178,6 +178,60 @@ pub async fn cape_data_url(base: &str, hash: &str) -> Result<String> {
     Ok(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&bytes)))
 }
 
+/// Cairn Client friends. The launcher only reads and manages the list; it never sends a heartbeat,
+/// so it can't make anyone look in-game. Presence comes from the mod alone.
+pub async fn friends(base: &str, acc: &Account) -> Result<Value> {
+    authed(base, acc, |t| HTTP.get(format!("{base}/v1/friends")).bearer_auth(t)).await
+}
+
+/// Builds the request for one friend action; the target is checked so it can't change the path.
+fn friend_request(base: &str, action: &str, target: &str) -> Result<(reqwest::Method, String, Option<Value>)> {
+    let target = target.trim();
+    let uuid = || -> Result<String> {
+        let id = compact(target);
+        if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            bail!("That isn't a player id.");
+        }
+        Ok(id)
+    };
+    use reqwest::Method;
+    Ok(match action {
+        "add" => {
+            let name_ok = (1..=16).contains(&target.len()) && target.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+            if !name_ok && uuid().is_err() {
+                bail!("Enter a Minecraft name or UUID.");
+            }
+            (Method::POST, format!("{base}/v1/friends/requests"), Some(json!({ "target": target })))
+        }
+        "accept" | "decline" | "cancel" => (Method::POST, format!("{base}/v1/friends/requests/{}/{action}", uuid()?), None),
+        "remove" => (Method::DELETE, format!("{base}/v1/friends/{}", uuid()?), None),
+        "block" => (Method::PUT, format!("{base}/v1/blocks/{}", uuid()?), None),
+        "unblock" => (Method::DELETE, format!("{base}/v1/blocks/{}", uuid()?), None),
+        _ => bail!("Unknown friend action."),
+    })
+}
+
+/// Runs one action and returns the refreshed list, plus the server's reply for "add".
+pub async fn friend_action(base: &str, acc: &Account, action: &str, target: &str) -> Result<Value> {
+    let (method, url, body) = friend_request(base, action, target)?;
+    let reply = authed(base, acc, |t| {
+        let req = HTTP.request(method.clone(), &url).bearer_auth(t);
+        match &body {
+            Some(body) => req.json(body),
+            None => req,
+        }
+    })
+    .await?;
+    let mut list = friends(base, acc).await?;
+    list["reply"] = reply;
+    Ok(list)
+}
+
+/// Partial privacy update; the server validates values and applies only the given fields.
+pub async fn social_settings(base: &str, acc: &Account, patch: &Value) -> Result<Value> {
+    authed(base, acc, |t| HTTP.put(format!("{base}/v1/me/social")).bearer_auth(t).json(patch)).await
+}
+
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
@@ -190,6 +244,20 @@ pub struct Overview {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn friend_actions_keep_targets_out_of_the_path() {
+        let id = "069a79f4-44e9-4726-a5be-fca90e38aaf5";
+        let (m, url, body) = friend_request("https://c.example", "accept", id).unwrap();
+        assert_eq!((m, url.as_str(), body), (reqwest::Method::POST, "https://c.example/v1/friends/requests/069a79f444e94726a5befca90e38aaf5/accept", None));
+        let (m, url, body) = friend_request("https://c.example", "add", " Notch ").unwrap();
+        assert_eq!((m, url.as_str(), body.unwrap()["target"].as_str()), (reqwest::Method::POST, "https://c.example/v1/friends/requests", Some("Notch")));
+        assert_eq!(friend_request("https://c.example", "unblock", id).unwrap().0, reqwest::Method::DELETE);
+        assert!(friend_request("https://c.example", "remove", "../../admin").is_err());
+        assert!(friend_request("https://c.example", "block", "Notch").is_err());
+        assert!(friend_request("https://c.example", "add", "bad name").is_err());
+        assert!(friend_request("https://c.example", "heartbeat", id).is_err());
+    }
 
     #[test]
     fn urls_need_https_except_on_loopback() {

@@ -4,10 +4,11 @@ import { useStore } from "../store";
 import { Icon } from "../components/Icon";
 import { EmptyState, ErrorState, Loading } from "../components/ui";
 import { InviteDialog } from "../components/InviteDialog";
+import { CairnFriends } from "../components/CairnFriends";
 import { relativeTime } from "../format";
 import { describeJoin, runJoin } from "../lib/join";
 
-/** People you played with through Cairn invites, kept on this computer only. */
+/** Cairn Client friends from the Cairn server, then people you played with through invites (kept on this computer). */
 export function Friends() {
   const { toast, play, refreshInstances, go, instances, games } = useStore();
   const [friends, setFriends] = useState<Friend[] | null>(null);
@@ -56,9 +57,11 @@ export function Friends() {
       <div className="page-head">
         <div>
           <h1>Friends</h1>
-          <p className="muted">People who joined you, and sessions you joined, through Cairn invites.</p>
+          <p className="muted">Friends who play with Cairn Client, and people you played with through Cairn invites.</p>
         </div>
       </div>
+      <CairnFriends />
+      <h2>Invites and Discord</h2>
       <div className="notice" role="note">
         <Icon name="warn" />
         <p className="small">
