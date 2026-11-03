@@ -16,7 +16,6 @@ import java.util.Locale;
 import app.cairn.client.Cosmetics;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
@@ -45,7 +44,6 @@ public final class CairnFabric implements ClientModInitializer {
     }
     private static final java.util.Map<String, Identifier> TEXTURES = new java.util.HashMap<String, Identifier>();
     private static final java.util.Map<Identifier, ClientAsset.ResourceTexture> CAPE_ASSETS = new java.util.HashMap<Identifier, ClientAsset.ResourceTexture>();
-    private static final Component STAFF = Component.literal("STAFF ").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD);
     /** Uploads cosmetics PNGs lazily on the render thread; a broken image is remembered so it isn't decoded every frame. */
     private static Identifier texture(String key) {
         if (client == null || key == null) return null;
@@ -73,7 +71,6 @@ public final class CairnFabric implements ClientModInitializer {
             PlayerSkin skin = state.skin;
             state.skin = new PlayerSkin(skin.body(), CAPE_ASSETS.computeIfAbsent(cape, id -> new ClientAsset.ResourceTexture(id, id)), skin.elytra(), skin.model(), skin.secure());
         }
-        if (look.staff() && state.nameTag != null) state.nameTag = STAFF.copy().append(state.nameTag);
     }
     /** Mirrors vanilla's name tag transform so the logo badge sits just left of the name. */
     public static void badge(AvatarRenderState state, PoseStack pose, SubmitNodeCollector collector, CameraRenderState camera) {

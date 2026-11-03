@@ -103,7 +103,7 @@ Without Docker, run `cargo build --release`, then start `target/release/cairn-co
 
 ### First admin and staff roles
 
-Roles are `player`, `staff`, `admin` and `banned`. `staff` and `admin` unlock the staff cape and gold badge and show a STAFF tag in-game. Grant them with the CLI inside the container. Roles can be set before the player has ever signed in.
+Roles are `player`, `staff`, `admin` and `banned`. `staff` and `admin` unlock the staff cape and the gold badge; in-game, staff are told apart only by that badge colour next to their vanilla name. Grant them with the CLI inside the container. Roles can be set before the player has ever signed in.
 
 ```sh
 docker compose exec cosmetics cairn-cosmetics-server role <uuid> admin
