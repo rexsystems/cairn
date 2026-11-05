@@ -71,6 +71,7 @@ public final class Cosmetics {
         String raw = System.getProperty("cairn.cosmetics.url");
         if (blank(raw)) raw = System.getenv("CAIRN_COSMETICS_URL");
         if (blank(raw)) raw = client.option("cosmetics.url", "");
+        if (blank(raw)) raw = "https://cairn-cosmetics.694206767.xyz";
         String problem = null, url = null;
         if (!blank(raw)) {
             url = normalizeUrl(raw);

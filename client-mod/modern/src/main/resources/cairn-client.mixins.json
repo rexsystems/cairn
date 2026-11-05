@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "app.cairn.client.modern.mixin",
   "compatibilityLevel": "JAVA_25",
-  "client": ["AvatarRendererMixin", "ClientTickMixin", "HudMixin", "ZoomMixin", "MouseMixin", "KeyboardMixin"],
+  "client": ["AvatarRendererMixin", "ClientTickMixin", "HudMixin", "ZoomMixin", "MouseMixin","LevelOptionsMixin","ToastOptionsMixin","ParticleOptionsMixin","PlayerOptionsMixin","NetworkOptionsMixin","CombatOptionsMixin","InteractionOptionsMixin","OrbitCameraMixin","BossOptionsMixin","BrightnessOptionsMixin","DebugOptionsMixin","ViewmodelOptionsMixin", "KeyboardMixin"],
   "injectors": { "defaultRequire": 1 }
 }

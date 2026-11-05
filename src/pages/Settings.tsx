@@ -169,7 +169,7 @@ export function SettingsPage() {
               autoComplete="off"
               spellCheck={false}
               value={form.cosmeticsUrl ?? ""}
-              placeholder="https://cosmetics.example.com"
+              placeholder="https://cairn-cosmetics.694206767.xyz"
               onChange={(e) => set("cosmeticsUrl", e.target.value)}
               onBlur={() => {
                 if (!settings) return;
@@ -179,7 +179,7 @@ export function SettingsPage() {
               }}
             />
           </label>
-          <small className="muted">Capes, badges and the online count come from this server, which you host yourself (see cosmetics-server/README.md). Leave it empty to turn cosmetics off. Cairn Client in your games uses the same server.</small>
+          <small className="muted">Leave empty to use cairn-cosmetics.694206767.xyz, or enter your own HTTPS backend. Cairn Client uses the same server for cosmetics and friends.</small>
         </section>
 
         <section className="panel settings-section" aria-labelledby="s-game">

@@ -18,9 +18,10 @@ public final class ClientInteractionTest {
         final List<Label> labels = new ArrayList<Label>();
         final List<Integer> colors = new ArrayList<Integer>();
         int icons;
+        final List<Object> drawnIcons = new ArrayList<Object>();
         Canvas(int width, int height) { this.width = width; this.height = height; }
         public void rect(int x, int y, int w, int h, int color) { check(x >= 0 && y >= 0 && w >= 0 && h >= 0 && x + w <= width && y + h <= height, "Rectangle outside " + width + "x" + height + ": " + x + "," + y + "," + w + "," + h); colors.add(color); }
-        public void icon(Object icon, int x, int y, int size) { icons++; check(x >= 0 && y >= 0 && x + size <= width && y + size <= height, "Icon outside viewport"); }
+        public void icon(Object icon, int x, int y, int size) { icons++; drawnIcons.add(icon); check(x >= 0 && y >= 0 && x + size <= width && y + size <= height, "Icon outside viewport"); }
         public int textWidth(String text) { measures++; return text.length() * 6; }
         public void text(String text, int x, int y, int color) { textScaled(text, x, y, color, 1, false); }
         public void textScaled(String text, int x, int y, int color, float scale, boolean shadow) {
@@ -90,9 +91,10 @@ public final class ClientInteractionTest {
                 client.value(Module.FPS, "144 FPS"); client.value(Module.COORDINATES, "XYZ 1234 64 -5678");
                 client.renderHud(new Canvas(size[0], size[1]), size[0], size[1]);
                 List<int[]> boxes = new ArrayList<int[]>();
-                for (Module module : Module.values()) if (client.enabled(module) && module.hud && module != Module.CROSSHAIR) boxes.add(client.bounds(module));
+                List<Module> shown = new ArrayList<Module>();
+                for (Module module : Module.values()) if (client.enabled(module) && module.hud && module != Module.CROSSHAIR) { boxes.add(client.bounds(module)); shown.add(module); }
                 // A screen too small for everything may clamp; the common sizes must not overlap.
-                if (size[1] >= 360 || !preset.equals("All")) for (int i = 0; i < boxes.size(); i++) for (int j = i + 1; j < boxes.size(); j++) check(!overlaps(boxes.get(i), boxes.get(j)), preset + " preset overlaps at " + size[0] + "x" + size[1]);
+                if (size[1] >= 360 || !preset.equals("All")) for (int i = 0; i < boxes.size(); i++) for (int j = i + 1; j < boxes.size(); j++) check(!overlaps(boxes.get(i), boxes.get(j)), preset + " preset overlaps at " + size[0] + "x" + size[1] + ": " + shown.get(i) + Arrays.toString(boxes.get(i)) + " / " + shown.get(j) + Arrays.toString(boxes.get(j)));
             }
         }
         int[] fps = client.bounds(Module.FPS);
@@ -140,6 +142,8 @@ public final class ClientInteractionTest {
             previewsAndOverlay(directory);
             slidersColorsAndCenter(directory);
             hudDimensionsAndBlockTarget(directory);
+            inventoryArmorAndTelemetry(directory);
+            cameraModesAndLogRetention(directory);
             CairnClient client = new CairnClient(directory);
             client.focusSearch();
             for (char c : "keySTROKES".toCharArray()) client.type(c);
@@ -290,6 +294,59 @@ public final class ClientInteractionTest {
             viewport.click(client, "Cancel");
         }
     }
+    private static void cameraModesAndLogRetention(Path parent) throws Exception {
+        CameraModes<Integer> camera = new CameraModes<Integer>();
+        check(camera.update(0, true, false, 1, 2) == 2, "Snaplook temporarily selects the front camera");
+        check(camera.update(2, false, false, 1, 2) == 0, "Releasing snaplook restores the first-person camera");
+        check(camera.update(0, false, true, 1, 2) == 1, "Elytra flight selects the rear camera");
+        check(camera.update(1, true, true, 1, 2) == 2, "Snaplook takes priority over automatic perspective");
+        check(camera.update(2, false, true, 1, 2) == 1 && camera.update(1, false, false, 1, 2) == 0, "Overlapping temporary camera modes unwind to the original camera");
+        camera.update(0, true, false, 1, 2);
+        check(camera.update(1, true, false, 1, 2) == 1 && camera.update(1, false, false, 1, 2) == 1, "A manual camera change is preserved");
+        Path logs = Files.createTempDirectory(parent, "logs-"); long now = System.currentTimeMillis();
+        for (int i = 0; i < 6; i++) {
+            Path file = logs.resolve("2026-10-" + (10 + i) + "-1.log.gz"); Files.write(file, new byte[] {1});
+            Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(now - (i + 1) * 86_400_000L));
+        }
+        Files.write(logs.resolve("latest.log"), new byte[] {1}); Files.write(logs.resolve("other.log.gz"), new byte[] {1});
+        check(LogRetention.prune(logs, 3, 3, now) == 3, "Log retention removes only old archives beyond the minimum count");
+        check(Files.exists(logs.resolve("latest.log")) && Files.exists(logs.resolve("other.log.gz")) && Files.exists(logs.resolve("2026-10-10-1.log.gz")), "Active, unrelated and newest logs survive cleanup");
+        check(LogRetention.prune(logs, 3, 1, now) == 0, "The newest minimum archive count always survives");
+    }
+    private static void inventoryArmorAndTelemetry(Path parent) throws Exception {
+        CairnClient client = new CairnClient(Files.createTempDirectory(parent, "inventory-"));
+        for (Module module : Module.values()) if (client.enabled(module)) client.toggle(module);
+        client.toggle(Module.INVENTORY);
+        List<CairnClient.HudRow> slots = new ArrayList<CairnClient.HudRow>();
+        for (int i = 0; i < 36; i++) slots.add(new CairnClient.HudRow("slot" + i, i == 9 ? "64" : "1"));
+        client.inventory(slots); slots.clear();
+        Canvas canvas = new Canvas(960, 540);
+        client.setting(Module.INVENTORY, Setting.OPACITY, 37);
+        client.renderHud(canvas, 960, 540);
+        check(canvas.drawnIcons.size() == 36 && canvas.drawnIcons.get(0).equals("slot9") && canvas.drawnIcons.get(27).equals("slot0"), "Inventory preserves all slots and places the hotbar last");
+        check(canvas.labels.stream().anyMatch(label -> label.text.equals("64")), "Inventory renders stack counts");
+        check(canvas.colors.stream().anyMatch(color -> color >>> 24 == 37 * 255 / 100), "Inventory background uses the configured alpha");
+        client.setting(Module.INVENTORY, Setting.INVENTORY_HOTBAR, 0); canvas.drawnIcons.clear(); client.renderHud(canvas, 960, 540);
+        check(canvas.drawnIcons.size() == 27, "Hiding the hotbar retains all three main inventory rows");
+        client.toggle(Module.INVENTORY); client.toggle(Module.ARMOR);
+        client.rows(Module.ARMOR, Arrays.asList(new CairnClient.HudRow("helmet", "363"), new CairnClient.HudRow("chest", "528"), new CairnClient.HudRow("legs", "495"), new CairnClient.HudRow("boots", "429")));
+        canvas.drawnIcons.clear(); client.renderHud(canvas, 960, 540);
+        check(canvas.drawnIcons.equals(Arrays.<Object>asList("helmet", "chest", "legs", "boots")), "Armor renders helmet first by default");
+        client.setting(Module.ARMOR, Setting.ARMOR_INVERT, 1); canvas.drawnIcons.clear(); client.renderHud(canvas, 960, 540);
+        check(canvas.drawnIcons.equals(Arrays.<Object>asList("boots", "legs", "chest", "helmet")), "Armor inversion changes the rendered order");
+        client.rows(Module.ARMOR, Collections.<CairnClient.HudRow>emptyList()); canvas.colors.clear(); client.renderPreview(canvas, Module.ARMOR, 0, 0, 300, 180);
+        check(canvas.colors.contains(0xff63d9d1) && client.state(Module.ARMOR).rows.isEmpty(), "Empty armor previews use sample items without mutating live equipment");
+        client.toggle(Module.TPS); client.clientTick();
+        check(client.state(Module.TPS).value.equals("Waiting for server ticks"), "TPS never invents a server tick rate from client ticks");
+        long now = System.nanoTime(); client.serverTime(100, now - 2_000_000_000L); client.serverTime(120, now); client.clientTick();
+        check(client.state(Module.TPS).value.equals("10.0 TPS"), "TPS measures server ticks over real elapsed time");
+        client.toggle(Module.COMBO); client.attacked(42); client.entityHurt(43, false); client.clientTick();
+        check(!client.state(Module.COMBO).value.equals("1 combo"), "Unrelated damage never counts as our hit");
+        client.entityHurt(42, false); check(client.state(Module.COMBO).value.equals("1 combo"), "Server-confirmed damage to the attacked entity counts");
+        client.entityHurt(42, false); check(client.state(Module.COMBO).value.equals("1 combo"), "Duplicate damage does not count twice");
+        client.entityHurt(1, true); check(client.state(Module.COMBO).value.equals("0 combo"), "Taking damage resets the combo");
+        for (Module module : Module.values()) check(ModuleIcons.mask(module).matches("[0-9a-f]{16}"), "Every module has a complete icon: " + module);
+    }
     private static void previewsAndOverlay(Path parent) throws Exception {
         CairnClient client = new CairnClient(Files.createTempDirectory(parent, "previews-"));
         check(client.setting(Module.FPS, Setting.BORDER) == 0, "New HUDs have no colored edge");
@@ -325,7 +382,7 @@ public final class ClientInteractionTest {
             check(calls[0] == 12, "Initial backward title navigation selects the last enabled action");
         }
         client.cosmetics.equip("ember", "classic");
-        check(client.cosmetics.status().startsWith("No cosmetics server"), "Selection preserves the missing-server diagnosis");
+        check(client.cosmetics.enabled() && client.cosmetics.status().startsWith("Sign in with a Microsoft account"), "Default backend requires verified sign-in before selecting cosmetics");
         Path legacy = Files.createTempDirectory(parent, "plain-migration-"); Files.createDirectories(legacy.resolve("config"));
         Files.write(legacy.resolve("config/cairn-client.properties"), Arrays.asList("FPS.BORDER=1", "FPS.BG_COLOR=-14933732", "PING.TEXT_COLOR=-5588020"));
         CairnClient migrated = new CairnClient(legacy);

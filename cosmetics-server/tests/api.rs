@@ -394,6 +394,7 @@ fn config_refuses_unsafe_settings() {
     assert!(Config::from_lookup(env(&[("COSMETICS_SESSION_SERVER", "http://evil.example")])).is_err());
     assert!(Config::from_lookup(env(&[("COSMETICS_CAPE_MODERATION", "sometimes")])).is_err());
     let cfg = Config::from_lookup(env(&[])).unwrap();
+    assert_eq!(cfg.bind.to_string(), "127.0.0.1:9437");
     assert!(cfg.admin_token.is_none() && cfg.cors_origins.is_empty() && !cfg.dev_insecure_auth && !cfg.trust_proxy);
     assert_eq!(cfg.moderation, Moderation::Approval);
 }

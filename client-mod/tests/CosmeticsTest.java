@@ -82,7 +82,7 @@ public final class CosmeticsTest {
     private static void offline(Path parent) throws Exception {
         System.clearProperty("cairn.cosmetics.url");
         CairnClient client = new CairnClient(Files.createTempDirectory(parent, "offline-"));
-        check(!client.cosmetics.enabled() && client.cosmetics.look("069a79f444e94726a5befca90e38aaf5") == null, "No server means no lookups");
+        check(client.cosmetics.enabled(), "The public backend is configured by default");
         client.cosmetics.account("Steve", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "0");
         client.cosmetics.tick();
         Canvas canvas = new Canvas(640, 360);
@@ -97,7 +97,8 @@ public final class CosmeticsTest {
         }
         openCosmetics(client, canvas);
         check(canvas.labels.contains("Capes") && canvas.labels.contains("Pulse"), "Catalog previews show without a server");
-        check(canvas.labels.stream().anyMatch(label -> label.startsWith("No cosmetics server set")), "Explains why equipping is off");
+        client.cosmetics.equip("ember", "classic");
+        check(client.cosmetics.status().contains("Microsoft"), "Unverified accounts must sign in before equipping");
         waitFor(() -> { canvas.images.clear(); canvas.labels.clear(); client.renderMenu(canvas, 640, 360, 0, 0); return canvas.images.stream().anyMatch(key -> key.startsWith("cape/pulse/")); }, "Bundled capes render previews");
         check(client.escape() && !client.escape(), "Escape leaves the cosmetics page first");
     }

@@ -52,7 +52,8 @@ async fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(inst.dir(&paths).join("config"))?;
         let binding = std::env::var("E2E_MENU_KEY").ok().map(|key| format!("key.MENU={key}\nkey.MENU.name=M\n")).unwrap_or_default();
         let hud = if std::env::var("E2E_HUD").as_deref() == Ok("1") { "ARMOR.enabled=true\nEFFECTS.enabled=true\nBLOCK_INDICATOR.enabled=true\nCROSSHAIR.enabled=true\nCROSSHAIR.placed=true\nCROSSHAIR.x=1\nCROSSHAIR.y=1\n" } else { "" };
-        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), format!("menu.page=friends\n{binding}{hud}"))?;
+        let modules = std::env::var("E2E_MODULES").unwrap_or_default().split(',').filter(|name| !name.is_empty() && name.chars().all(|c| c.is_ascii_uppercase() || c == '_')).map(|name| format!("{name}.enabled=true\n")).collect::<String>();
+        std::fs::write(inst.dir(&paths).join("config/cairn-client.properties"), format!("menu.page=friends\n{binding}{hud}{modules}"))?;
         std::fs::write(inst.dir(&paths).join("options.txt"), "guiScale:2\nmaxFps:30\nrenderDistance:3\nsimulationDistance:3\npauseOnLostFocus:false\n")?;
     }
     eprintln!("prepared {vid} with {java} in {:?}", t0.elapsed());

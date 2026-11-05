@@ -511,98 +511,8 @@ final class CairnMenu {
         canvas.rect(x + 3, y + 4, 4, 4, SURFACE);
     }
     private void preview(Canvas canvas, Module module, int x, int y, int w, int h) {
-        int cx = x + w / 2, cy = y + h / 2;
-        int color = client.enabled(module) ? 0xffdce1e7 : 0xff858e9b;
-        if (module == Module.KEYSTROKES) {
-            int size = Math.min(14, Math.max(8, h / 2 - 1));
-            for (int row = 0; row < 2; row++) for (int col = 0; col < 3; col++) {
-                if (row == 0 && col != 1) continue;
-                int kx = cx + (col - 1) * (size + 2) - size / 2, ky = cy + (row - 1) * (size + 2);
-                rounded(canvas, kx, ky, size, size, 2, color);
-            }
-            return;
-        }
-        if (module == Module.CROSSHAIR) {
-            canvas.rect(cx - 14, cy - 1, 10, 2, color); canvas.rect(cx + 4, cy - 1, 10, 2, color);
-            canvas.rect(cx - 1, cy - 14, 2, 10, color); canvas.rect(cx - 1, cy + 4, 2, 10, color);
-            return;
-        }
-        if (module == Module.CPS) {
-            for (int i = 0; i < 2; i++) {
-                int mx = cx - 22 + i * 24;
-                rounded(canvas, mx, cy - 12, 20, 25, 5, color);
-                canvas.rect(mx + 9, cy - 11, 2, 12, 0xff14181e);
-                canvas.rect(mx + 2, cy - 1, 16, 2, 0xff14181e);
-            }
-            return;
-        }
-        if (module == Module.ARMOR) {
-            for (int i = -1; i <= 1; i++) {
-                int ax = cx + i * 20 - 8;
-                canvas.rect(ax, cy - 8, 5, 8, color); canvas.rect(ax + 11, cy - 8, 5, 8, color);
-                canvas.rect(ax + 4, cy - 5, 8, 18, color); canvas.rect(ax + 3, cy - 7, 10, 5, color);
-                canvas.rect(ax + 6, cy - 7, 4, 3, 0xff14181e);
-            }
-            return;
-        }
-        if (module == Module.PING) {
-            for (int i = 0; i < 4; i++) rounded(canvas, cx - 20 + i * 11, cy + 13 - i * 7, 7, 4 + i * 7, 1, color);
-            return;
-        }
-        if (module == Module.CLOCK || module == Module.SESSION || module == Module.WORLD_TIME || module == Module.ZOOM) {
-            int r = Math.min(14, Math.max(7, h / 2 - 2));
-            ring(canvas, cx, cy, r, color);
-            if (module == Module.ZOOM) {
-                for (int i = 0; i < 10; i++) canvas.rect(cx + r - 2 + i, cy + r - 2 + i, 3, 3, color);
-            } else if (module == Module.WORLD_TIME) {
-                canvas.rect(cx - 2, cy - r - 6, 4, 4, color); canvas.rect(cx - 2, cy + r + 3, 4, 4, color);
-                canvas.rect(cx - r - 6, cy - 2, 4, 4, color); canvas.rect(cx + r + 3, cy - 2, 4, 4, color);
-            } else {
-                canvas.rect(cx - 1, cy - r + 4, 2, r - 2, color); canvas.rect(cx, cy - 1, r - 4, 2, color);
-                if (module == Module.SESSION) canvas.rect(cx - 4, cy - r - 5, 8, 3, color);
-            }
-            return;
-        }
-        if (module == Module.MEMORY || module == Module.SERVER) {
-            for (int i = 0; i < 3; i++) {
-                rounded(canvas, cx - 24, cy - 15 + i * 12, 48, 9, 2, color);
-                canvas.rect(cx - 20, cy - 12 + i * 12, 3, 3, 0xff14181e);
-            }
-            return;
-        }
-        if (module == Module.BIOME) {
-            canvas.rect(cx - 3, cy, 6, 17, color);
-            for (int i = 0; i < 3; i++) canvas.rect(cx - 8 - i * 4, cy - 18 + i * 9, 16 + i * 8, 10, color);
-            return;
-        }
-        if (module == Module.HELD_ITEM) {
-            for (int i = 0; i < 25; i++) canvas.rect(cx - 14 + i, cy + 13 - i, 4, 4, color);
-            for (int i = 0; i < 14; i++) canvas.rect(cx - 13 + i, cy - 2 + i, 3, 3, color);
-            return;
-        }
-        String value;
-        switch (module) {
-            case FPS: value = "FPS"; break;
-            case COORDINATES: value = "X Y Z"; break;
-            case PING: value = "ms"; break;
-            case ARMOR: value = "[|||]"; break;
-            case EFFECTS: value = "+"; break;
-            case CLOCK: value = "12:00"; break;
-            case SPEED: value = ">>"; break;
-            case SPRINT: value = ">>>"; break;
-            case ZOOM: value = "4x"; break;
-            case DIRECTION: value = "N"; break;
-            case BIOME: value = "Biome"; break;
-            case HELD_ITEM: value = "Item"; break;
-            case FOOD: value = "Food"; break;
-            case WORLD_TIME: value = "Day"; break;
-            case SESSION: value = "00:00"; break;
-            case MEMORY: value = "RAM"; break;
-            case SERVER: value = "Server"; break;
-            default: value = module.title;
-        }
-        float scale = Math.min(2.4f, Math.min(w / (float) Math.max(1, canvas.textWidth(value)), h / 11f));
-        canvas.textScaled(value, cx - Math.round(canvas.textWidth(value) * scale) / 2, cy - Math.round(9 * scale) / 2, color, scale, false);
+        int size = Math.max(8, Math.min(36, Math.min(w, h) - 4));
+        ModuleIcons.draw(canvas, module, x + (w - size) / 2, y + (h - size) / 2, size, client.enabled(module) ? 0xffdce1e7 : 0xff858e9b);
     }
     private void ring(Canvas canvas, int cx, int cy, int radius, int color) {
         for (int row = -radius; row <= radius; row++) {
@@ -622,6 +532,8 @@ final class CairnMenu {
     private List<Setting> options(Module module) {
         List<Setting> list = new ArrayList<Setting>();
         if (module == Module.CROSSHAIR) { list.addAll(Arrays.asList(Setting.SCALE, Setting.ACCENT_COLOR, Setting.CROSS_SIZE, Setting.CROSS_GAP, Setting.CROSS_THICKNESS, Setting.CROSS_DOT, Setting.CROSS_HIDE_VANILLA)); return list; }
+        if (module == Module.INVENTORY) { list.addAll(Arrays.asList(Setting.SCALE, Setting.INVENTORY_HOTBAR, Setting.SLOT_BACKGROUND, Setting.BG_COLOR, Setting.OPACITY, Setting.BACKGROUND, Setting.TEXT_COLOR, Setting.TEXT_ALPHA, Setting.PADDING_X, Setting.PADDING_Y)); return list; }
+        if (module == Module.ARMOR) list.add(Setting.ARMOR_INVERT);
         if (module.hud) list.addAll(Arrays.asList(Setting.SCALE, Setting.TEXT_COLOR, Setting.BG_COLOR, Setting.ACCENT_COLOR));
         if (module == Module.KEYSTROKES) list.addAll(Arrays.asList(Setting.KEY_SIZE, Setting.KEY_GAP, Setting.MOUSE_KEYS, Setting.SPACE_KEY, Setting.KEY_CPS, Setting.OPACITY));
         else if (module.hud) list.addAll(Arrays.asList(Setting.AUTO_WIDTH, Setting.WIDTH, Setting.HEIGHT, Setting.PADDING_X, Setting.PADDING_Y, Setting.OPACITY, Setting.TEXT_ALPHA, Setting.ACCENT_ALPHA, Setting.BACKGROUND, Setting.BORDER, Setting.SHADOW, Setting.ALIGN));
@@ -638,6 +550,7 @@ final class CairnMenu {
         if (module == Module.UI_SCALING) list.add(Setting.UI_SCALE);
         if (module == Module.NICK_HIDER) list.add(Setting.NICK_COVER);
         if (module == Module.COMBO) list.add(Setting.COMBO_TIMEOUT);
+        if (module == Module.CULL_LOGS) list.addAll(Arrays.asList(Setting.LOG_DAYS, Setting.MIN_LOGS));
         if (module == Module.AUTOHIDE_HUD) list.add(Setting.AUTOHIDE_INVENTORY);
         if (module == Module.NAMETAGS) list.add(Setting.SHOW_NAMETAGS);
         if (module == Module.PERSPECTIVE || module == Module.SNAPLOOK || module == Module.RECONNECT) { /* keybinds via Binds page */ }
@@ -670,6 +583,7 @@ final class CairnMenu {
         int rowHeight = 28, first = y + (compact || side ? 40 : 50 + previewHeight), reserved = compact || side ? 66 : 76 + previewHeight;
         if (module == Module.ZOOM && client.keysManaged()) { bindButton(canvas, Bind.ZOOM, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
         if (module == Module.PERSPECTIVE && client.keysManaged()) { bindButton(canvas, Bind.PERSPECTIVE, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
+        if (module == Module.FREELOOK && client.keysManaged()) { bindButton(canvas, Bind.FREELOOK, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
         if (module == Module.SNAPLOOK && client.keysManaged()) { bindButton(canvas, Bind.SNAPLOOK, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
         if (module == Module.RECONNECT && client.keysManaged()) { bindButton(canvas, Bind.RECONNECT, x, first, w, 22); first += rowHeight; reserved += rowHeight; }
         int capacity = Math.max(1, (height - reserved) / rowHeight);

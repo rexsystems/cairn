@@ -7,6 +7,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(MouseHandler.class)
 public abstract class MouseMixin {
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "turnPlayer", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/LocalPlayer;turn(DD)V"))
+    private void cairn$orbit(net.minecraft.client.player.LocalPlayer player, double dx, double dy) { CairnFabricMapped.turn(player, dx, dy); }
     @Inject(method = "onPress", at = @At("HEAD"))
     private void cairn$click(long window, int button, int action, int modifiers, CallbackInfo ci) { if (action == 1) CairnFabricMapped.click(button); }
     // While zoomed, the wheel changes zoom instead of the hotbar slot.

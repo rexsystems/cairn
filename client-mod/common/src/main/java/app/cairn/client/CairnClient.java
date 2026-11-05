@@ -47,7 +47,7 @@ public final class CairnClient {
         SERVER("Server", "Current server or local world", "HUD", true, false),
         BLOCK_INDICATOR("Block indicator", "The block you are looking at", "HUD", true, false),
         REACH("Reach", "Distance to the block or entity under the crosshair", "HUD", true, false),
-        TPS("TPS", "Estimated client tick rate", "HUD", true, false),
+        TPS("TPS", "Server tick rate estimated from time packets", "HUD", true, false),
         COMBO("Combo", "Hits landed before the combo resets", "HUD", true, false),
         DEATH_INFO("Death info", "Last death message and coordinates", "HUD", true, false),
         HORSES("Horses", "Mount jump strength and health", "HUD", true, false),
@@ -61,10 +61,10 @@ public final class CairnClient {
         LIGHT_LEVEL("Light level", "Block and sky light at your feet", "HUD", true, false),
         SCOREBOARD("Scoreboard", "Sidebar scoreboard lines", "HUD", true, false),
         TNT_TIMER("TNT timer", "Fuse of nearby primed TNT", "HUD", true, false),
-        ITEM_INFO("Item info", "Looked-at item entity name and age", "HUD", true, false),
+        ITEM_INFO("Item info", "Nearest dropped item name and age", "HUD", true, false),
         ITEM_DESPAWN("Item despawn", "Seconds until nearby item entities despawn", "HUD", true, false),
         PACK_DISPLAY("Pack display", "Active resource pack names", "HUD", true, false),
-        INVENTORY("Inventory", "Empty hotbar and inventory slots", "HUD", true, false),
+        INVENTORY("Inventory", "Your inventory items in a nine-column grid", "HUD", true, false),
         SYSTEM_RESOURCES("System resources", "Heap plus available processors", "HUD", true, false),
         SATURATION("Saturation", "Food saturation only", "HUD", true, false),
         UHC_OVERLAY("UHC overlay", "Health with absorption called out for UHC", "HUD", true, false),
@@ -88,13 +88,14 @@ public final class CairnClient {
         RECONNECT("Reconnect", "Reconnect to the last multiplayer server", "Controls", false, false),
         TOAST_CONTROL("Toast control", "Mute vanilla recipe and advancement toasts", "Controls", false, false),
         UI_SCALING("UI scaling", "Override GUI scale while in-game menus open", "Controls", false, false),
-        CULL_LOGS("Cull logs", "Drop repetitive chat log lines", "Controls", false, false),
+        CULL_LOGS("Cull logs", "Remove old archived Minecraft logs", "Controls", false, false),
         CUSTOM_F3("Custom F3", "Hide the vanilla debug HUD while Cairn is active", "Controls", false, false),
         CHAT_TIMESTAMPS("Chat timestamps", "Prefix chat lines with the local time", "Controls", false, false),
         WAYPOINTS("Waypoints", "Show last death coordinates as a waypoint", "HUD", true, false),
         MOB_OVERLAY("Mob overlay", "Show mob health above nearby mobs", "Visuals", false, false),
         LOOT_BEAMS("Loot beams", "Beam markers on nearby item entities", "Visuals", false, false),
-        TITLE_TWEAKER("Title tweaker", "Use the Cairn title screen instead of vanilla", "Controls", false, true);
+        TITLE_TWEAKER("Title tweaker", "Use the Cairn title screen instead of vanilla", "Controls", false, true),
+        FREELOOK("Freelook", "Hold to orbit the camera without turning your player", "Visuals", false, false);
         public final String title, description, category;
         public final boolean hud, defaultEnabled;
         Module(String title, String description, String category, boolean hud, boolean enabled) {
@@ -126,7 +127,10 @@ public final class CairnClient {
         WEATHER_MODE("Weather", 0, 0, 2, 1), VIEWMODEL_SCALE("ViewModel scale", 100, 50, 150, 5),
         PARTICLE_RATE("Particle percent", 100, 0, 100, 10), UI_SCALE("GUI scale", 2, 1, 4, 1),
         NICK_COVER("Cover name length", 8, 3, 16, 1), COMBO_TIMEOUT("Combo timeout ms", 2000, 500, 5000, 100),
-        AUTOHIDE_INVENTORY("Hide in inventories", 1, 0, 1, 1), SHOW_NAMETAGS("Show nametags", 1, 0, 1, 1);
+        AUTOHIDE_INVENTORY("Hide in inventories", 1, 0, 1, 1), SHOW_NAMETAGS("Show nametags", 1, 0, 1, 1),
+        ARMOR_INVERT("Boots first", 0, 0, 1, 1), INVENTORY_HOTBAR("Include hotbar", 1, 0, 1, 1),
+        SLOT_BACKGROUND("Slot backgrounds", 1, 0, 1, 1),
+        LOG_DAYS("Keep logs for days", 3, 1, 30, 1), MIN_LOGS("Minimum archives to keep", 3, 1, 50, 1);
         public final String label;
         public final int initial, min, max, step;
         Setting(String label, int initial, int min, int max, int step) { this.label = label; this.initial = initial; this.min = min; this.max = max; this.step = step; }
@@ -134,7 +138,7 @@ public final class CairnClient {
         public boolean toggle() { return !color() && max == 1; }
     }
     /** Keys the adapter lets players rebind from the Cairn menu. */
-    public enum Bind { MENU("Menu key"), ZOOM("Zoom key"), PERSPECTIVE("Perspective"), SNAPLOOK("Snaplook"), RECONNECT("Reconnect");
+    public enum Bind { MENU("Menu key"), ZOOM("Zoom key"), PERSPECTIVE("Perspective"), SNAPLOOK("Snaplook"), RECONNECT("Reconnect"), FREELOOK("Freelook");
         public final String label;
         Bind(String label) { this.label = label; }
     }
@@ -237,8 +241,14 @@ public final class CairnClient {
     public void toggle(Module module) { state(module).enabled = !enabled(module); save(); }
     public void value(Module module, String value) { state(module).value = value == null ? "" : value; }
     public void rows(Module module, List<HudRow> rows) {
-        state(module).rows = Collections.unmodifiableList(new ArrayList<HudRow>(rows.subList(0, Math.min(8, rows.size()))));
+        state(module).rows = Collections.unmodifiableList(new ArrayList<HudRow>(rows.subList(0, Math.min(module == Module.SCOREBOARD ? 16 : 8, rows.size()))));
         state(module).measured = null;
+    }
+    private List<HudRow> inventory = Collections.emptyList();
+    /** Slots 0–8 are the hotbar; slots 9–35 are the three inventory rows. */
+    public void inventory(List<HudRow> slots) {
+        if (slots.size() != 36) throw new IllegalArgumentException("Expected 36 inventory slots");
+        inventory = Collections.unmodifiableList(new ArrayList<HudRow>(slots));
     }
     public void blockTarget(Object icon, String name) {
         boolean present = name != null && !name.isEmpty();
@@ -249,22 +259,35 @@ public final class CairnClient {
     public void reach(double blocks) {
         value(Module.REACH, blocks < 0 ? "No target" : String.format(Locale.ROOT, "%.2f blocks", blocks));
     }
-    private long lastClientTickNanos; private double estimatedTps = 20;
+    private long lastServerTime, lastServerPacket; private double estimatedTps = -1;
+    public void serverTime(long gameTime) { serverTime(gameTime, System.nanoTime()); }
+    void serverTime(long gameTime, long now) {
+        if (lastServerPacket != 0 && gameTime > lastServerTime && now > lastServerPacket) {
+            double sample = Math.min(20, (gameTime - lastServerTime) * 1_000_000_000.0 / (now - lastServerPacket));
+            estimatedTps = estimatedTps < 0 ? sample : estimatedTps * .75 + sample * .25;
+        }
+        lastServerTime = gameTime; lastServerPacket = now;
+    }
     private int combo; private long lastComboHit; private int totemPops; private long hitFlashUntil;
     private String lastDeath = "No death yet", deathWaypoint = "";
     private boolean snaplookHeld, reconnectRequested, perspectivePressed, inventoryOpen;
     private Double brightnessPrevious;
+    private long nextMaintenance;
+    private static final java.util.concurrent.ExecutorService MAINTENANCE = java.util.concurrent.Executors.newSingleThreadExecutor(task -> { Thread thread = new Thread(task, "Cairn log cleanup"); thread.setDaemon(true); return thread; });
     public void inventoryOpen(boolean open) { inventoryOpen = open; }
-    /** Call once per client tick so TPS and timed HUD modules stay honest. */
+    /** Updates timed HUD values; TPS comes only from server time packets. */
     public void clientTick() {
         long now = System.nanoTime();
-        if (lastClientTickNanos > 0) {
-            double dt = (now - lastClientTickNanos) / 1_000_000_000.0;
-            double instant = Math.min(20.0, 1.0 / Math.max(dt, 0.000_000_1));
-            estimatedTps = estimatedTps * 0.9 + instant * 0.1;
+        if (enabled(Module.CULL_LOGS) && now >= nextMaintenance) {
+            nextMaintenance = now + 3_600_000_000_000L;
+            final int keep = setting(Module.CULL_LOGS, Setting.MIN_LOGS), days = setting(Module.CULL_LOGS, Setting.LOG_DAYS);
+            MAINTENANCE.execute(() -> {
+                try { LogRetention.prune(path.getParent().getParent().resolve("logs"), keep, days, System.currentTimeMillis()); }
+                catch (IOException failure) { System.err.println("[Cairn Client] Could not clean archived logs: " + failure.getMessage()); }
+            });
         }
-        lastClientTickNanos = now;
-        if (enabled(Module.TPS)) value(Module.TPS, String.format(Locale.ROOT, "%.1f TPS", estimatedTps));
+        if (enabled(Module.TPS)) value(Module.TPS, estimatedTps < 0 || now - lastServerPacket > 15_000_000_000L ? "Waiting for server ticks" : String.format(Locale.ROOT, "%.1f TPS", estimatedTps));
+        if (enabled(Module.DEATH_INFO)) value(Module.DEATH_INFO, lastDeath);
         if (enabled(Module.SYSTEM_RESOURCES)) {
             Runtime runtime = Runtime.getRuntime();
             value(Module.SYSTEM_RESOURCES, (runtime.totalMemory() - runtime.freeMemory()) / 1048576 + " MB / " + Runtime.getRuntime().availableProcessors() + " threads");
@@ -272,6 +295,7 @@ public final class CairnClient {
         if (enabled(Module.COMBO) && combo > 0 && now - lastComboHit > setting(Module.COMBO, Setting.COMBO_TIMEOUT) * 1_000_000L) {
             combo = 0; value(Module.COMBO, "0 combo");
         }
+        if (enabled(Module.COMBO) && combo == 0) value(Module.COMBO, "0 combo");
         if (enabled(Module.WAYPOINTS)) value(Module.WAYPOINTS, deathWaypoint.isEmpty() ? "No waypoint" : deathWaypoint);
     }
     public void comboHit() {
@@ -279,6 +303,23 @@ public final class CairnClient {
         if (now - lastComboHit > setting(Module.COMBO, Setting.COMBO_TIMEOUT) * 1_000_000L) combo = 0;
         combo++; lastComboHit = now; hitFlashUntil = now + 250_000_000L;
         if (enabled(Module.COMBO)) value(Module.COMBO, combo + " combo");
+    }
+    public void comboReset() { combo = 0; lastComboHit = 0; if (enabled(Module.COMBO)) value(Module.COMBO, "0 combo"); }
+    private int attackedEntity = -1;
+    private long attackedAt;
+    private boolean wasDead;
+    public void attacked(int entity) { attackedEntity = entity; attackedAt = System.nanoTime(); }
+    public void entityHurt(int entity, boolean self) {
+        if (self) { comboReset(); attackedEntity = -1; }
+        else if (entity == attackedEntity && System.nanoTime() - attackedAt < 2_000_000_000L) { comboHit(); attackedEntity = -1; }
+    }
+    public void life(boolean dead, int x, int y, int z) {
+        if (dead && !wasDead) death(null, x, y, z);
+        wasDead = dead;
+    }
+    public void leftWorld() {
+        lastServerPacket = 0; estimatedTps = -1; attackedEntity = -1; wasDead = false;
+        inventory = Collections.emptyList();
     }
     public boolean hitFlash() { return enabled(Module.HIT_INDICATOR) && System.nanoTime() < hitFlashUntil; }
     public void death(String message, int x, int y, int z) {
@@ -295,7 +336,7 @@ public final class CairnClient {
     public void armorPoints(int points) { if (enabled(Module.ARMOR_POINTS)) value(Module.ARMOR_POINTS, points + " armor"); }
     public void attackCooldown(float progress) { if (enabled(Module.ATTACK_INDICATOR)) value(Module.ATTACK_INDICATOR, progress >= 1 ? "Ready" : String.format(Locale.ROOT, "%d%%", Math.round(progress * 100))); }
     public void horse(float health, float max, double jump) {
-        if (enabled(Module.HORSES)) value(Module.HORSES, String.format(Locale.ROOT, "Mount %.1f/%.1f · jump %.2f", health, max, jump));
+        if (enabled(Module.HORSES)) value(Module.HORSES, String.format(Locale.ROOT, "Mount %.1f/%.1f%s", health, max, jump > 0 ? String.format(Locale.ROOT, " · jump %.2f", jump) : ""));
     }
     public void clearHorse() { if (enabled(Module.HORSES)) value(Module.HORSES, "Not mounted"); }
     public void bossBar(String name, float progress) {
@@ -307,7 +348,7 @@ public final class CairnClient {
         if (!enabled(Module.SCOREBOARD)) return;
         if (lines == null || lines.isEmpty()) { value(Module.SCOREBOARD, "No sidebar"); rows(Module.SCOREBOARD, Collections.<HudRow>emptyList()); return; }
         List<HudRow> out = new ArrayList<HudRow>();
-        for (int i = 0; i < Math.min(8, lines.size()); i++) out.add(new HudRow(null, lines.get(i)));
+        for (int i = 0; i < Math.min(16, lines.size()); i++) out.add(new HudRow(null, lines.get(i)));
         rows(Module.SCOREBOARD, out); value(Module.SCOREBOARD, lines.get(0));
     }
     public void tntFuse(int ticksLeft) { if (enabled(Module.TNT_TIMER)) value(Module.TNT_TIMER, ticksLeft < 0 ? "No TNT" : String.format(Locale.ROOT, "%.2fs", ticksLeft / 20.0)); }
@@ -441,9 +482,14 @@ public final class CairnClient {
         keysManaged = true;
         keyCodes[Bind.MENU.ordinal()] = number("key.MENU", menuCode); keyNames[Bind.MENU.ordinal()] = config.getProperty("key.MENU.name", menuName);
         keyCodes[Bind.ZOOM.ordinal()] = number("key.ZOOM", zoomCode); keyNames[Bind.ZOOM.ordinal()] = config.getProperty("key.ZOOM.name", zoomName);
-        keyCodes[Bind.PERSPECTIVE.ordinal()] = number("key.PERSPECTIVE", 294); keyNames[Bind.PERSPECTIVE.ordinal()] = config.getProperty("key.PERSPECTIVE.name", "F5");
+        keyCodes[Bind.FREELOOK.ordinal()] = number("key.FREELOOK", 342); keyNames[Bind.FREELOOK.ordinal()] = config.getProperty("key.FREELOOK.name", "Left Alt");
+        keyCodes[Bind.PERSPECTIVE.ordinal()] = number("key.PERSPECTIVE", 295); keyNames[Bind.PERSPECTIVE.ordinal()] = config.getProperty("key.PERSPECTIVE.name", "F6");
         keyCodes[Bind.SNAPLOOK.ordinal()] = number("key.SNAPLOOK", 71); keyNames[Bind.SNAPLOOK.ordinal()] = config.getProperty("key.SNAPLOOK.name", "G");
         keyCodes[Bind.RECONNECT.ordinal()] = number("key.RECONNECT", 82); keyNames[Bind.RECONNECT.ordinal()] = config.getProperty("key.RECONNECT.name", "R");
+    }
+    public void defaultBind(Bind bind, int code, String name) {
+        keyCodes[bind.ordinal()] = number("key." + bind.name(), code);
+        keyNames[bind.ordinal()] = config.getProperty("key." + bind.name() + ".name", name);
     }
     private boolean cinematicActive, cinematicPrevious;
     public boolean keysManaged() { return keysManaged; }
@@ -515,6 +561,7 @@ public final class CairnClient {
     }
     private float scale(Module module) { return setting(module, Setting.SCALE) / 100f; }
     private int widgetWidth(Module module) {
+        if (module == Module.INVENTORY) return Math.round((9 * 18 + 2 * setting(module, Setting.PADDING_X)) * scale(module));
         if (module == Module.CROSSHAIR) return 2 * (Math.round(setting(module, Setting.CROSS_SIZE) * scale(module)) + Math.round(setting(module, Setting.CROSS_GAP) * scale(module))) + Math.max(1, Math.round(setting(module, Setting.CROSS_THICKNESS) * scale(module)));
         if (module == Module.KEYSTROKES) return 3 * Math.round(setting(module, Setting.KEY_SIZE) * scale(module)) + 2 * Math.max(1, Math.round(setting(module, Setting.KEY_GAP) * scale(module)));
         if (setting(module, Setting.AUTO_WIDTH) == 1) return Math.round(autoWidth(state(module).contentWidth, setting(module, Setting.PADDING_X)) * scale(module));
@@ -525,6 +572,7 @@ public final class CairnClient {
     private static int autoWidth(int textWidth, int padding) { return Math.min(Setting.WIDTH.max, (Math.max(24, textWidth) + 2 * padding + 5) / 6 * 6); }
     private int rowHeight(Module module) { return Math.max(setting(module, Setting.HEIGHT), 16 + 2 * setting(module, Setting.PADDING_Y)); }
     private int widgetHeight(Module module) {
+        if (module == Module.INVENTORY) return Math.round(((setting(module, Setting.INVENTORY_HOTBAR) == 1 ? 4 : 3) * 18 + 2 * setting(module, Setting.PADDING_Y)) * scale(module));
         if (module == Module.CROSSHAIR) return widgetWidth(module);
         if (!state(module).rows.isEmpty()) return Math.round(state(module).rows.size() * rowHeight(module) * scale(module));
         if (module != Module.KEYSTROKES) return Math.round(Math.max(setting(module, Setting.HEIGHT), 8 + 2 * setting(module, Setting.PADDING_Y)) * scale(module));
@@ -550,8 +598,12 @@ public final class CairnClient {
         if (module == Module.CROSSHAIR) config.setProperty("CROSSHAIR.placed", "true");
     }
     /** Widgets the player never moved stack top-left in module order and wrap into columns, so presets never overlap. */
+    private long packedSignature;
+    private final int[] packedX = new int[MODULES.length], packedY = new int[MODULES.length];
     private void layout(Canvas canvas, int width, int height) {
         int columnX = MARGIN, cursor = MARGIN, columnWidth = 0;
+        List<Module> flowing = new ArrayList<Module>();
+        boolean overflow = false;
         for (Module module : MODULES) {
             if (!enabled(module) || !module.hud || module == Module.CROSSHAIR) continue;
             State state = state(module);
@@ -564,10 +616,51 @@ public final class CairnClient {
                 }
             }
             if (state.placed) continue;
+            flowing.add(module);
             int w = widgetWidth(module), h = widgetHeight(module);
             if (cursor > MARGIN && cursor + h > height - MARGIN) { columnX += columnWidth + GAP; cursor = MARGIN; columnWidth = 0; }
             state.flowX = columnX; state.flowY = cursor;
+            overflow |= columnX + w > width - MARGIN;
             cursor += h + GAP; columnWidth = Math.max(columnWidth, w);
+        }
+        for (Module module : flowing) for (Module pinned : MODULES) {
+            if (!enabled(pinned) || !pinned.hud || pinned == Module.CROSSHAIR || !state(pinned).placed) continue;
+            int px = x(pinned, width), py = y(pinned, height);
+            State s = state(module);
+            overflow |= s.flowX < px + widgetWidth(pinned) && px < s.flowX + widgetWidth(module) && s.flowY < py + widgetHeight(pinned) && py < s.flowY + widgetHeight(module);
+        }
+        if (overflow) {
+            long signature = width * 31L + height;
+            for (Module module : MODULES) if (enabled(module) && module.hud && module != Module.CROSSHAIR) {
+                signature = signature * 31 + module.ordinal(); signature = signature * 31 + widgetWidth(module); signature = signature * 31 + widgetHeight(module);
+                signature = signature * 31 + (state(module).placed ? x(module, width) + 1 : 0); signature = signature * 31 + (state(module).placed ? y(module, height) + 1 : 0);
+            }
+            if (packedSignature == signature) {
+                for (Module module : flowing) { state(module).flowX = packedX[module.ordinal()]; state(module).flowY = packedY[module.ordinal()]; }
+                return;
+            }
+            Collections.sort(flowing, (a, b) -> Integer.compare(widgetWidth(b), widgetWidth(a)));
+            List<int[]> occupied = new ArrayList<int[]>();
+            for (Module pinned : MODULES) if (enabled(pinned) && pinned.hud && pinned != Module.CROSSHAIR && state(pinned).placed) occupied.add(new int[] {x(pinned, width), y(pinned, height), widgetWidth(pinned), widgetHeight(pinned)});
+            for (Module module : flowing) {
+                int w = widgetWidth(module), h = widgetHeight(module);
+                TreeSet<Integer> xs = new TreeSet<Integer>(), ys = new TreeSet<Integer>();
+                xs.add(MARGIN); ys.add(MARGIN);
+                for (int[] box : occupied) { xs.add(box[0] + box[2] + GAP); ys.add(box[1] + box[3] + GAP); }
+                boolean placed = false;
+                for (int px : xs) {
+                    if (px + w > width - MARGIN) continue;
+                    for (int py : ys) {
+                        if (py + h > height - MARGIN) continue;
+                        boolean free = true;
+                        for (int[] box : occupied) if (px < box[0] + box[2] + GAP && box[0] < px + w + GAP && py < box[1] + box[3] + GAP && box[1] < py + h + GAP) { free = false; break; }
+                        if (free) { state(module).flowX = px; state(module).flowY = py; occupied.add(new int[] {px, py, w, h}); placed = true; break; }
+                    }
+                    if (placed) break;
+                }
+            }
+            packedSignature = signature;
+            for (Module module : flowing) { packedX[module.ordinal()] = state(module).flowX; packedY[module.ordinal()] = state(module).flowY; }
         }
     }
     private Module previewModule;
@@ -626,17 +719,71 @@ public final class CairnClient {
         if (setting(module, Setting.CROSS_DOT) == 1) canvas.rect(cx - t / 2, cy - t / 2, t, t, c);
     }
     void renderPreview(Canvas canvas, Module module, int x, int y, int width, int height) {
+        List<HudRow> original = state(module).rows;
+        String originalValue = state(module).value;
+        if (original.isEmpty()) state(module).rows = previewRows(module);
+        if (originalValue.isEmpty()) state(module).value = previewValue(module);
+        try { renderPreviewContent(canvas, module, x, y, width, height); }
+        finally { state(module).rows = original; state(module).value = originalValue; }
+    }
+    private static List<HudRow> previewRows(Module module) {
+        if (module == Module.ARMOR) return Arrays.asList(new HudRow("sample/helmet", "363 / 363"), new HudRow("sample/chest", "528 / 528"), new HudRow("sample/legs", "495 / 495"), new HudRow("sample/boots", "429 / 429"));
+        if (module == Module.EFFECTS) return Arrays.asList(new HudRow("sample/potion", "Speed II · 1:30"), new HudRow("sample/potion", "Strength · 0:45"));
+        if (module == Module.BLOCK_INDICATOR || module == Module.HELD_ITEM) return Collections.singletonList(new HudRow("sample/block", "Grass Block"));
+        if (module == Module.SCOREBOARD) return Arrays.asList(new HudRow(null, "Cairn"), new HudRow(null, "Score: 120"), new HudRow(null, "Players: 8"));
+        if (module == Module.TEAM_TRACKER) return Arrays.asList(new HudRow(null, "Alex · 12m"), new HudRow(null, "Steve · 24m"));
+        return Collections.emptyList();
+    }
+    private static String previewValue(Module module) {
+        switch (module) {
+            case FPS: return "144 FPS";
+            case COORDINATES: return "XYZ 128 64 -256";
+            case PING: return "42 ms";
+            case CPS: return "6 / 4 CPS";
+            case SPEED: return "4.3 blocks/s";
+            case HEARTS: return "20 / 20 HP";
+            case FOOD: return "Food 20 / Sat 5";
+            case REACH: return "2.8 blocks";
+            case TPS: return "20.0 TPS";
+            case COMBO: return "3 combo";
+            case DEATH_INFO: return "Died at 128 64 -256";
+            case HORSES: return "Mount 26/30 · jump 0.70";
+            case BOSS_BAR: return "Wither · 65%";
+            case ARMOR_POINTS: return "20 armor";
+            case ATTACK_INDICATOR: return "75%";
+            case ELYTRA: return "Flying · 432 dur";
+            case SHIELD: return "336 dur";
+            case TOTEM: return "2 totems";
+            case LIGHT_LEVEL: return "Block 7 / Sky 15";
+            case TNT_TIMER: return "2.50s";
+            case ITEM_INFO: return "Diamond · 12s";
+            case ITEM_DESPAWN: return "288s left";
+            case PACK_DISPLAY: return "Example resource pack";
+            case SYSTEM_RESOURCES: return "2048 MB / 8 threads";
+            case SATURATION: return "5.0 sat";
+            case UHC_OVERLAY: return "20 HP | 4 abs";
+            case WAYPOINTS: return "Death 128 64 -256";
+            case CLOCK: case WORLD_TIME: return "12:30";
+            case SESSION: return "01:23:45";
+            case BIOME: return "Plains";
+            case SERVER: return "play.example.com";
+            case DIRECTION: return "North";
+            default: return module.title;
+        }
+    }
+    private void renderPreviewContent(Canvas canvas, Module module, int x, int y, int width, int height) {
         float scale = scale(module);
         String value = state(module).value.isEmpty() ? module.title : state(module).value;
         int contentWidth = canvas.textWidth(value);
         if (!state(module).rows.isEmpty()) { contentWidth = 0; for (HudRow row : state(module).rows) contentWidth = Math.max(contentWidth, canvas.textWidth(row.label) + 20); }
-        int w = module == Module.CROSSHAIR || module == Module.KEYSTROKES ? widgetWidth(module)
+        int w = module == Module.CROSSHAIR || module == Module.KEYSTROKES || module == Module.INVENTORY ? widgetWidth(module)
             : Math.round((setting(module, Setting.AUTO_WIDTH) == 1 ? autoWidth(contentWidth, setting(module, Setting.PADDING_X)) : setting(module, Setting.WIDTH)) * scale);
         int h = widgetHeight(module);
         float fit = Math.min(1, Math.min(width / (float) Math.max(1, w), height / (float) Math.max(1, h)));
         scale *= fit; w = Math.round(w * fit); h = Math.round(h * fit);
         x += (width - w) / 2; y += (height - h) / 2;
-        if (module == Module.CROSSHAIR) crosshair(canvas, x, y, scale);
+        if (module == Module.INVENTORY) renderInventory(canvas, x, y, w, h, scale, true);
+        else if (module == Module.CROSSHAIR) crosshair(canvas, x, y, scale);
         else if (module == Module.KEYSTROKES) keystrokes(canvas, x, y, module, scale);
         else if (!state(module).rows.isEmpty()) renderRows(canvas, module, x, y, w, h, scale);
         else {
@@ -654,12 +801,39 @@ public final class CairnClient {
         if (setting(module, Setting.BORDER) == 1) canvas.rect(x, y, Math.min(2, width), height, color(module, Setting.ACCENT_COLOR));
         int rowHeight = Math.max(1, Math.round(rowHeight(module) * scale)), iconSize = Math.max(1, Math.round(16 * scale));
         int padding = setting(module, Setting.PADDING_X);
-        for (HudRow row : state(module).rows) {
+        List<HudRow> rows = state(module).rows;
+        for (int i = 0; i < rows.size(); i++) {
+            HudRow row = rows.get(module == Module.ARMOR && setting(module, Setting.ARMOR_INVERT) == 1 ? rows.size() - 1 - i : i);
             if (y + rowHeight > viewportHeight || height < rowHeight) break;
-            canvas.icon(row.icon, x + Math.round(padding * scale), y + Math.max(0, (rowHeight - iconSize) / 2), iconSize);
+            drawIcon(canvas, row.icon, x + Math.round(padding * scale), y + Math.max(0, (rowHeight - iconSize) / 2), iconSize);
             String label = fit(canvas, row.label, Math.max(0, (int) (width / scale) - 20 - 2 * padding));
             widgetText(canvas, label, x + Math.round((padding + 20) * scale), y + Math.max(0, (rowHeight - Math.round(8 * scale)) / 2), color(module, Setting.TEXT_COLOR), scale, setting(module, Setting.SHADOW) == 1);
             y += rowHeight; height -= rowHeight;
+        }
+    }
+    private void drawIcon(Canvas canvas, Object icon, int x, int y, int size) {
+        if (icon instanceof String && ((String) icon).startsWith("sample/")) ModuleIcons.sample(canvas, ((String) icon).substring(7), x, y, size);
+        else if (icon != null) canvas.icon(icon, x, y, size);
+    }
+    private void renderInventory(Canvas canvas, int x, int y, int w, int h, float scale, boolean preview) {
+        Module module = Module.INVENTORY;
+        if (setting(module, Setting.BACKGROUND) == 1) canvas.rect(x, y, w, h, background(module));
+        int rows = setting(module, Setting.INVENTORY_HOTBAR) == 1 ? 4 : 3;
+        for (int i = 0; i < rows * 9; i++) {
+            int sx = x + Math.round((setting(module, Setting.PADDING_X) + i % 9 * 18) * scale);
+            int sy = y + Math.round((setting(module, Setting.PADDING_Y) + i / 9 * 18) * scale);
+            int size = Math.max(1, Math.round(16 * scale));
+            if (sx + size > viewportWidth || sy + size > viewportHeight || sx + size > x + w || sy + size > y + h) continue;
+            if (setting(module, Setting.SLOT_BACKGROUND) == 1) canvas.rect(sx, sy, size, size, (color(module, Setting.BG_COLOR) & 0xff000000) | 0x30343b);
+            int slot = i < 27 ? i + 9 : i - 27;
+            HudRow item = inventory.isEmpty() ? null : inventory.get(slot);
+            if (item == null && preview && inventory.isEmpty() && i % 4 == 0) item = new HudRow("sample/block", "64");
+            if (item == null || item.icon == null) continue;
+            drawIcon(canvas, item.icon, sx, sy, size);
+            if (!item.label.isEmpty() && !item.label.equals("1")) {
+                float textScale = scale * .75f;
+                widgetText(canvas, item.label, sx + Math.max(0, size - Math.round(canvas.textWidth(item.label) * textScale)), sy + Math.max(0, size - Math.round(9 * textScale)), color(module, Setting.TEXT_COLOR), textScale, true);
+            }
         }
     }
     public void renderHud(Canvas canvas, int width, int height) {
@@ -672,7 +846,8 @@ public final class CairnClient {
             int x = x(module, width), y = y(module, height);
             float scale = Math.min(scale(module), Math.min(width / (float) Math.max(1, widgetWidth(module)) * scale(module), height / (float) Math.max(1, widgetHeight(module)) * scale(module)));
             int w = Math.min(width - x, widgetWidth(module)), h = Math.min(height - y, widgetHeight(module));
-            if (module == Module.CROSSHAIR) crosshair(canvas, x, y, scale);
+            if (module == Module.INVENTORY) renderInventory(canvas, x, y, w, h, scale, false);
+            else if (module == Module.CROSSHAIR) crosshair(canvas, x, y, scale);
             else if (module == Module.KEYSTROKES) keystrokes(canvas, x, y, module, scale);
             else if (!state(module).rows.isEmpty()) renderRows(canvas, module, x, y, w, h, scale);
             else {

@@ -1,4 +1,4 @@
-//! Client for the self-hosted Cairn cosmetics server (cosmetics-server/). Nothing is contacted until a URL is set.
+//! Client for the Cairn cosmetics server (cosmetics-server/).
 use crate::accounts::Account;
 use crate::settings::Settings;
 use anyhow::{anyhow, bail, Context, Result};
@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 const MOJANG_JOIN: &str = "https://sessionserver.mojang.com/session/minecraft/join";
+pub const DEFAULT_SERVER: &str = "https://cairn-cosmetics.694206767.xyz";
 /// Matches the server's upload limit, so obviously-too-big files fail before uploading.
 pub const MAX_UPLOAD: usize = 1024 * 1024;
 
@@ -46,7 +47,7 @@ pub fn server_url(settings: &Settings) -> Option<String> {
 }
 
 fn pick_url(runtime: Option<&str>, setting: &str, baked: Option<&str>) -> Option<String> {
-    [runtime, Some(setting), baked].into_iter().flatten().find(|v| !v.trim().is_empty()).and_then(normalize_url)
+    [runtime, Some(setting), baked, Some(DEFAULT_SERVER)].into_iter().flatten().find(|v| !v.trim().is_empty()).and_then(normalize_url)
 }
 
 fn compact(uuid: &str) -> String {
@@ -277,7 +278,7 @@ mod tests {
         assert_eq!(pick_url(Some("https://a.example"), "https://b.example", Some("https://c.example")).as_deref(), Some("https://a.example"));
         assert_eq!(pick_url(None, "https://b.example", Some("https://c.example")).as_deref(), Some("https://b.example"));
         assert_eq!(pick_url(Some(" "), "", Some("https://c.example")).as_deref(), Some("https://c.example"));
-        assert_eq!(pick_url(None, "", None), None);
+        assert_eq!(pick_url(None, "", None).as_deref(), Some(DEFAULT_SERVER));
         assert_eq!(pick_url(None, "http://evil.example", Some("https://c.example")), None, "a bad setting is not silently replaced");
     }
 

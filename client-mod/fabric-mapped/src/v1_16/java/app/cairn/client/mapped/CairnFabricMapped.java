@@ -20,6 +20,8 @@ import java.util.Locale;
 
 public final class CairnFabricMapped implements ClientModInitializer {
     private static CairnClient client;
+    public static CairnClient core() { return client; }
+    public static boolean orbitActive() { return orbit; }
     private static boolean sprintWasDown, sprint;
     private static int ticks;
     private static final java.util.Map<String, net.minecraft.resources.ResourceLocation> TEXTURES = new java.util.HashMap<String, net.minecraft.resources.ResourceLocation>();
@@ -80,6 +82,47 @@ public final class CairnFabricMapped implements ClientModInitializer {
         return true;
     }
     public static boolean scroll(double amount) { return client != null && client.zoomScroll(zooming(), amount); }
+    private static boolean orbit;
+    private static net.minecraft.client.player.LocalPlayer orbitOwner;
+    private static net.minecraft.client.CameraType orbitPreviousType;
+    private static boolean orbitInterrupted;
+    private static float orbitYaw, orbitPitch;
+    public static float orbitYaw() { return orbitYaw; }
+    public static float orbitPitch() { return orbitPitch; }
+    private static final app.cairn.client.CameraModes<net.minecraft.client.CameraType> temporaryCamera = new app.cairn.client.CameraModes<>();
+    private static void cameraModes() {
+        Minecraft mc = Minecraft.getInstance();
+        boolean input = mc.player != null && mc.screen == null && mc.isWindowActive();
+        java.util.function.IntPredicate held = code -> input && InputConstants.isKeyDown(mc.getWindow().getWindow(), code);
+        boolean free = input && client.enabled(Module.FREELOOK) && held.test(client.keyCode(CairnClient.Bind.FREELOOK));
+        if (!orbit && !free && client.perspectivePressed(held.test(client.keyCode(CairnClient.Bind.PERSPECTIVE)))) mc.options.setCameraType(mc.options.getCameraType().cycle());
+        boolean snap = !free && client.snaplook(held.test(client.keyCode(CairnClient.Bind.SNAPLOOK)));
+        boolean automatic = !free && input && client.autoPerspective(mc.player.isFallFlying());
+        if (!orbit) mc.options.setCameraType(temporaryCamera.update(mc.options.getCameraType(), snap, automatic, net.minecraft.client.CameraType.THIRD_PERSON_BACK, net.minecraft.client.CameraType.THIRD_PERSON_FRONT));
+    }
+    private static void updateOrbit() {
+        Minecraft mc = Minecraft.getInstance();
+        boolean held = client != null && client.enabled(Module.FREELOOK) && mc.player != null && mc.level != null && mc.screen == null && mc.isWindowActive() && key(client.keyCode(CairnClient.Bind.FREELOOK));
+        if (!held) orbitInterrupted = false;
+        if (orbit && (mc.getCameraEntity() != mc.player || mc.player != orbitOwner || mc.options.getCameraType() != net.minecraft.client.CameraType.THIRD_PERSON_BACK)) orbitInterrupted = true;
+        if (!held || orbitInterrupted) {
+            if (orbit && mc.getCameraEntity() == mc.player && mc.options.getCameraType() == net.minecraft.client.CameraType.THIRD_PERSON_BACK) mc.options.setCameraType(orbitPreviousType);
+            orbit = false; orbitOwner = null;
+            return;
+        }
+        if (!orbit) {
+            if (mc.getCameraEntity() != mc.player) return;
+            orbitYaw = mc.player.yRot; orbitPitch = mc.player.xRot; orbitOwner = mc.player;
+            orbitPreviousType = mc.options.getCameraType();
+            mc.options.setCameraType(net.minecraft.client.CameraType.THIRD_PERSON_BACK);
+            orbit = true;
+        }
+    }
+    public static void turn(net.minecraft.client.player.LocalPlayer player, double dx, double dy) {
+        cameraModes(); updateOrbit();
+        if (orbit) { orbitYaw = (orbitYaw + (float) dx * .15f) % 360; orbitPitch = Math.max(-90, Math.min(90, orbitPitch + (float) dy * .15f)); }
+        else player.turn(dx, dy);
+    }
     public static boolean hideCrosshair() { return client != null && client.enabled(Module.CROSSHAIR) && client.setting(Module.CROSSHAIR, CairnClient.Setting.CROSS_HIDE_VANILLA) == 1; }
     private static void input() {
         Minecraft mc = Minecraft.getInstance();
@@ -101,7 +144,10 @@ public final class CairnFabricMapped implements ClientModInitializer {
             if (mc.level == null) mc.setScreen(new net.minecraft.client.gui.screens.ConnectScreen(new net.minecraft.client.gui.screens.TitleScreen(), mc,
                 new net.minecraft.client.multiplayer.ServerData(address, address, false)));
         } : null);
-        if (mc.player == null) { sprint = false; return; }
+        cameraModes();
+        updateOrbit();
+        if (mc.player == null) { client.leftWorld(); sprint = false; return; }
+        client.life(mc.player.isDeadOrDying(), (int) Math.floor(mc.player.getX()), (int) Math.floor(mc.player.getY()), (int) Math.floor(mc.player.getZ()));
         boolean down = mc.options.keySprint.isDown();
         if (client.enabled(Module.SPRINT) && mc.screen == null) {
             if (down && !sprintWasDown) sprint = !sprint;
@@ -112,6 +158,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         sprintWasDown = down;
         input();
         if (ticks++ % 5 != 0) return;
+        HudTelemetry.update(client, mc);
         if (client.enabled(Module.BLOCK_INDICATOR)) {
             if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult && mc.hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
                 net.minecraft.world.level.block.Block block = mc.level.getBlockState(((net.minecraft.world.phys.BlockHitResult) mc.hitResult).getBlockPos()).getBlock();
@@ -135,6 +182,11 @@ public final class CairnFabricMapped implements ClientModInitializer {
         client.saturation(mc.player.getFoodData().getSaturationLevel());
         client.hearts(mc.player.getHealth(), mc.player.getMaxHealth(), mc.player.getAbsorptionAmount());
         client.armorPoints(mc.player.getArmorValue());
+        if (client.enabled(Module.INVENTORY)) {
+            java.util.List<CairnClient.HudRow> slots = new java.util.ArrayList<CairnClient.HudRow>();
+            for (int i = 0; i < 36; i++) { ItemStack item = mc.player.inventory.getItem(i); slots.add(item.isEmpty() ? null : new CairnClient.HudRow(item.copy(), String.valueOf(item.getCount()))); }
+            client.inventory(slots);
+        }
         if (client.enabled(Module.WORLD_TIME)) { long time = (mc.level.getDayTime() + 6000) % 24000; client.value(Module.WORLD_TIME, time / 1000 + ":" + (time % 1000 * 60 / 1000 < 10 ? "0" : "") + time % 1000 * 60 / 1000); }
         if (client.enabled(Module.SERVER)) client.value(Module.SERVER, mc.getCurrentServer() == null ? "Singleplayer" : mc.getCurrentServer().ip);
         if (client.enabled(Module.HELD_ITEM)) {
@@ -144,7 +196,7 @@ public final class CairnFabricMapped implements ClientModInitializer {
         if (client.enabled(Module.ARMOR)) {
             java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<CairnClient.HudRow>();
             StringBuilder armor = new StringBuilder("Armor");
-            for (EquipmentSlot slot : new EquipmentSlot[] { EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD }) {
+            for (EquipmentSlot slot : new EquipmentSlot[] { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET }) {
                 ItemStack item = mc.player.getItemBySlot(slot);
                 if (!item.isEmpty()) { armor.append(" ").append(item.getMaxDamage() - item.getDamageValue()); rows.add(new CairnClient.HudRow(item.copy(), String.valueOf(item.getMaxDamage() - item.getDamageValue()))); }
             }

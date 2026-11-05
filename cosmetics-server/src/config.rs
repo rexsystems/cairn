@@ -50,7 +50,7 @@ impl Config {
 
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
         let get = |key: &str| get(key).map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
-        let bind: SocketAddr = get("COSMETICS_BIND").unwrap_or_else(|| "127.0.0.1:8787".into()).parse().map_err(|e| format!("COSMETICS_BIND: {e}"))?;
+        let bind: SocketAddr = get("COSMETICS_BIND").unwrap_or_else(|| "127.0.0.1:9437".into()).parse().map_err(|e| format!("COSMETICS_BIND: {e}"))?;
         let admin_token = get("COSMETICS_ADMIN_TOKEN");
         if let Some(token) = &admin_token {
             if token.len() < 32 {

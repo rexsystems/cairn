@@ -27,6 +27,11 @@ public final class CairnForge {
     private final Minecraft mc = Minecraft.getMinecraft();
     private final KeyBinding menu = new KeyBinding("Cairn menu", Keyboard.KEY_RSHIFT, "Cairn Client");
     private final KeyBinding zoom = new KeyBinding("Cairn zoom", Keyboard.KEY_C, "Cairn Client");
+    private final KeyBinding freelook = new KeyBinding("Cairn freelook", Keyboard.KEY_LMENU, "Cairn Client");
+    private net.minecraft.client.entity.EntityOtherPlayerMP orbit;
+    private int orbitPreviousType;
+    private boolean orbitInterrupted;
+    private net.minecraft.util.MouseHelper originalMouse;
     private CairnClient client;
     private boolean sprint;
     private boolean sprintWasDown;
@@ -41,11 +46,30 @@ public final class CairnForge {
         client = new CairnClient(mc.mcDataDir.toPath());
         ClientRegistry.registerKeyBinding(menu);
         ClientRegistry.registerKeyBinding(zoom);
+        ClientRegistry.registerKeyBinding(freelook);
+        originalMouse = mc.mouseHelper;
+        mc.mouseHelper = new net.minecraft.util.MouseHelper() {
+            @Override public void mouseXYChange() {
+                originalMouse.mouseXYChange();
+                updateOrbit();
+                if (orbit == null) { deltaX = originalMouse.deltaX; deltaY = originalMouse.deltaY; return; }
+                float sensitivity = mc.gameSettings.mouseSensitivity * .6f + .2f;
+                float multiplier = sensitivity * sensitivity * sensitivity * 8;
+                orbit.setAngles(originalMouse.deltaX * multiplier, originalMouse.deltaY * multiplier * (mc.gameSettings.invertMouse ? -1 : 1));
+                deltaX = 0; deltaY = 0;
+            }
+            @Override public void grabMouseCursor() { originalMouse.grabMouseCursor(); }
+            @Override public void ungrabMouseCursor() { originalMouse.ungrabMouseCursor(); }
+        };
         MinecraftForge.EVENT_BUS.register(this);
         net.minecraftforge.fml.common.FMLCommonHandler.instance().bus().register(this);
     }
     @SubscribeEvent public void key(InputEvent.KeyInputEvent event) {
+        if (client.preventDrop()) while (mc.gameSettings.keyBindDrop.isPressed()) { }
         if (menu.isPressed() && mc.currentScreen == null) mc.displayGuiScreen(new Menu());
+    }
+    @SubscribeEvent public void inventoryDrop(net.minecraftforge.client.event.GuiScreenEvent.KeyboardInputEvent.Pre event) {
+        if (client.preventDrop() && Keyboard.getEventKeyState() && Keyboard.getEventKey() == mc.gameSettings.keyBindDrop.getKeyCode()) event.setCanceled(true);
     }
     @SubscribeEvent public void menuKey(net.minecraftforge.client.event.GuiScreenEvent.KeyboardInputEvent.Post event) {
         if (event.gui == mc.currentScreen && mc.currentScreen instanceof net.minecraft.client.gui.GuiMainMenu && Keyboard.getEventKeyState() && Keyboard.getEventKey() == menu.getKeyCode()) mc.displayGuiScreen(new Menu());
@@ -62,9 +86,11 @@ public final class CairnForge {
         } : null);
         client.clientTick();
         client.inventoryOpen(mc.currentScreen != null && !(mc.currentScreen instanceof Menu) && !(mc.currentScreen instanceof Title));
-        if (mc.thePlayer == null) return;
+        updateOrbit();
+        if (mc.thePlayer == null) { client.leftWorld(); return; }
+        client.life(mc.thePlayer.getHealth() <= 0, (int) Math.floor(mc.thePlayer.posX), (int) Math.floor(mc.thePlayer.posY), (int) Math.floor(mc.thePlayer.posZ));
         mc.gameSettings.smoothCamera = client.smoothCamera(zooming(), mc.gameSettings.smoothCamera);
-        if (client.enabled(Module.BRIGHTNESS)) mc.gameSettings.gammaSetting = client.brightnessGamma(mc.gameSettings.gammaSetting);
+        mc.gameSettings.gammaSetting = client.brightnessGamma(mc.gameSettings.gammaSetting);
         boolean left = Mouse.isButtonDown(0), right = Mouse.isButtonDown(1);
         boolean down = mc.gameSettings.keyBindSprint.isKeyDown();
         if (client.enabled(Module.SPRINT) && mc.currentScreen == null) {
@@ -76,6 +102,7 @@ public final class CairnForge {
         sprintWasDown = down;
         client.input(mc.gameSettings.keyBindForward.isKeyDown(), mc.gameSettings.keyBindBack.isKeyDown(), mc.gameSettings.keyBindLeft.isKeyDown(), mc.gameSettings.keyBindRight.isKeyDown(), mc.gameSettings.keyBindJump.isKeyDown(), left, right);
         if (ticks++ % 5 != 0) return;
+        HudTelemetry.update(client, mc);
         if (client.enabled(Module.BLOCK_INDICATOR)) {
             if (mc.objectMouseOver != null && mc.objectMouseOver.typeOfHit == net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK) {
                 net.minecraft.block.state.IBlockState state = mc.theWorld.getBlockState(mc.objectMouseOver.getBlockPos());
@@ -99,14 +126,11 @@ public final class CairnForge {
         client.saturation(mc.thePlayer.getFoodStats().getSaturationLevel());
         client.hearts(mc.thePlayer.getHealth(), mc.thePlayer.getMaxHealth(), mc.thePlayer.getAbsorptionAmount());
         client.armorPoints(mc.thePlayer.getTotalArmorValue());
-        if (mc.thePlayer.ridingEntity instanceof net.minecraft.entity.EntityLivingBase) {
-            net.minecraft.entity.EntityLivingBase mount = (net.minecraft.entity.EntityLivingBase) mc.thePlayer.ridingEntity;
-            client.horse(mount.getHealth(), mount.getMaxHealth(), 0);
-        } else client.clearHorse();
-        int emptyHotbar = 0, emptyInv = 0;
-        for (int i = 0; i < 9; i++) if (mc.thePlayer.inventory.mainInventory[i] == null) emptyHotbar++;
-        for (int i = 9; i < 36; i++) if (mc.thePlayer.inventory.mainInventory[i] == null) emptyInv++;
-        client.inventorySlots(emptyHotbar, emptyInv);
+        if (client.enabled(Module.INVENTORY)) {
+            java.util.List<CairnClient.HudRow> slots = new java.util.ArrayList<CairnClient.HudRow>();
+            for (int i = 0; i < 36; i++) { ItemStack item = mc.thePlayer.inventory.mainInventory[i]; slots.add(item == null ? null : new CairnClient.HudRow(item.copy(), String.valueOf(item.stackSize))); }
+            client.inventory(slots);
+        }
         if (client.enabled(Module.WORLD_TIME)) { long time = (mc.theWorld.getWorldTime() + 6000) % 24000; client.value(Module.WORLD_TIME, time / 1000 + ":" + (time % 1000 * 60 / 1000 < 10 ? "0" : "") + time % 1000 * 60 / 1000); }
         if (client.enabled(Module.SERVER)) client.value(Module.SERVER, mc.getCurrentServerData() == null ? "Singleplayer" : mc.getCurrentServerData().serverIP);
         if (client.enabled(Module.HELD_ITEM)) {
@@ -116,7 +140,7 @@ public final class CairnForge {
         if (client.enabled(Module.ARMOR)) {
         StringBuilder armor = new StringBuilder("Armor");
         java.util.List<CairnClient.HudRow> rows = new java.util.ArrayList<CairnClient.HudRow>();
-        for (ItemStack item : mc.thePlayer.inventory.armorInventory) if (item != null) { armor.append(" ").append(item.getMaxDamage() - item.getItemDamage()); rows.add(new CairnClient.HudRow(item.copy(), String.valueOf(item.getMaxDamage() - item.getItemDamage()))); }
+        for (int i = 3; i >= 0; i--) { ItemStack item = mc.thePlayer.inventory.armorInventory[i]; if (item != null) { armor.append(" ").append(item.getMaxDamage() - item.getItemDamage()); rows.add(new CairnClient.HudRow(item.copy(), String.valueOf(item.getMaxDamage() - item.getItemDamage()))); } }
         client.value(Module.ARMOR, armor.toString());
         client.rows(Module.ARMOR, rows);
         }
@@ -216,7 +240,52 @@ public final class CairnForge {
         event.newfov = event.newfov / client.zoomFactor(zooming()) * client.fovFactor();
     }
     private boolean zooming() { return zoom.isKeyDown() && mc.currentScreen == null && mc.thePlayer != null; }
+    private void updateOrbit() {
+        boolean held = client != null && client.enabled(Module.FREELOOK) && mc.thePlayer != null && mc.theWorld != null && mc.currentScreen == null && mc.inGameHasFocus && org.lwjgl.opengl.Display.isActive() && freelook.isKeyDown();
+        if (!held) orbitInterrupted = false;
+        if (orbit != null && (mc.getRenderViewEntity() != orbit || mc.gameSettings.thirdPersonView != 1)) orbitInterrupted = true;
+        if (!held || orbitInterrupted) {
+            if (orbit != null) {
+                if (mc.getRenderViewEntity() == orbit) { mc.setRenderViewEntity(mc.thePlayer); if (mc.gameSettings.thirdPersonView == 1) mc.gameSettings.thirdPersonView = orbitPreviousType; }
+                orbit = null;
+            }
+            return;
+        }
+        if (orbit == null) {
+            if (mc.getRenderViewEntity() != mc.thePlayer) return;
+            orbit = new net.minecraft.client.entity.EntityOtherPlayerMP(mc.theWorld, mc.thePlayer.getGameProfile());
+            orbit.copyLocationAndAnglesFrom(mc.thePlayer);
+            orbitPreviousType = mc.gameSettings.thirdPersonView;
+            mc.gameSettings.thirdPersonView = 1; mc.setRenderViewEntity(orbit);
+        }
+        orbit.setPosition(mc.thePlayer.posX, mc.thePlayer.posY, mc.thePlayer.posZ);
+        orbit.lastTickPosX = mc.thePlayer.lastTickPosX; orbit.lastTickPosY = mc.thePlayer.lastTickPosY; orbit.lastTickPosZ = mc.thePlayer.lastTickPosZ;
+        orbit.prevPosX = mc.thePlayer.prevPosX; orbit.prevPosY = mc.thePlayer.prevPosY; orbit.prevPosZ = mc.thePlayer.prevPosZ;
+        orbit.setSneaking(mc.thePlayer.isSneaking());
+        orbit.inventory.copyInventory(mc.thePlayer.inventory);
+        orbit.setHealth(mc.thePlayer.getHealth());
+    }
+    @SubscribeEvent public void connected(net.minecraftforge.fml.common.network.FMLNetworkEvent.ClientConnectedToServerEvent event) {
+        event.manager.channel().pipeline().addBefore("packet_handler", "cairn_client_events", new io.netty.channel.ChannelInboundHandlerAdapter() {
+            @Override public void channelRead(io.netty.channel.ChannelHandlerContext context, Object packet) throws Exception {
+                if (packet instanceof net.minecraft.network.play.server.S03PacketTimeUpdate) {
+                    final long time = ((net.minecraft.network.play.server.S03PacketTimeUpdate) packet).getTotalWorldTime();
+                    mc.addScheduledTask(() -> client.serverTime(time));
+                } else if (packet instanceof net.minecraft.network.play.server.S19PacketEntityStatus) {
+                    final net.minecraft.network.play.server.S19PacketEntityStatus status = (net.minecraft.network.play.server.S19PacketEntityStatus) packet;
+                    mc.addScheduledTask(() -> { if (mc.theWorld != null && status.getOpCode() == 2) { net.minecraft.entity.Entity entity = status.getEntity(mc.theWorld); if (entity != null) client.entityHurt(entity.getEntityId(), entity == mc.thePlayer); } });
+                }
+                super.channelRead(context, packet);
+            }
+        });
+    }
+    @SubscribeEvent public void attack(net.minecraftforge.event.entity.player.AttackEntityEvent event) { if (event.entityPlayer == mc.thePlayer) client.attacked(event.target.getEntityId()); }
+    @SubscribeEvent public void chat(net.minecraftforge.client.event.ClientChatReceivedEvent event) {
+        if (client.chatTimestamps()) event.message = new net.minecraft.util.ChatComponentText("[" + new java.text.SimpleDateFormat("HH:mm").format(new java.util.Date()) + "] ").appendSibling(event.message);
+    }
+    @SubscribeEvent public void names(net.minecraftforge.client.event.RenderLivingEvent.Specials.Pre event) { if (client.hideNametags() && event.entity instanceof net.minecraft.entity.player.EntityPlayer) event.setCanceled(true); }
     @SubscribeEvent public void mouse(net.minecraftforge.client.event.MouseEvent event) {
+        if (orbit != null && event.button >= 0 && event.button <= 1) { event.setCanceled(true); return; }
         if (event.buttonstate && mc.currentScreen == null && (event.button == 0 || event.button == 1)) client.click(event.button == 1);
         // While zoomed, the wheel changes zoom instead of the hotbar slot.
         if (event.dwheel != 0 && client.zoomScroll(zooming(), event.dwheel)) event.setCanceled(true);

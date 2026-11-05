@@ -4,13 +4,13 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      COSMETICS_BIND: 0.0.0.0:8787
+      COSMETICS_BIND: 0.0.0.0:9437
       COSMETICS_DATA_DIR: /data
     volumes:
       - cosmetics-data:/data
     # Published on loopback only; put Caddy or nginx in front for TLS.
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:9437:9437"
     read_only: true
     security_opt:
       - no-new-privileges:true

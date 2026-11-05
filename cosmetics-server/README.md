@@ -88,14 +88,14 @@ git clone https://github.com/rexsystems/cairn && cd cairn/cosmetics-server
 cp .env.example .env
 sed -i "s/^COSMETICS_ADMIN_TOKEN=.*/COSMETICS_ADMIN_TOKEN=$(openssl rand -hex 32)/" .env
 docker compose up -d --build
-curl http://127.0.0.1:8787/healthz   # -> ok
+curl http://127.0.0.1:9437/healthz   # -> ok
 ```
 
-The container publishes on `127.0.0.1:8787` only. Put a TLS reverse proxy in front of it. With Caddy, which fetches certificates automatically, the whole `Caddyfile` is:
+The container publishes on `127.0.0.1:9437` only. Put a TLS reverse proxy in front of it. With Caddy, which fetches certificates automatically, the whole `Caddyfile` is:
 
 ```
 cosmetics.example.com {
-    reverse_proxy 127.0.0.1:8787
+    reverse_proxy 127.0.0.1:9437
 }
 ```
 
@@ -103,7 +103,7 @@ With nginx, add a TLS server block containing:
 
 ```
 location / {
-    proxy_pass http://127.0.0.1:8787;
+    proxy_pass http://127.0.0.1:9437;
     proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, don't append client values
     client_max_body_size 1m;
 }
@@ -117,7 +117,7 @@ Without Docker, run `cargo build --release`, then start `target/release/cairn-co
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `COSMETICS_BIND` | `127.0.0.1:8787` | Listen address |
+| `COSMETICS_BIND` | `127.0.0.1:9437` | Listen address |
 | `COSMETICS_DATA_DIR` | `data` | SQLite database and `capes/` folder; back this up |
 | `COSMETICS_ADMIN_TOKEN` | unset (admin API off) | Bearer token for `/v1/admin/*`, 32+ chars |
 | `COSMETICS_CAPE_MODERATION` | `approval` | `approval` or `instant` |
